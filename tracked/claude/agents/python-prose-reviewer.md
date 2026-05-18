@@ -1,6 +1,6 @@
 ---
 name: python-prose-reviewer
-description: Prose/quality reviewer for Python documentation. Use after Python source edits to grade docstrings against CLAUDE.md tone rules and verify factual correctness vs. the function body. Read-only.
+description: Prose/quality reviewer for Python documentation. Use after edits to grade prose against CLAUDE.md tone rules and verify factual claims match the function body. Read-only.
 tools: Read, Glob, Grep, Bash, WebFetch, WebSearch
 disallowedTools: Edit, Write, NotebookEdit
 model: opus
