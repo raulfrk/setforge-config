@@ -77,9 +77,9 @@ Superpowers skills are designed to defer to.
    (Phase 3) is the symbol-verification walk-through — they are NOT
    interchangeable. Walks the implementation against actual code;
    verifies symbol names exist; catches pre-implementation typos.
-   *(empirical observations A and L — observation A: omitting this
-   caused the cxj typo bug at single-bead scale; observation L: same
-   anti-pattern at orchestration scale in the dotfiles-4tm 12-bead
+   *(empirical observations A and M — observation A: omitting this
+   caused the cxj typo bug at single-bead scale; observation M: same
+   anti-pattern at orchestration scale in the setforge-4tm 12-bead
    batch, where the orchestrator was about to dispatch 12 Phase 4
    Agents without a Phase 3 plan because the Phase 2 spec batch was
    deemed sufficient — user intervention required.)*
@@ -186,7 +186,7 @@ N+1.
 - Specs → `~/.claude/projects/{cwd-slug}/specs/<YYYY-MM-DD>-<topic>.md`
 - Plans → `~/.claude/projects/{cwd-slug}/plans/<YYYY-MM-DD>-<feature>.md`
 - `{cwd-slug}` matches the auto-memory convention — cwd with `/` → `-`
-  (e.g. `-home-raul-my-setup`).
+  (e.g. `-home-raul-setforge`).
 
 ## Hard-gate posture
 
