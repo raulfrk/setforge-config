@@ -84,6 +84,11 @@ Superpowers skills are designed to defer to.
    Agents without a Phase 3 plan because the Phase 2 spec batch was
    deemed sufficient — user intervention required.)*
 
+   The plan-existence requirement applies once per BEAD, not per subagent.
+   For in-session subagent dispatch via
+   `superpowers:subagent-driven-development`, the parent bead's
+   Phase 3 plan covers the burst — no separate plan per subagent.
+
 4. **Phase 4 — Implement** — single-stream by default
    (`superpowers:executing-plans`). Parallel ONLY when work is
    decomposable into independent threads (disjoint file footprints,
