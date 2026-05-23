@@ -29,6 +29,10 @@
   "permissions": {
     "allow": ["Bash(bd *)", "Bash(bd)", "Skill(superpowers:*)", "Skill(wiki:*)"]
   },
+  "enabledPlugins": {
+    "revdiff@revdiff": true,
+    "revdiff-planning@revdiff": true
+  },
   "skipAutoPermissionPrompt": true,
   "theme": "dark"
 }

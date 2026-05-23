@@ -60,7 +60,7 @@ If no, cut it. CLAUDE.md is advisory, not enforced — for hard rules, write a P
   6. `wt merge --no-squash` (ff-only) — merge the branch into target.
   7. `bd close <id>` — close the issue.
   8. `wt remove` — delete worktree (auto-deletes the merged branch).
-<!-- setforge:user-section end shared workflow hash=cd85aed32cae280be5f7285ab3fba97a3492df4c8bcd45ba3ccc6b54c75d92eb -->
+<!-- setforge:user-section end shared workflow hash=3d8a4d2b3ffbb23afd0e7563242336ea2bb74282a53ef00b7bc1608da36eb8b4 -->
 
 ## Python
 
@@ -92,7 +92,7 @@ If no, cut it. CLAUDE.md is advisory, not enforced — for hard rules, write a P
 - Never squash review-fix commits into the implementation commit. They document what the review fan caught; preserving them as separate commits keeps the audit trail meaningful. Operationally: use `wt merge --no-squash` (ff-only) for worktree merges, or `git merge --ff-only` for plain git.
 - No issue refs in the subject; footers (`Refs: #123`) go after a blank line at the end.
 - Use Conventional Commits (`feat:`, `fix:`) only when the repo has a changelog generator or commitlint wired up. Otherwise it's noise.
-<!-- setforge:user-section end shared commits hash=afbb7e1ef81c8e1afc691d6d559c0bc37cedf9dfaaccc2004da4af67293db9b8 -->
+<!-- setforge:user-section end shared commits hash=3c3686e574e7cfe6f5f879049ffaa9c183a1cdd9d1fada6a4b354875c72c50cb -->
 
 ## Beads (task tracking)
 
