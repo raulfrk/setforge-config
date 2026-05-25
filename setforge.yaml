@@ -87,9 +87,10 @@ tracked_files:
     src: claude/skills/reviewing-markdown/SKILL.md
     dst: ~/.claude/skills/reviewing-markdown/SKILL.md
 
-  claude_command_work:
-    src: claude/commands/work.md
-    dst: ~/.claude/commands/work.md
+  claude_session_flow_skill:
+    src: claude/skills/session-flow/SKILL.md
+    dst: ~/.claude/skills/session-flow/SKILL.md
+    preserve_user_sections: true
 
   vscode_serv_settings:
     src: vscode/vm/settings.json
@@ -155,7 +156,7 @@ profiles:
       - claude_md
       - claude_settings
       - claude_output_styles
-      - claude_command_work
+      - claude_session_flow_skill
       - claude_bd_skill
       - claude_wt_skill
       - claude_challenge_skill
