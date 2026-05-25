@@ -31,15 +31,6 @@
           }
         ],
         "matcher": ""
-      },
-      {
-        "hooks": [
-          {
-            "command": "echo 'Session started. Invoke the session-flow skill now to load the 7-phase workflow before any work.'",
-            "type": "command"
-          }
-        ],
-        "matcher": ""
       }
     ],
     "SessionEnd": [
