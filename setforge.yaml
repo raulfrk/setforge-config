@@ -15,10 +15,6 @@ tracked_files:
     src: claude/settings.json
     dst: ~/.claude/settings.json
 
-  claude_output_styles:
-    src: claude/output-styles
-    dst: ~/.claude/output-styles
-
   claude_bd_skill:
     src: claude/skills/bd-reference/SKILL.md
     dst: ~/.claude/skills/bd-reference/SKILL.md
@@ -34,10 +30,6 @@ tracked_files:
   claude_agent_python_spec_reviewer:
     src: claude/agents/python-spec-reviewer.md
     dst: ~/.claude/agents/python-spec-reviewer.md
-
-  claude_agent_python_form_reviewer:
-    src: claude/agents/python-form-reviewer.md
-    dst: ~/.claude/agents/python-form-reviewer.md
 
   claude_agent_python_substance_reviewer:
     src: claude/agents/python-substance-reviewer.md
@@ -87,9 +79,14 @@ tracked_files:
     src: claude/skills/reviewing-markdown/SKILL.md
     dst: ~/.claude/skills/reviewing-markdown/SKILL.md
 
-  claude_command_work:
-    src: claude/commands/work.md
-    dst: ~/.claude/commands/work.md
+  claude_session_flow_skill:
+    src: claude/skills/session-flow/SKILL.md
+    dst: ~/.claude/skills/session-flow/SKILL.md
+    preserve_user_sections: true
+
+  claude_handoff_skill:
+    src: claude/skills/handoff/SKILL.md
+    dst: ~/.claude/skills/handoff/SKILL.md
 
   vscode_serv_settings:
     src: vscode/vm/settings.json
@@ -154,8 +151,8 @@ profiles:
     tracked_files:
       - claude_md
       - claude_settings
-      - claude_output_styles
-      - claude_command_work
+      - claude_session_flow_skill
+      - claude_handoff_skill
       - claude_bd_skill
       - claude_wt_skill
       - claude_challenge_skill
@@ -163,7 +160,6 @@ profiles:
       - claude_skill_reviewing_claude_md
       - claude_skill_reviewing_markdown
       - claude_agent_python_spec_reviewer
-      - claude_agent_python_form_reviewer
       - claude_agent_python_substance_reviewer
       - claude_agent_python_specifics_reviewer
       - claude_agent_python_prose_reviewer

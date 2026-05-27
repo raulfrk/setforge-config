@@ -9,7 +9,7 @@ This skill orchestrates a 1-agent prose review for generic markdown files OUTSID
 
 ## When to invoke
 
-- **Phase 5** (review fan) after Phase 4 (Implement) completes and before Phase 6 (Address findings + merge), per the 7-phase flow in `superpowers-prefs.md`.
+- **Phase 5** (review fan) after Phase 4 (Implement) completes and before Phase 6 (Address findings + merge), per the 7-phase flow in the `session-flow` skill.
 - **Phase 7** (post-merge cross-cutting review) against the merged HEAD on the target branch.
 
 Artifacts in scope:
@@ -83,8 +83,8 @@ Overall verdict: <verdict>
 ## After the report
 
 - CRITICAL findings → fix immediately (especially: false claims about commands / flags / paths).
-- IMPORTANT findings → fix before merge. Per the Commits rule in `~/.claude/CLAUDE.md`, review-fix changes commit as their OWN commits — never squashed into the implementation commit.
-- MINOR findings → file new bd issues with dep links unless trivially fixable inline.
+- IMPORTANT findings → fix before merge. Per the commit conventions in CLAUDE.md, review-fix changes commit as their OWN commits — never squashed into the implementation commit.
+- MINOR findings → fix inline as separate commits unless the fix is large or out-of-scope (file new bd with dep link in that case).
 
 ## Definition of done for the orchestrator
 

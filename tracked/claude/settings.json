@@ -22,16 +22,25 @@
           }
         ],
         "matcher": ""
+      },
+      {
+        "hooks": [
+          {
+            "command": "echo 'Session started. Invoke the session-flow skill now to load the 7-phase workflow before any work.'",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
       }
     ]
   },
-  "outputStyle": "Explanatory",
   "permissions": {
-    "allow": ["Bash(bd *)", "Bash(bd)", "Skill(superpowers:*)", "Skill(wiki:*)"]
-  },
-  "enabledPlugins": {
-    "revdiff@revdiff": true,
-    "revdiff-planning@revdiff": true
+    "allow": [
+      "Bash(bd *)",
+      "Bash(bd)",
+      "Skill(superpowers:*)",
+      "Skill(wiki:*)"
+    ]
   },
   "skipAutoPermissionPrompt": true,
   "theme": "dark"

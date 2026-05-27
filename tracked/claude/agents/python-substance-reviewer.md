@@ -21,7 +21,7 @@ Dispatch inputs:
 
 Your aspects to check:
 
-1. **Function length** — per CLAUDE.md "Functions: aim under ~40 lines, nesting depth ≤ 3." Long functions are IMPORTANT findings; suggest extraction.
+1. **Function length** — per the Python conventions in CLAUDE.md (function size, nesting depth). Long functions are IMPORTANT findings; suggest extraction.
 2. **Abstractions justified** — every new class / dataclass / Protocol / module boundary should serve a real need surfaced in the diff. Speculative abstractions are MINOR.
 3. **Error model coherence** — exceptions raised at boundaries; no swallowed exceptions; `from <exc>` chains preserved (no orphan `raise`). Violations are IMPORTANT.
 4. **Subprocess safety** — list args (no `shell=True` with non-literal), `check=True`, `timeout=`, `shutil.which()` for binaries. Violations are CRITICAL.

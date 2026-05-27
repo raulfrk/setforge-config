@@ -1,6 +1,6 @@
 ---
 name: reviewing-claude-md
-description: 5-aspect parallel review fan for CLAUDE.md / workflow-doc changes (tracked/claude/CLAUDE.md, superpowers-prefs.md, header.md, bd-reference / wt-reference / new skill content, agent definitions, additional-content.md). Dispatches `claude-md-spec-reviewer`, `claude-md-form-reviewer`, `claude-md-substance-reviewer`, `claude-md-specifics-reviewer`, and `claude-md-prose-reviewer` in parallel via a single message of Agent tool calls. Consolidates verdicts worst-of-five. Use after CLAUDE.md / workflow-doc implementation (Phase 5), and again post-merge (Phase 7).
+description: 5-aspect parallel review fan for CLAUDE.md / workflow-doc changes (tracked/claude/CLAUDE.md, session-flow, handoff, bd-reference / wt-reference / new skill content, agent definitions). Dispatches `claude-md-spec-reviewer`, `claude-md-form-reviewer`, `claude-md-substance-reviewer`, `claude-md-specifics-reviewer`, and `claude-md-prose-reviewer` in parallel via a single message of Agent tool calls. Consolidates verdicts worst-of-five. Use after CLAUDE.md / workflow-doc implementation (Phase 5), and again post-merge (Phase 7).
 ---
 
 # Reviewing CLAUDE.md / workflow docs
@@ -9,11 +9,11 @@ This skill orchestrates a 5-aspect parallel review fan for CLAUDE.md and related
 
 ## When to invoke
 
-- **Phase 5** (review fan) after Phase 4 (Implement) completes and before Phase 6 (Address findings + merge), per the 7-phase flow in `superpowers-prefs.md`.
+- **Phase 5** (review fan) after Phase 4 (Implement) completes and before Phase 6 (Address findings + merge), per the 7-phase flow in the `session-flow` skill.
 - **Phase 7** (post-merge cross-cutting review) against the merged HEAD on the target branch.
 
 Artifacts in scope (ONLY `.md` files under `tracked/claude/`):
-- `tracked/claude/CLAUDE.md`, `tracked/claude/superpowers-prefs.md`, `tracked/claude/header.md`, `tracked/claude/additional-content.md`.
+- `tracked/claude/CLAUDE.md`.
 - `tracked/claude/skills/<skill>/SKILL.md` (new or edited skills).
 - `tracked/claude/agents/<agent>.md` (new or edited agent definitions).
 - `setforge.yaml` when the change touches deployment of any of the above.
@@ -96,8 +96,8 @@ Overall verdict: <worst-of-five — BLOCK > CONCERNS > PASS>
 ## After the report
 
 - CRITICAL findings → fix immediately (especially: edits to live files, broken user-section markers, missing structural commitments).
-- IMPORTANT findings → fix before merge. Per the Commits rule in `~/.claude/CLAUDE.md`, review-fix changes commit as their OWN commits — never squashed into the implementation commit.
-- MINOR findings → file new bd issues with dep links unless trivially fixable inline.
+- IMPORTANT findings → fix before merge. Per the commit conventions in CLAUDE.md, review-fix changes commit as their OWN commits — never squashed into the implementation commit.
+- MINOR findings → fix inline as separate commits unless the fix is large or out-of-scope (file new bd with dep link in that case).
 
 ## Definition of done for the orchestrator
 

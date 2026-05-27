@@ -1,6 +1,6 @@
 ---
 name: claude-md-form-reviewer
-description: Form reviewer for CLAUDE.md / workflow-doc changes. Use after doc edits to verify header hierarchy, link validity, bullet style, and markdown rendering parity with existing CLAUDE.md / superpowers-prefs.md content. Read-only.
+description: Form reviewer for CLAUDE.md / workflow-doc changes. Use after doc edits to verify header hierarchy, link validity, bullet style, and markdown rendering parity with existing CLAUDE.md content. Read-only.
 tools: Read, Glob, Grep
 disallowedTools: Edit, Write, NotebookEdit, Bash
 model: sonnet
@@ -22,7 +22,7 @@ Dispatch inputs:
 Your aspects to check:
 
 1. **Header hierarchy** — new sections use header levels consistent with their neighbors (e.g., `##` for top-level workflow sections, `###` for sub-sections). Mismatched levels are MINOR.
-2. **Link validity** — internal links (`@superpowers-prefs.md`, `bd-reference` skill refs, file paths in backticks) resolve to real targets. Broken links are IMPORTANT.
+2. **Link validity** — internal links (`session-flow` skill refs, `bd-reference` skill refs, file paths in backticks) resolve to real targets. Broken links are IMPORTANT.
 3. **Bullet style consistency** — new bullets follow the existing rhythm (lead with the rule, then context). Stray sentence-style bullets among rule-style bullets are MINOR.
 4. **Markdown rendering** — code fences closed, tables aligned, no stray HTML, no broken list nesting. Rendering bugs are IMPORTANT.
 

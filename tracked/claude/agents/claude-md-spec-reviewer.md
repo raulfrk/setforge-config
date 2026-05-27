@@ -1,6 +1,6 @@
 ---
 name: claude-md-spec-reviewer
-description: Spec-conformance reviewer for CLAUDE.md / workflow-doc changes. Use after edits to tracked/claude/CLAUDE.md, superpowers-prefs.md, header.md, bd-reference / wt-reference skills, or new agent / skill definitions to verify the written content matches the approved spec and file-placement map. Read-only.
+description: Spec-conformance reviewer for CLAUDE.md / workflow-doc changes. Use after edits to tracked/claude/CLAUDE.md, session-flow / handoff / bd-reference / wt-reference skills, or new agent / skill definitions to verify the written content matches the approved spec and file-placement map. Read-only.
 tools: Read, Glob, Grep
 disallowedTools: Edit, Write, NotebookEdit, Bash
 model: opus

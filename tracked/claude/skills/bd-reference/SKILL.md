@@ -5,7 +5,7 @@ description: Beads task-tracking command reference. Invoke at the first sign of 
 
 # Beads command reference
 
-The beads home is at `~/.beads/` (set via `BEADS_DIR`); each project gets its own database inside it (`~/.beads/embeddeddolt/<project>/`), auto-created on first write, with the issue prefix derived from the repo name. Issues do NOT cross databases unless `bd repo add` (multi-repo hydration) or `bd federation` is configured. Memories are cross-project (separate storage from issues).
+Each project has its own beads database at `<project-root>/.beads/`, created by `bd init --stealth` (which also configures `.git/info/exclude` to keep beads invisible to git). The issue prefix is derived from the repo name. Issues do NOT cross databases unless `bd repo add` (multi-repo hydration) or `bd federation` is configured. Memories are cross-project (stored separately from issues).
 
 All git worktrees of the same repo share the parent's beads database via git common-directory discovery — no manual `--db` redirect. `bd worktree list` shows the redirect state per worktree. Default `bd worktree create <name>` form nests at `./<name>` and writes a `.gitignore` entry; prefer `wt switch --create <slug>` which lands the worktree at `~/projects/worktrees/<slug>` (the configured location for this VM; see `tracked/wt/config.toml`). `git worktree add ~/projects/worktrees/<slug>` also works and is auto-discovered.
 
@@ -65,7 +65,7 @@ assignment stand; the comment thread is the handoff signal.
 ## Quality flags on `create` / `update`
 
 - `--validate` — fail if required sections are missing for the type.
-- `--acceptance "..."` — acceptance criteria (checked by `--validate`). Prefer **concrete commands that exit 0** over abstract counts. "lint count drops to zero in non-deferred categories" is hard to verify; "`uv run ruff check` exits 0 in CI" is binary. *(empirical observation B from setforge-23k: abstract count acceptance passed spec review but CI still broke on first push because the criterion didn't specify command-level success.)* See also: `superpowers-prefs.md` observation L for command-shape robustness (avoid `rg -A1` / `awk [^a-z]` brittle ranges).
+- `--acceptance "..."` — acceptance criteria (checked by `--validate`). Prefer **concrete commands that exit 0** over abstract counts. "lint count drops to zero in non-deferred categories" is hard to verify; "`uv run ruff check` exits 0 in CI" is binary. *(empirical observation B from setforge-23k: abstract count acceptance passed spec review but CI still broke on first push because the criterion didn't specify command-level success.)* See also: the session-flow skill Phase 2 for command-shape robustness (avoid `rg -A1` / `awk [^a-z]` brittle ranges).
 - `--design "..."` — design notes.
 - `--notes "..."` (initial) or `bd note <id>` later — supplementary context.
 - `--parent <id>` — file as hierarchical child.
