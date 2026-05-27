@@ -16,14 +16,21 @@ when_to_use: >-
 ## Session start
 
 1. SessionStart hook fires `bd prime` (live workflow context).
-2. This skill loads (you're reading it now).
-3. **Check handoff repo** — look at `~/handoff/` for open beads (`cd ~/handoff && bd ready`). If a handoff bead exists: read its project dir + epic ID + worktree + next-steps → navigate to the project → filter beads by that epic → resume. In monorepos with multiple epics, the handoff specifies WHICH epic to focus on. If no handoff repo or no open beads → step 4.
+2. This skill loads (you're reading it now). Also invoke `superpowers:using-superpowers` to establish skill-invocation discipline for the session.
+3. **Check handoff repo** — `cd ~/handoff && bd ready`. If a handoff bead exists:
+   a. Read its content (project path, epic ID, context, suggested next-steps).
+   b. Close the handoff bead (consumed).
+   c. Navigate to the project dir. Run `bd show <epic-id>` and `bd ready`.
+   d. **Present context** — summarize what the handoff says: last session state, active decisions, what was in-progress.
+   e. **Interactive gate** — use `AskUserQuestion` to present ready beads as options. The handoff's suggested task appears first, marked `(Recommended)`. Other ready beads listed as additional options. User picks which to work on (or provides a different direction via "Other").
+   f. Claim the chosen bead and enter the 7-phase flow.
+   If no handoff repo or no open beads → step 4.
 4. **Discover the current epic** — parse worktree slug for bd ID → `bd show <id>` → walk `--parent` until `type == "epic"`.
-5. If no handoff: `bd ready` for next unblocked issue.
+5. If no handoff and no worktree context: `bd ready` for next unblocked issue.
 
 ## The 7-phase flow (STRICT GATE)
 
-Every non-trivial task MUST follow all 7 phases in order. Escape hatch: user says "just do it" / "skip the flow" for THIS task only. Single-file mechanical edits (rename, formatting, obvious one-liner) skip the flow without asking.
+Every task MUST follow all 7 phases in order. Escape hatch: user says "just do it" / "skip the flow" for THIS task only. If you judge a task simple enough to skip phases, ask the user first via AskUserQuestion — never skip without explicit consent.
 
 ### Phase 1 — Brainstorm
 
@@ -37,9 +44,11 @@ When writing the spec, include a "Bugs and code smells to avoid" section listing
 
 When revising a spec after review, open with a "Changes in this revision" section listing what changed and why — so the reviewer can focus on deltas without rereading the entire document.
 
+**⚠ After ExitPlanMode approval, your NEXT action MUST be invoking `superpowers:writing-plans` (Phase 3). Do not edit files, dispatch agents, or take any implementation action first. ExitPlanMode's "start coding" message refers to the planning-then-coding sequence, not immediate file edits.**
+
 ### Phase 3 — Plan
 
-Invoke `superpowers:writing-plans`. Implementation plan as a normal response (NOT plan mode). Walk implementation against actual code; verify symbol names exist; catch typos before code is written. MANDATORY before Phase 4.
+Invoke `superpowers:writing-plans`. Implementation plan as a normal response (NOT plan mode). Walk implementation against actual code; verify symbol names exist; catch typos before code is written. MANDATORY before Phase 4 regardless of change size — a two-line change still gets a writing-plans invocation; the output will be proportionally brief.
 
 ### Phase 4 — Implement
 
@@ -75,13 +84,13 @@ Re-invoke the same reviewing approach against merged HEAD on the target branch. 
    - Claude proposes a handoff proactively, OR
    - User invokes `/handoff` explicitly.
 3. **Create handoff bead in `~/handoff/`** — ALWAYS in the handoff repo, NEVER in the current project's beads database (auto-inits `~/handoff/` as git repo + beads on first use):
-   - `--title`: `Handoff: <one-line state>`
+   - `--title`: `Handoff: <project-name> (<project-path>)` — routing only, no next-action detail (that goes in description/acceptance)
    - `--description`: project dir path; active worktree + branch; **epic ID** (text reference — not a bd `--parent` link, since the handoff repo is a separate beads database); why session ended; original paused bd reference
    - `--design`: active decisions / context next session needs
    - `--acceptance`: specific next-step actions the next session should take
    - `--notes`: outstanding research; open user Qs; any context that helps the next session resume quickly
-4. Handoff bead stays open until next session reads + closes it.
-5. **Discovery at next session**: SessionStart → `bd prime` → check `~/handoff/` for open beads → read description for project dir + epic ID → `cd <project-dir>` → `bd show <epic-id>` → `bd ready` filtered by that epic → resume.
+4. Handoff bead stays open until the next session consumes it (step 3 above closes it immediately after reading).
+5. **Discovery at next session**: SessionStart → `bd prime` → check `~/handoff/` for open beads → read content → close handoff bead → `cd <project-dir>` → `bd show <epic-id>` + `bd ready` → present handoff context → **interactive gate** via `AskUserQuestion` (handoff's suggested task marked Recommended, other ready beads as options) → user picks → claim and begin.
 
 ## Superpowers routing table
 

@@ -23,7 +23,7 @@ Create a handoff bead to preserve session state for the next session.
 
 **Always in `~/handoff/`** — never in the current project's beads database. Auto-inits `~/handoff/` as a git repo + beads on first use.
 
-- `--title`: `Handoff: <one-line state>`
+- `--title`: `Handoff: <project-name> (<project-path>)` — routing only, no next-action detail (that goes in description/acceptance)
 - `--description`: project dir path; active worktree + branch; **epic ID** (text reference — not a bd `--parent` link, since the handoff repo is a separate beads database); why session ended; original paused bd reference
 - `--design`: active decisions / context next session needs
 - `--acceptance`: specific next-step actions the next session should take
@@ -31,10 +31,10 @@ Create a handoff bead to preserve session state for the next session.
 
 ## Discovery at next session
 
-SessionStart → `bd prime` → check `~/handoff/` for open beads → read description for project dir + epic ID → `cd <project-dir>` → `bd show <epic-id>` → `bd ready` filtered by that epic → resume.
+SessionStart → `bd prime` → check `~/handoff/` for open beads → read content (project path, epic, context, suggested next-steps) → close the handoff bead (consumed) → `cd <project-dir>` → `bd show <epic-id>` + `bd ready` → present handoff context to user → **interactive gate**: `AskUserQuestion` with ready beads as options (handoff's suggested task marked Recommended) → user picks → claim and begin.
 
 If `~/handoff/` does not exist, there are no handoffs — skip to normal `bd ready` flow. The directory is created on first handoff, not at setup time.
 
 ## Closing
 
-Handoff bead is closed when the next session consumes it. Ephemeral, not long-lived.
+Handoff bead is closed immediately after reading — before presenting the interactive gate. Ephemeral, not long-lived.
