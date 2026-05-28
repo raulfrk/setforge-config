@@ -41,7 +41,7 @@
 ## General tools
 
 - **`bd` is the task system.** All work items live in bd — contracts (`--design`, `--acceptance`, `--notes`), persistence (`bd note`, `bd comment`), handoffs. **Invoke the `bd-reference` skill the first time bd is involved in a session.**
-- **`wt` is the worktree primitive.** Always `wt switch --create <slug>`; never raw `git worktree add`. Worktrees land at `~/projects/worktrees/<slug>`. **Invoke the `wt-reference` skill before any `wt` action.**
+- **`wt` is the worktree primitive.** Always `wt switch --create <slug>`; never raw `git worktree add`. **In bg sessions:** `wt switch --create` first, then `EnterWorktree --path <wt-path>` to satisfy the harness isolation guard. Never bare `EnterWorktree` (without `--path`). Worktrees land at `~/projects/worktrees/<slug>`. **Invoke the `wt-reference` skill before any `wt` action.**
 - **Canonical bd ↔ wt loop.** New work: `bd ready` → `bd show <id>` → `bd update <id> --claim` → `wt switch --create <slug>` → implement → `wt merge --no-squash` (ff-only) → `bd close <id>` → `wt remove`.
 - **Handoff at session boundaries.** When a session ends mid-work, Claude proposes a handoff (or user invokes `/handoff`). See the `session-flow` skill for the full handoff flow and bead content shape.
 

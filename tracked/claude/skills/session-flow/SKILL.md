@@ -77,6 +77,18 @@ Re-invoke the same reviewing approach against merged HEAD on the target branch. 
 7. `bd close <id>`.
 8. `wt remove` → delete worktree.
 
+## Background session worktree isolation
+
+Background sessions (bg jobs) have a harness-level isolation guard (`bgIsolation`) that blocks file edits until the session enters a worktree. The guard only knows about `EnterWorktree`, not `wt`. Use both together:
+
+1. `wt switch --create <project>-<bd-id>[-suffix] --yes` → creates worktree at `~/projects/worktrees/<slug>` with pre-start hooks.
+2. `EnterWorktree --path ~/projects/worktrees/<slug>` → enters the wt-created worktree, satisfying the bg guard.
+3. Edit files normally inside the worktree.
+4. On completion: commit, then `wt merge --no-squash --yes`.
+5. `ExitWorktree --action keep` → returns session to original dir. `wt remove` cleans up.
+
+Never use bare `EnterWorktree` (without `--path`) in a bg session — it creates worktrees at `.claude/worktrees/`, bypassing wt's configured location, hooks, and tracking. The CLAUDE.md "General tools" section carries this rule so it survives context growth; this section provides the full sequence.
+
 ## Session end + handoff
 
 1. If current bd is closed → done. No handoff needed.
