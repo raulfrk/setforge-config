@@ -114,6 +114,7 @@ const REVIEW_VERDICT_SCHEMA = {
   properties: {
     verdict: { enum: ["PASS", "CONCERNS", "BLOCK"] },
     rationale: { type: "string" },
+    scopedFiles: { type: "array", items: { type: "string" }, description: "the exact paths you actually reviewed" },
     checklist: { type: "array", items: {
       type: "object", required: ["id", "present", "verified"],
       properties: {
@@ -155,6 +156,11 @@ const REVIEW_PLAN_SCHEMA = {
   },
 }
 
+const RESOLVED_SET_SCHEMA = {
+  type: "object", required: ["porcelain"],
+  properties: { porcelain: { type: "string", description: "verbatim stdout of the status command; NOTHING else" } },
+}
+
 // ─── Args guard ───
 phase("Research")
 // `args` may arrive as an object OR as a JSON string (the runtime serializes
@@ -167,14 +173,59 @@ if (!ARGS || typeof ARGS !== "object") ARGS = {}
 const SPEC_PATH = (typeof ARGS.specPath === "string" && ARGS.specPath.trim()) || ""
 const BD_ID = (typeof ARGS.bdId === "string" && ARGS.bdId.trim()) || ""
 const BASE_PATH = (typeof ARGS.basePath === "string" && ARGS.basePath.trim()) || ""
-if (!SPEC_PATH || !BD_ID) {
-  return { error: "session-workflow-impl requires args {specPath, bdId, basePath}; specPath and bdId are mandatory. Pass them via Workflow({name: 'session-workflow-impl', args: {specPath, bdId, basePath}})." }
+if (!SPEC_PATH || !BD_ID || !BASE_PATH) {
+  return { error: "session-workflow-impl requires args {specPath, bdId, basePath}; ALL THREE are mandatory (basePath drives the diff resolver — an ambiguous cwd reproduces the divergence bug). Pass them via Workflow({name: 'session-workflow-impl', args: {specPath, bdId, basePath}})." }
 }
 
 // ─── Rank objects (computed in code, not by model) ───
 const verdictRank = { PASS: 0, CONCERNS: 1, BLOCK: 2 }
 const verdictName = ["PASS", "CONCERNS", "BLOCK"]
 const sevRank = { high: 0, medium: 1, low: 2 }
+
+// ─── Pure: parse `git status --porcelain=v1 -uall -c core.quotePath=false` ───
+// Input: verbatim porcelain stdout. Output: { files:[{path,status,oldPath}], count }.
+// XY format: 2 status chars, a space, then path; renames/copies are "R  old -> new".
+// quotePath=false guarantees no surrounding quotes / octal escapes.
+const parsePorcelain = (stdout) => {
+  const lines = String(stdout || "").split("\n").filter(l => l.length > 0)
+  const files = lines.map(line => {
+    const status = line.slice(0, 2)
+    const rest = line.slice(3)
+    if (status[0] === "R" || status[0] === "C") {
+      const [oldPath, newPath] = rest.split(" -> ")
+      return { path: newPath, status, oldPath }
+    }
+    return { path: rest, status }
+  })
+  return { files, count: files.length }
+}
+
+// ─── Pure: compute the (advisory) gate from one round's signals ───
+// reviews: [{verdict, checklist:[{id,present,verified}], scopedFiles:[path], findings:[]}]
+// auditFindings: Set<id> the IN-LOOP diff-audit flagged present-but-unverified THIS round.
+// buildFailed: true only if a build step's verify returned an explicit passed===false (NOT no-result).
+// frozenPaths: Set<path> of the orchestrator-frozen changed-file set.
+// Returns { worstVerdict, unverifiedIds, scopeConsistent, gatePassed }.
+const computeGate = ({ reviews, auditFindings, buildFailed, frozenPaths }) => {
+  const worstRank = reviews.reduce((acc, r) => Math.max(acc, verdictRank[r.verdict] ?? verdictRank.BLOCK), 0)
+  const worstVerdict = verdictName[worstRank]
+  // FIX (b): an item is unverified ONLY if positively flagged present-but-unverified by a
+  // reviewer OR by this round's audit. A missing reviewer entry is NOT an auto-HELD.
+  const flagged = new Set()
+  for (const r of reviews) for (const c of (r.checklist || [])) {
+    if (c.present === true && c.verified !== true) flagged.add(c.id)
+  }
+  for (const id of auditFindings) flagged.add(id) // FIX (a): audit set is recomputed each round upstream
+  const unverifiedIds = [...flagged]
+  // scopeConsistent: no reviewer cited a file outside the frozen set.
+  let scopeConsistent = true
+  for (const r of reviews) for (const f of (r.scopedFiles || [])) {
+    if (!frozenPaths.has(f)) scopeConsistent = false
+  }
+  // FIX (c): a DEFINITE build-verify failure HELDs the gate (no-results do not, to avoid flake-HELDs).
+  const gatePassed = worstVerdict === "PASS" && unverifiedIds.length === 0 && !buildFailed
+  return { worstVerdict, unverifiedIds, scopeConsistent, gatePassed }
+}
 
 // ─── Prompts ───
 const RESEARCH_PROMPT = (dim) =>
@@ -230,12 +281,13 @@ const VERIFY_PROMPT = (step) =>
   "Return passed=true only with concrete evidence (command output or specific inspection). " +
   "List any failures. Default passed=false if uncertain. Structured output only."
 
-const AUDIT_PROMPT = (checklistBlock) =>
+const AUDIT_PROMPT = (checklistBlock, changedBlock) =>
   "## Diff Auditor\n\n" +
   "Spec: " + SPEC_PATH + "\n" +
-  (BASE_PATH ? "Codebase base path: " + BASE_PATH + "\n" : "") +
+  "Codebase base path: " + BASE_PATH + "\n" +
+  "\n## Changed files (authoritative scope — audit ONLY these)\n" + changedBlock + "\n" +
   "\n## Task\n" +
-  "Audit the produced diff against EVERY item in the merged risk checklist below. " +
+  "Audit the resolved changed-file set above against EVERY item in the merged risk checklist below. " +
   "For each item, report:\n" +
   "- present: true if the smell/bug pattern the item describes is FOUND in the diff\n" +
   "- verified: true if you confirmed the item is either absent from the diff OR present-but-explicitly-safe\n" +
@@ -244,17 +296,24 @@ const AUDIT_PROMPT = (checklistBlock) =>
   "Do not skip items — emit one audit entry per checklist id.\n\n" +
   "## Merged risk checklist\n" + checklistBlock + "\n\nStructured output only."
 
-const REVIEW_PLAN_PROMPT = (registryBlock) =>
+const REVIEW_PLAN_PROMPT = (registryBlock, changedBlock) =>
   "## Review Coverage Planner\n\n" +
   "Spec: " + SPEC_PATH + "\n" +
-  (BASE_PATH ? "Codebase base path: " + BASE_PATH + "\n" : "") +
+  "Codebase base path: " + BASE_PATH + "\n" +
+  "\n## Authoritative changed-file set (already resolved — map THESE onto reviewers; do NOT run git yourself)\n" + changedBlock + "\n" +
   "\n## Task\n" +
-  "Inspect the produced diff — run `git -C " + (BASE_PATH || ".") + " diff --name-only`, then look at the changes. " +
-  "Plan a review that covers EVERY changed artifact type.\n" +
+  "Plan a review that covers EVERY changed artifact type in the set above.\n" +
   "1. From the registry of available specialist reviewers below, choose the ones whose 'when' matches the changed files. Use each agentType at most once; do not assign a reviewer for an artifact type absent from the diff.\n" +
   "2. For any changed artifact type the registry does NOT cover (e.g. JS / workflow scripts, YAML / config, shell, Dockerfiles, lockfiles), SYNTHESIZE an ad-hoc reviewer: name the aspect and write a focus clause telling a generalist reviewer exactly what to scrutinize for that artifact.\n" +
   "Return `assigned` (registry agentTypes + reason) and `adhoc` (aspect + focus). Together they must cover the whole diff.\n\n" +
   "## Registry of available specialist reviewers\n" + registryBlock + "\n\nStructured output only."
+
+const RESOLVE_PROMPT = () =>
+  "## Diff Resolver\n\n" +
+  "Run EXACTLY this command and return its stdout VERBATIM as `porcelain` — nothing else, no commentary:\n" +
+  "`git -C " + BASE_PATH + " -c core.quotePath=false status --porcelain=v1 -uall`\n\n" +
+  "Do NOT improvise a `git log` / `git diff` / base..head range. Do NOT summarize or reformat. " +
+  "If the command errors, return its stderr text as `porcelain`. Structured output only."
 
 const REVIEW_PROMPT = (task, changedBlock, checklistBlock, round) =>
   "## Implementation Reviewer — " + task.label + " (round " + round + ")\n\n" +
@@ -271,6 +330,7 @@ const REVIEW_PROMPT = (task, changedBlock, checklistBlock, round) =>
   "- CONCERNS for non-blocking issues.\n" +
   "- BLOCK for spec violations or any present-but-unverified checklist item.\n" +
   "For each checklist id, report present (found in diff) and verified (confirmed absent or safe).\n" +
+  "Review ONLY the files in the changed-file set above; report the exact paths you reviewed as `scopedFiles`.\n" +
   "Default to BLOCK if uncertain.\n\n" +
   "## Merged risk checklist\n" + checklistBlock + "\n\nStructured output only."
 
@@ -377,57 +437,73 @@ const buildOutcomes = await pipeline(
 
 const stepResults = buildOutcomes.filter(Boolean)
 const failedSteps = stepResults.filter(s => !s.gated)
-log("build done: " + stepResults.length + " steps, " + (stepResults.length - failedSteps.length) + " verified, " + failedSteps.length + " unverified")
+// FIX (c): only DEFINITE verify failures (passed===false) gate the merge; no-results / null
+// verifies still log but do NOT HELD, to avoid trading audit-false-HELD for verify-flake-HELD.
+const buildFailed = stepResults.some(s => s.verify && s.verify.passed === false)
+log("build done: " + stepResults.length + " steps, " + (stepResults.length - failedSteps.length) + " verified, " + failedSteps.length + " unverified; buildFailed=" + buildFailed)
 
-// ─── Phase: Diff-audit (audit produced diff against merged checklist) ───
-phase("Diff-audit")
-const audit = await agent(AUDIT_PROMPT(checklistBlock), { label: "diff-audit", phase: "Diff-audit", schema: AUDIT_SCHEMA })
-const auditById = new Map()
-if (audit && Array.isArray(audit.items)) {
-  for (const it of audit.items) auditById.set(it.id, it)
-}
-// Any checklist item the auditor failed to address counts as present-but-unverified
-// (conservative: a missing audit entry is NOT a pass).
-const auditUnverified = checklist.filter(c => {
-  const a = auditById.get(c.id)
-  if (!a) return true
-  return a.present === true && a.verified !== true
-})
-log("diff-audit: " + (audit ? auditById.size : 0) + "/" + checklist.length + " items addressed, " + auditUnverified.length + " present-but-unverified")
-
-// ─── Phase: Review/Fix (planned reviewer set; capped worst-of-N loop; verdict in code) ───
+// ─── Phase: Review/Fix (resolve+freeze scope per round; in-loop diff-audit + worst-of-N review; advisory gate in code) ───
 phase("Review/Fix")
-
-// Plan the reviewer set: map changed files onto registered specialist reviewers,
-// and synthesize ad-hoc reviewers for any dimension none of them cover.
 const registryBlock = REVIEWER_REGISTRY.map(r => "- " + r.agentType + " — " + r.when).join("\n")
-const reviewPlan = await agent(REVIEW_PLAN_PROMPT(registryBlock), { label: "review-plan", phase: "Review/Fix", schema: REVIEW_PLAN_SCHEMA })
-const reviewerTasks = []
-const usedTypes = new Set()
-for (const a of ((reviewPlan && reviewPlan.assigned) || [])) {
-  if (REGISTERED_TYPES.has(a.agentType) && !usedTypes.has(a.agentType)) {
-    usedTypes.add(a.agentType)
-    reviewerTasks.push({ kind: "named", agentType: a.agentType, label: a.agentType })
-  }
-}
-for (const a of ((reviewPlan && reviewPlan.adhoc) || [])) {
-  reviewerTasks.push({ kind: "adhoc", focus: a.focus, label: "adhoc:" + (normKey(a.aspect).replace(/ /g, "-") || "aspect") })
-}
-// Always keep at least one reviewer; cap the total to avoid fan-out blowup.
-if (reviewerTasks.length === 0) reviewerTasks.push({ kind: "adhoc", focus: "General spec-conformance and correctness review of the entire diff.", label: "adhoc:general" })
-const cappedTasks = reviewerTasks.slice(0, MAX_REVIEWERS)
-if (reviewerTasks.length > MAX_REVIEWERS) log("review plan: " + reviewerTasks.length + " reviewers capped to " + MAX_REVIEWERS)
-log("review plan: " + cappedTasks.map(t => t.label).join(", "))
-const changedBlock = "Inspect via `git -C " + (BASE_PATH || ".") + " diff`."
 
+let cappedTasks = []
 let round = 0
 let worstVerdict = "BLOCK"
 let unverifiedItems = checklist.slice()
 let lastFindings = []
 let gatePassed = false
+let lastFrozenPaths = new Set()
+let lastPorcelain = ""
+let lastScopeConsistent = true
+let lastAuditCount = 0
 
 while (round < MAX_REVIEW_ROUNDS) {
   round++
+
+  // Resolve + FREEZE the changed-file set for THIS round (the fix agent mutates the tree between rounds).
+  const resolved = await agent(RESOLVE_PROMPT(), { label: "resolve-diff:r" + round, phase: "Review/Fix", schema: RESOLVED_SET_SCHEMA })
+  const parsed = resolved ? parsePorcelain(resolved.porcelain) : { files: [], count: 0 }
+  if (!resolved || parsed.count === 0) {
+    return { error: "Resolved changed-file set is EMPTY in basePath (git status --porcelain returned nothing) — refusing to review a phantom range; every reviewer would improvise its own.", specPath: SPEC_PATH, bdId: BD_ID, basePath: BASE_PATH, porcelain: (resolved && resolved.porcelain) || "" }
+  }
+  const frozenPaths = new Set(parsed.files.map(f => f.path))
+  lastFrozenPaths = frozenPaths
+  lastPorcelain = resolved.porcelain
+  const changedBlock = "Resolved changed-file set (orchestrator-authoritative — review ONLY these; any file not listed is OUT OF SCOPE):\n" +
+    parsed.files.map(f => "- " + f.status + " " + (f.oldPath ? f.oldPath + " -> " : "") + f.path).join("\n") +
+    "\n\nFetch per-file content via `git -C " + BASE_PATH + " diff HEAD -- <path>` (read untracked/added files directly)."
+  log("resolved r" + round + ": " + parsed.count + " files — " + parsed.files.map(f => f.path).join(", "))
+
+  // FIX (a): run the diff-audit on the frozen set THIS round, so a fix can CLEAR an audit finding.
+  const audit = await agent(AUDIT_PROMPT(checklistBlock, changedBlock), { label: "diff-audit:r" + round, phase: "Review/Fix", schema: AUDIT_SCHEMA })
+  const auditById = new Map(((audit && Array.isArray(audit.items)) ? audit.items : []).map(it => [it.id, it]))
+  lastAuditCount = auditById.size
+  const auditFindings = new Set()
+  for (const c of checklist) {
+    const a = auditById.get(c.id)
+    if (!a || (a.present === true && a.verified !== true)) auditFindings.add(c.id)
+  }
+
+  // Plan the reviewer set ONCE (round 1) from the now-resolved changed-file set.
+  if (round === 1) {
+    const reviewPlan = await agent(REVIEW_PLAN_PROMPT(registryBlock, changedBlock), { label: "review-plan", phase: "Review/Fix", schema: REVIEW_PLAN_SCHEMA })
+    const reviewerTasks = []
+    const usedTypes = new Set()
+    for (const a of ((reviewPlan && reviewPlan.assigned) || [])) {
+      if (REGISTERED_TYPES.has(a.agentType) && !usedTypes.has(a.agentType)) {
+        usedTypes.add(a.agentType)
+        reviewerTasks.push({ kind: "named", agentType: a.agentType, label: a.agentType })
+      }
+    }
+    for (const a of ((reviewPlan && reviewPlan.adhoc) || [])) {
+      reviewerTasks.push({ kind: "adhoc", focus: a.focus, label: "adhoc:" + (normKey(a.aspect).replace(/ /g, "-") || "aspect") })
+    }
+    if (reviewerTasks.length === 0) reviewerTasks.push({ kind: "adhoc", focus: "General spec-conformance and correctness review of the entire changed-file set.", label: "adhoc:general" })
+    cappedTasks = reviewerTasks.slice(0, MAX_REVIEWERS)
+    if (reviewerTasks.length > MAX_REVIEWERS) log("review plan: " + reviewerTasks.length + " reviewers capped to " + MAX_REVIEWERS)
+    log("review plan: " + cappedTasks.map(t => t.label).join(", "))
+  }
+
   const reviews = (await parallel(
     cappedTasks.map(task => () =>
       agent(REVIEW_PROMPT(task, changedBlock, checklistBlock, round),
@@ -444,35 +520,17 @@ while (round < MAX_REVIEW_ROUNDS) {
     continue
   }
 
-  // Worst-of-N verdict, computed in code (max rank wins).
-  const worstRank = reviews.reduce((acc, r) => Math.max(acc, verdictRank[r.verdict] ?? verdictRank.BLOCK), 0)
-  worstVerdict = verdictName[worstRank]
-
-  // Merge reviewer checklist verdicts: an item is unverified if ANY reviewer
-  // marks it present-but-unverified, OR no reviewer confirms it verified-safe.
-  const verifiedSafe = new Set()
-  const flaggedPresent = new Set()
-  for (const r of reviews) {
-    for (const c of (r.checklist || [])) {
-      if (c.verified === true && c.present !== true) verifiedSafe.add(c.id)
-      else if (c.verified === true && c.present === true) verifiedSafe.add(c.id)
-      if (c.present === true && c.verified !== true) flaggedPresent.add(c.id)
-    }
-  }
-  // Fold the diff-audit's present-but-unverified items in too.
-  for (const c of auditUnverified) flaggedPresent.add(c.id)
-  unverifiedItems = checklist.filter(c => flaggedPresent.has(c.id) || !verifiedSafe.has(c.id))
-
+  // Advisory gate, computed in code (FIX a/b/c folded into computeGate).
+  const gate = computeGate({ reviews, auditFindings, buildFailed, frozenPaths })
+  worstVerdict = gate.worstVerdict
+  unverifiedItems = checklist.filter(c => gate.unverifiedIds.includes(c.id))
+  lastScopeConsistent = gate.scopeConsistent
+  gatePassed = gate.gatePassed
   lastFindings = reviews.flatMap(r => (r.findings || []))
     .sort((a, b) => (sevRank[a.severity] ?? 9) - (sevRank[b.severity] ?? 9))
-
-  // HARD GATE (both conditions, computed in code — the model does not decide):
-  const verdictPass = worstVerdict === "PASS"
-  const checklistClean = unverifiedItems.length === 0
-  gatePassed = verdictPass && checklistClean
   log("round " + round + ": worst-of-" + reviews.length + " = " + worstVerdict +
-    " · unverified checklist items = " + unverifiedItems.length +
-    " · gate " + (gatePassed ? "PASS" : "HELD"))
+    " · unverified=" + unverifiedItems.length + " · scopeConsistent=" + gate.scopeConsistent +
+    " · gate " + (gatePassed ? "PASS" : "HELD (advisory)"))
 
   if (gatePassed) break
 
@@ -508,14 +566,20 @@ if (!gatePassed) {
 
 return {
   specPath: SPEC_PATH,
-  merged: gatePassed,
+  bdId: BD_ID,
+  basePath: BASE_PATH,
+  // FIX (d): the harness never merges — this is the advisory gate verdict, not a merge result.
+  gatePassed: gatePassed,
   verdict: worstVerdict,
   iterations: round,
   gate: {
     verdictPass: worstVerdict === "PASS",
     checklistClean: unverifiedItems.length === 0,
+    scopeConsistent: lastScopeConsistent,
     passed: gatePassed,
   },
+  resolvedChangedFiles: [...lastFrozenPaths],
+  resolvedPorcelain: lastPorcelain,
   unresolvedChecklist: unverifiedItems.map(c => ({ id: c.id, dimension: c.dimension, kind: c.kind, statement: c.statement })),
   findings: lastFindings,
   stats: {
@@ -526,12 +590,14 @@ return {
     planSteps: plan.steps.length,
     stepsVerified: stepResults.length - failedSteps.length,
     stepsUnverified: failedSteps.length,
-    auditItemsAddressed: audit ? auditById.size : 0,
-    auditUnverified: auditUnverified.length,
+    buildFailed: buildFailed,
+    auditItemsAddressed: lastAuditCount,
     reviewRounds: round,
     reviewersPlanned: cappedTasks.length,
     reviewersNamed: cappedTasks.filter(t => t.kind === "named").length,
     reviewersAdhoc: cappedTasks.filter(t => t.kind === "adhoc").length,
+    changedFileCount: lastFrozenPaths.size,
+    scopeConsistent: lastScopeConsistent,
     unresolved: unverifiedItems.length,
   },
 }

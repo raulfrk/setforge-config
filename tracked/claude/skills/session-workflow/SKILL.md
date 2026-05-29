@@ -38,11 +38,19 @@ The harness implements one pipeline per implementation unit. Its five stages map
 4. **Diff-audit** — audit the produced diff against the spec and the researched pitfalls.
 5. **Review / Fix** — a planner maps the diff onto the host-local specialist reviewers (`python-*`, `claude-md-*`, `markdown-*`) and **synthesizes ad-hoc reviewers for any changed artifact type none of them cover** (JS / workflow scripts, YAML, shell, Dockerfiles, …), so coverage is always complete; worst-of-N verdict; fix findings; re-review. Capped at 3 iterations. Unresolved items at the cap are logged, never silently dropped.
 
-### Hard merge gate
+### Advisory merge gate
 
-The harness returns a merge gate, not a merge. The gate is PASS ONLY when the worst-of-N review verdict is PASS AND zero checklist items remain present-or-unverified. The worst-of-N verdict is computed in code (BLOCK > CONCERNS > PASS), not by model judgment. Anything short of both conditions HOLDS the gate.
+The harness returns a merge gate, not a merge — and the gate is **ADVISORY**, not authoritative. It aggregates model verdicts in code (worst-of-N: BLOCK > CONCERNS > PASS) AND folds in the per-round diff-audit and a build-verify signal; the arithmetic is deterministic, but the *inputs* are model judgments. Because the hard rail bars auto-merge, a human always looks. The gate is PASS only when the worst-of-N verdict is PASS, no checklist item is positively flagged present-but-unverified by a reviewer or the in-loop audit, and no build step had a definite verify failure.
 
-On a PASS gate the human (or caller) runs the Phase 6 merge action and Phase 7 by hand per `session-flow`: `wt merge --no-squash` (ff-only) → `bd close` → `wt remove`, then the post-merge review against merged HEAD. The harness never runs these.
+**Each review round resolves and FREEZES one changed-file set** (`git status --porcelain` in `basePath`, parsed in the orchestrator) and injects it into every reviewer, the auditor, and the review-planner — no agent improvises its own git range. The result carries `gate.scopeConsistent` (false when a reviewer cited a file outside the frozen set — a probable phantom range) and `resolvedChangedFiles` / `resolvedPorcelain`.
+
+**Before any `wt merge`**, the operator runs `wf-report.py` (the zero-token report that carries the deterministic pytest/ruff/mypy floor) and checks `gate.scopeConsistent`. Operating on an advisory gate:
+
+- **Advisory PASS + scopeConsistent + wf-report green** → merge.
+- **Advisory HELD** → inspect. The operator MAY merge an advisory HELD when its reviewer findings are empty/unreproduced AND `gate.scopeConsistent` is true AND `wf-report` shows pytest/ruff/mypy green — this is the operator override (it replaces an in-code BLOCK→CONCERNS demotion, which can't run in-harness because the deterministic floor lives in `wf-report`).
+- **scopeConsistent false** → treat the run as untrustworthy (phantom range); do not merge on its verdict.
+
+On the decision to merge, the human runs Phase 6 + Phase 7 by hand per `session-flow`: `wt merge --no-squash` (ff-only) → `bd close` → `wt remove`, then the post-merge review against merged HEAD. The harness never runs these.
 
 ## Launch
 
@@ -51,7 +59,7 @@ Once deployed (`setforge install` syncs the source to `~/.claude/workflows/sessi
 - **Invoke**: `Workflow({ name: 'session-workflow-impl', args: { specPath, bdId, basePath } })`
   - `specPath` — path to the approved spec snapshot (required).
   - `bdId` — the bd issue carrying the contract (required).
-  - `basePath` — repo / worktree root the pipeline operates in.
+  - `basePath` — repo / worktree root the pipeline operates in (**required**: the per-round diff resolver runs `git -C basePath status --porcelain`; an absent basePath now hard-errors).
 
 Keep these arg names verbatim; the workflow reads them directly. The source lives at `tracked/claude/workflows/session-workflow-impl.js`; the `name` resolves to the deployed copy under `~/.claude/workflows/`.
 
