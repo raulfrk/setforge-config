@@ -54,6 +54,8 @@ Invoke `superpowers:writing-plans`. Implementation plan as a normal response (NO
 
 Invoke `superpowers:executing-plans`. Single-stream by default. Parallel when work decomposes into independent threads — two modes: (a) **cross-worktree** via the bd ↔ wt loop (one bd per worktree, sibling branches), or (b) **in-session multi-agent** via `superpowers:dispatching-parallel-agents` or `superpowers:subagent-driven-development` when the user asks for parallel work or tasks are naturally independent. TDD where the contract isn't obvious (`superpowers:test-driven-development`).
 
+> **See also:** `session-workflow` is a strict SUBSET — when an approved spec + bd issue already exist, it drives implementation Phases 4–5 plus the Phase 6 merge-gate decision (it computes the PASS/HELD gate; it does NOT run the merge). The merge action and all of Phase 7 stay manual. Use this skill (session-flow) for the full lifecycle (default); reach for `session-workflow` to mechanize just those implementation stages and the gate decision.
+
 ### Phase 5 — Review fan
 
 Review approach is host-local — configured in the `host-local-workflow` section below. For multi-artifact changes, review each artifact type's diff separately.

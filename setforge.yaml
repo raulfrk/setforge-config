@@ -88,6 +88,18 @@ tracked_files:
     src: claude/skills/handoff/SKILL.md
     dst: ~/.claude/skills/handoff/SKILL.md
 
+  claude_session_workflow_skill:
+    src: claude/skills/session-workflow/SKILL.md
+    dst: ~/.claude/skills/session-workflow/SKILL.md
+
+  claude_agent_pitfall_researcher:
+    src: claude/agents/pitfall-researcher.md
+    dst: ~/.claude/agents/pitfall-researcher.md
+
+  claude_session_workflow_impl:
+    src: claude/workflows/session-workflow-impl.js
+    dst: ~/.claude/workflows/session-workflow-impl.js
+
   vscode_serv_settings:
     src: vscode/vm/settings.json
     dst: ~/.vscode-server/data/Machine/settings.json
@@ -152,6 +164,8 @@ profiles:
       - claude_md
       - claude_settings
       - claude_session_flow_skill
+      - claude_session_workflow_skill
+      - claude_session_workflow_impl
       - claude_handoff_skill
       - claude_bd_skill
       - claude_wt_skill
@@ -169,6 +183,7 @@ profiles:
       - claude_agent_claude_md_specifics_reviewer
       - claude_agent_claude_md_prose_reviewer
       - claude_agent_markdown_prose_reviewer
+      - claude_agent_pitfall_researcher
       - vscode_serv_settings
       - vscode_workstation_settings
     # ─── Plugins (marketplace-sourced; offline via local-clone) ───
