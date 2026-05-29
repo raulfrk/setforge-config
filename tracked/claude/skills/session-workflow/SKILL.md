@@ -36,7 +36,7 @@ The harness implements one pipeline per implementation unit. Its five stages map
 2. **Plan** — turn the spec plus researched pitfalls into the concrete build steps.
 3. **Build** — run the pipeline step, then verify (tests / lint / build); quote real output.
 4. **Diff-audit** — audit the produced diff against the spec and the researched pitfalls.
-5. **Review / Fix** — multi-dimension review fan; fix findings; re-review. Capped at 3 iterations. Unresolved items at the cap are logged, never silently dropped.
+5. **Review / Fix** — a planner maps the diff onto the host-local specialist reviewers (`python-*`, `claude-md-*`, `markdown-*`) and **synthesizes ad-hoc reviewers for any changed artifact type none of them cover** (JS / workflow scripts, YAML, shell, Dockerfiles, …), so coverage is always complete; worst-of-N verdict; fix findings; re-review. Capped at 3 iterations. Unresolved items at the cap are logged, never silently dropped.
 
 ### Hard merge gate
 

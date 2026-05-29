@@ -11,7 +11,25 @@ export const meta = {
 // AND zero checklist items are present-but-unverified.
 
 const MAX_REVIEW_ROUNDS = 3
-const REVIEWERS_PER_ROUND = 3
+const MAX_REVIEWERS = 8
+
+// Host-local specialist reviewers available as agentType. The review planner
+// maps changed files onto these; for any review dimension none of them cover
+// (JS/workflow scripts, YAML/config, shell, Dockerfiles, lockfiles, ...) it
+// synthesizes an ad-hoc reviewer so coverage of the diff is always complete.
+const REVIEWER_REGISTRY = [
+  { agentType: "python-spec-reviewer", when: "python sources, pyproject.toml, CI workflows, pre-commit config (spec/contract conformance)" },
+  { agentType: "python-substance-reviewer", when: "python sources (design, error model, security)" },
+  { agentType: "python-specifics-reviewer", when: "python sources (conventions, type hints, test quality)" },
+  { agentType: "python-prose-reviewer", when: "python docstrings / prose" },
+  { agentType: "claude-md-spec-reviewer", when: "tracked/claude markdown: CLAUDE.md, skills, agents, workflow docs (spec conformance)" },
+  { agentType: "claude-md-form-reviewer", when: "tracked/claude markdown (structure, headers, links)" },
+  { agentType: "claude-md-substance-reviewer", when: "tracked/claude markdown (coherence, contradictions)" },
+  { agentType: "claude-md-specifics-reviewer", when: "tracked/claude markdown (project conventions)" },
+  { agentType: "claude-md-prose-reviewer", when: "tracked/claude markdown (prose quality)" },
+  { agentType: "markdown-prose-reviewer", when: "generic markdown outside tracked/claude (READMEs, docs, CHANGELOG)" },
+]
+const REGISTERED_TYPES = new Set(REVIEWER_REGISTRY.map(r => r.agentType))
 
 const RISK_DIMENSIONS = [
   { key: "concurrency", label: "concurrency/async", focus: "race conditions, unhandled rejections, floating promises, unbounded parallelism, missing timeout propagation" },
@@ -123,6 +141,19 @@ const FIX_SCHEMA = {
     filesTouched: { type: "array", items: { type: "string" } },
   },
 }
+const REVIEW_PLAN_SCHEMA = {
+  type: "object", required: ["assigned", "adhoc"],
+  properties: {
+    assigned: { type: "array", items: {
+      type: "object", required: ["agentType", "reason"],
+      properties: { agentType: { type: "string" }, reason: { type: "string" } },
+    }},
+    adhoc: { type: "array", items: {
+      type: "object", required: ["aspect", "focus"],
+      properties: { aspect: { type: "string" }, focus: { type: "string" } },
+    }},
+  },
+}
 
 // ─── Args guard ───
 phase("Research")
@@ -207,10 +238,26 @@ const AUDIT_PROMPT = (checklistBlock) =>
   "Do not skip items — emit one audit entry per checklist id.\n\n" +
   "## Merged risk checklist\n" + checklistBlock + "\n\nStructured output only."
 
-const REVIEW_PROMPT = (checklistBlock, n, round) =>
-  "## Implementation Reviewer (reviewer " + (n + 1) + "/" + REVIEWERS_PER_ROUND + ", round " + round + ")\n\n" +
+const REVIEW_PLAN_PROMPT = (registryBlock) =>
+  "## Review Coverage Planner\n\n" +
   "Spec: " + SPEC_PATH + "\n" +
   (BASE_PATH ? "Codebase base path: " + BASE_PATH + "\n" : "") +
+  "\n## Task\n" +
+  "Inspect the produced diff — run `git -C " + (BASE_PATH || ".") + " diff --name-only`, then look at the changes. " +
+  "Plan a review that covers EVERY changed artifact type.\n" +
+  "1. From the registry of available specialist reviewers below, choose the ones whose 'when' matches the changed files. Use each agentType at most once; do not assign a reviewer for an artifact type absent from the diff.\n" +
+  "2. For any changed artifact type the registry does NOT cover (e.g. JS / workflow scripts, YAML / config, shell, Dockerfiles, lockfiles), SYNTHESIZE an ad-hoc reviewer: name the aspect and write a focus clause telling a generalist reviewer exactly what to scrutinize for that artifact.\n" +
+  "Return `assigned` (registry agentTypes + reason) and `adhoc` (aspect + focus). Together they must cover the whole diff.\n\n" +
+  "## Registry of available specialist reviewers\n" + registryBlock + "\n\nStructured output only."
+
+const REVIEW_PROMPT = (task, changedBlock, checklistBlock, round) =>
+  "## Implementation Reviewer — " + task.label + " (round " + round + ")\n\n" +
+  "Spec: " + SPEC_PATH + "\n" +
+  (BASE_PATH ? "Codebase base path: " + BASE_PATH + "\n" : "") +
+  (task.kind === "adhoc"
+    ? "\n## Your aspect (no dedicated agent exists for this — you are the synthesized reviewer)\n" + task.focus + "\n"
+    : "") +
+  "\n## Changed files\n" + changedBlock + "\n" +
   "\n## Task\n" +
   "Review the produced diff for spec-conformance AND for every risk-checklist item below. Be skeptical.\n" +
   "Return a verdict: PASS | CONCERNS | BLOCK.\n" +
@@ -342,8 +389,31 @@ const auditUnverified = checklist.filter(c => {
 })
 log("diff-audit: " + (audit ? auditById.size : 0) + "/" + checklist.length + " items addressed, " + auditUnverified.length + " present-but-unverified")
 
-// ─── Phase: Review/Fix (capped worst-of-N loop; worst verdict computed in code) ───
+// ─── Phase: Review/Fix (planned reviewer set; capped worst-of-N loop; verdict in code) ───
 phase("Review/Fix")
+
+// Plan the reviewer set: map changed files onto registered specialist reviewers,
+// and synthesize ad-hoc reviewers for any dimension none of them cover.
+const registryBlock = REVIEWER_REGISTRY.map(r => "- " + r.agentType + " — " + r.when).join("\n")
+const reviewPlan = await agent(REVIEW_PLAN_PROMPT(registryBlock), { label: "review-plan", phase: "Review/Fix", schema: REVIEW_PLAN_SCHEMA })
+const reviewerTasks = []
+const usedTypes = new Set()
+for (const a of ((reviewPlan && reviewPlan.assigned) || [])) {
+  if (REGISTERED_TYPES.has(a.agentType) && !usedTypes.has(a.agentType)) {
+    usedTypes.add(a.agentType)
+    reviewerTasks.push({ kind: "named", agentType: a.agentType, label: a.agentType })
+  }
+}
+for (const a of ((reviewPlan && reviewPlan.adhoc) || [])) {
+  reviewerTasks.push({ kind: "adhoc", focus: a.focus, label: "adhoc:" + (normKey(a.aspect).replace(/ /g, "-") || "aspect") })
+}
+// Always keep at least one reviewer; cap the total to avoid fan-out blowup.
+if (reviewerTasks.length === 0) reviewerTasks.push({ kind: "adhoc", focus: "General spec-conformance and correctness review of the entire diff.", label: "adhoc:general" })
+const cappedTasks = reviewerTasks.slice(0, MAX_REVIEWERS)
+if (reviewerTasks.length > MAX_REVIEWERS) log("review plan: " + reviewerTasks.length + " reviewers capped to " + MAX_REVIEWERS)
+log("review plan: " + cappedTasks.map(t => t.label).join(", "))
+const changedBlock = "Inspect via `git -C " + (BASE_PATH || ".") + " diff`."
+
 let round = 0
 let worstVerdict = "BLOCK"
 let unverifiedItems = checklist.slice()
@@ -353,12 +423,11 @@ let gatePassed = false
 while (round < MAX_REVIEW_ROUNDS) {
   round++
   const reviews = (await parallel(
-    Array.from({ length: REVIEWERS_PER_ROUND }, (_, n) => () =>
-      agent(REVIEW_PROMPT(checklistBlock, n, round), {
-        label: "review:r" + round + ":" + n,
-        phase: "Review/Fix",
-        schema: REVIEW_VERDICT_SCHEMA,
-      })
+    cappedTasks.map(task => () =>
+      agent(REVIEW_PROMPT(task, changedBlock, checklistBlock, round),
+        task.kind === "named"
+          ? { agentType: task.agentType, label: "review:r" + round + ":" + task.label, phase: "Review/Fix", schema: REVIEW_VERDICT_SCHEMA }
+          : { label: "review:r" + round + ":" + task.label, phase: "Review/Fix", schema: REVIEW_VERDICT_SCHEMA })
     )
   )).filter(Boolean)
 
@@ -454,7 +523,9 @@ return {
     auditItemsAddressed: audit ? auditById.size : 0,
     auditUnverified: auditUnverified.length,
     reviewRounds: round,
-    reviewersPerRound: REVIEWERS_PER_ROUND,
+    reviewersPlanned: cappedTasks.length,
+    reviewersNamed: cappedTasks.filter(t => t.kind === "named").length,
+    reviewersAdhoc: cappedTasks.filter(t => t.kind === "adhoc").length,
     unresolved: unverifiedItems.length,
   },
 }
