@@ -1,14 +1,15 @@
 export const meta = {
   name: 'session-workflow-impl',
-  description: 'Parameterized implementation harness — anticipatory pitfall research, planning, gated build pipeline, diff-audit, and capped worst-of-N review/fix against a spec.',
-  whenToUse: 'When the user has an approved spec and wants it implemented end-to-end with built-in risk research and review gating. Pass args as an object {specPath, bdId, basePath}; specPath and bdId are required. The harness anticipates smells/bugs per risk dimension, builds step-by-step with per-step verification, audits the diff against the merged checklist, then loops worst-of-N review until PASS or the cap.',
-  phases: [{"title":"Research","detail":"Parallel inline per-dimension research prompt modeled on the pitfall-researcher agent, one per risk dimension; merge + dedup into one checklist"},{"title":"Plan","detail":"Single agent consumes spec + merged checklist, emits an ordered build plan"},{"title":"Build","detail":"Pipeline over plan steps: build agent then verify agent; verify gates progression"},{"title":"Diff-audit","detail":"Agent audits the produced diff against the merged checklist, marking each item present/verified"},{"title":"Review/Fix","detail":"Capped worst-of-N review loop; compute worst verdict in code; dispatch fix agent until PASS or cap"}],
+  description: 'Parameterized implementation harness — anticipatory pitfall research, planning, gated build pipeline, and a capped worst-of-N review/fix that resolves+freezes the changed-file set and audits it each round, against a spec.',
+  whenToUse: 'When the user has an approved spec and wants it implemented end-to-end with built-in risk research and review gating. Pass args as an object {specPath, bdId, basePath}; all three are required. The harness anticipates smells/bugs per risk dimension, builds step-by-step with per-step verification, then runs a capped worst-of-N review/fix loop that — each round — resolves+freezes one changed-file set, audits it, and reviews it, up to an advisory PASS gate or the cap.',
+  phases: [{"title":"Research","detail":"Parallel inline per-dimension research prompt modeled on the pitfall-researcher agent, one per risk dimension; merge + dedup into one checklist"},{"title":"Plan","detail":"Single agent consumes spec + merged checklist, emits an ordered build plan"},{"title":"Build","detail":"Pipeline over plan steps: build agent then verify agent; verify gates progression"},{"title":"Review/Fix","detail":"Per round: resolve+freeze the changed-file set, run the diff-audit on it, then a capped worst-of-N review; worst verdict + build-verify signal computed in code into an advisory gate; dispatch fix agent until PASS or cap"}],
 }
 
-// session-workflow-impl: Research → Plan → pipeline(Build → Verify) → Diff-audit → capped Review/Fix
-// args is an object: { specPath, bdId, basePath }. specPath + bdId required.
-// Gate is computed in code (not by model judgment): merge only when worst-of-N === PASS
-// AND zero checklist items are present-but-unverified.
+// session-workflow-impl: Research → Plan → pipeline(Build → Verify) → capped Review/Fix
+//   (each Review/Fix round: resolve+freeze changed-file set → in-loop diff-audit → worst-of-N review → fix)
+// args is an object: { specPath, bdId, basePath }. ALL THREE required.
+// The merge GATE is ADVISORY (the harness never merges): computed in code as worst-of-N === PASS
+// AND no checklist item positively flagged present-but-unverified AND no definite build-verify failure.
 
 const MAX_REVIEW_ROUNDS = 3
 const MAX_REVIEWERS = 8
@@ -231,7 +232,7 @@ const computeGate = ({ reviews, auditFindings, buildFailed, frozenPaths }) => {
 const RESEARCH_PROMPT = (dim) =>
   "## Pitfall Researcher: " + dim.label + "\n\n" +
   "Spec under implementation: " + SPEC_PATH + "\n" +
-  (BASE_PATH ? "Codebase base path: " + BASE_PATH + "\n" : "") +
+  "Codebase base path: " + BASE_PATH + "\n" +
   "\n## Your dimension\n**" + dim.label + "** — anticipate failure modes in: " + dim.focus + "\n\n" +
   "## Task\n" +
   "Read the spec. Anticipate the smells and bugs an implementation is LIKELY to introduce along THIS dimension only. " +
@@ -247,7 +248,7 @@ const RESEARCH_PROMPT = (dim) =>
 const PLAN_PROMPT = (checklistBlock) =>
   "## Build Planner\n\n" +
   "Spec to implement: " + SPEC_PATH + "\n" +
-  (BASE_PATH ? "Codebase base path: " + BASE_PATH + "\n" : "") +
+  "Codebase base path: " + BASE_PATH + "\n" +
   "\n## Anticipated-risk checklist (carry these constraints into every step)\n" + checklistBlock + "\n\n" +
   "## Task\n" +
   "Read the spec. Produce an ORDERED build plan: a sequence of independently-verifiable steps. " +
@@ -263,7 +264,7 @@ const PLAN_PROMPT = (checklistBlock) =>
 const BUILD_PROMPT = (step, checklistBlock) =>
   "## Builder: " + step.title + "\n\n" +
   "Spec: " + SPEC_PATH + "\n" +
-  (BASE_PATH ? "Codebase base path: " + BASE_PATH + "\n" : "") +
+  "Codebase base path: " + BASE_PATH + "\n" +
   "\n## Step\n" + step.instruction + "\n\n" +
   "## Risk checklist you must not violate\n" + checklistBlock + "\n\n" +
   "## Task\n" +
@@ -273,7 +274,7 @@ const BUILD_PROMPT = (step, checklistBlock) =>
 const VERIFY_PROMPT = (step) =>
   "## Step Verifier: " + step.title + "\n\n" +
   "Spec: " + SPEC_PATH + "\n" +
-  (BASE_PATH ? "Codebase base path: " + BASE_PATH + "\n" : "") +
+  "Codebase base path: " + BASE_PATH + "\n" +
   "\n## Step that was just built\n" + step.instruction + "\n\n" +
   "## How to verify\n" + (step.verify || "Inspect the change against the spec for this step.") + "\n\n" +
   "## Task\n" +
@@ -318,7 +319,7 @@ const RESOLVE_PROMPT = () =>
 const REVIEW_PROMPT = (task, changedBlock, checklistBlock, round) =>
   "## Implementation Reviewer — " + task.label + " (round " + round + ")\n\n" +
   "Spec: " + SPEC_PATH + "\n" +
-  (BASE_PATH ? "Codebase base path: " + BASE_PATH + "\n" : "") +
+  "Codebase base path: " + BASE_PATH + "\n" +
   (task.kind === "adhoc"
     ? "\n## Your aspect (no dedicated agent exists for this — you are the synthesized reviewer)\n" + task.focus + "\n"
     : "") +
@@ -337,7 +338,7 @@ const REVIEW_PROMPT = (task, changedBlock, checklistBlock, round) =>
 const FIX_PROMPT = (issuesBlock, checklistBlock) =>
   "## Fixer\n\n" +
   "Spec: " + SPEC_PATH + "\n" +
-  (BASE_PATH ? "Codebase base path: " + BASE_PATH + "\n" : "") +
+  "Codebase base path: " + BASE_PATH + "\n" +
   "\n## Issues to resolve (from worst-of-N review)\n" + issuesBlock + "\n\n" +
   "## Risk checklist you must not violate\n" + checklistBlock + "\n\n" +
   "## Task\n" +
@@ -469,9 +470,9 @@ while (round < MAX_REVIEW_ROUNDS) {
   const frozenPaths = new Set(parsed.files.map(f => f.path))
   lastFrozenPaths = frozenPaths
   lastPorcelain = resolved.porcelain
-  const changedBlock = "Resolved changed-file set (orchestrator-authoritative — review ONLY these; any file not listed is OUT OF SCOPE):\n" +
+  const changedBlock = "Resolved changed-file set (orchestrator-authoritative — operate ONLY on these; any file not listed is OUT OF SCOPE):\n" +
     parsed.files.map(f => "- " + f.status + " " + (f.oldPath ? f.oldPath + " -> " : "") + f.path).join("\n") +
-    "\n\nFetch per-file content via `git -C " + BASE_PATH + " diff HEAD -- <path>` (read untracked/added files directly)."
+    "\n\nFetch per-file content via `git -C " + BASE_PATH + " diff HEAD -- <path>` (for a renamed entry `old -> new`, diff the new path; read untracked/added files directly)."
   log("resolved r" + round + ": " + parsed.count + " files — " + parsed.files.map(f => f.path).join(", "))
 
   // FIX (a): run the diff-audit on the frozen set THIS round, so a fix can CLEAR an audit finding.
