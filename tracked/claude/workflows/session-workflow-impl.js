@@ -157,7 +157,13 @@ const REVIEW_PLAN_SCHEMA = {
 
 // ─── Args guard ───
 phase("Research")
-const ARGS = (args && typeof args === "object") ? args : {}
+// `args` may arrive as an object OR as a JSON string (the runtime serializes
+// the Workflow `args` input); accept both.
+let ARGS = args
+if (typeof ARGS === "string") {
+  try { ARGS = JSON.parse(ARGS) } catch (e) { ARGS = {} }
+}
+if (!ARGS || typeof ARGS !== "object") ARGS = {}
 const SPEC_PATH = (typeof ARGS.specPath === "string" && ARGS.specPath.trim()) || ""
 const BD_ID = (typeof ARGS.bdId === "string" && ARGS.bdId.trim()) || ""
 const BASE_PATH = (typeof ARGS.basePath === "string" && ARGS.basePath.trim()) || ""
