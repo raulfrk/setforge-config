@@ -35,7 +35,7 @@ The harness implements one pipeline per implementation unit. Its four stages map
 1. **Research** — anticipatory pitfall research. Runs an inline per-dimension research prompt (modeled on the `pitfall-researcher` agent) to surface domain-specific failure modes before any code is written.
 2. **Plan** — turn the spec plus researched pitfalls into the concrete build steps.
 3. **Build** — run the pipeline step, then verify (tests / lint / build); quote real output.
-4. **Review / Fix** — each round: resolve+freeze the changed-file set (see below), run the **diff-audit** on it against the spec and the researched pitfalls, then review. A planner maps the frozen set onto the host-local specialist reviewers (`python-*`, `claude-md-*`, `markdown-*`) and **synthesizes ad-hoc reviewers for any changed artifact type none of them cover** (JS / workflow scripts, YAML, shell, Dockerfiles, …), so coverage is always complete; worst-of-N verdict; fix findings; re-review. Capped at 3 iterations. Unresolved items at the cap are logged, never silently dropped.
+4. **Review / Fix** — each round: resolve+freeze the changed-file set (see below), run the **diff-audit** on it against the spec and the researched pitfalls, then review. A planner maps the frozen set onto the host-local specialist reviewers (`python-*`, `claude-md-*`, `markdown-*`) and **synthesizes ad-hoc reviewers for any changed artifact type none of them cover** (JS / workflow scripts, YAML, shell, Dockerfiles, …), so coverage is always complete; worst-of-N verdict; fix findings; re-review. Capped per profile (1–3 iterations; see **Cost profiles & routing**). Unresolved items at the cap are logged, never silently dropped.
 
 ### Advisory merge gate
 
@@ -43,7 +43,7 @@ The harness returns a merge gate, not a merge — and the gate is **ADVISORY**, 
 
 **Each review round resolves and FREEZES one changed-file set** (`git status --porcelain` in `basePath`, parsed in the orchestrator) and injects it into every reviewer, the auditor, and the review-planner — no agent improvises its own git range. The result carries `gate.scopeConsistent` (false when a reviewer cited a file outside the frozen set — a probable phantom range) and `resolvedChangedFiles` / `resolvedPorcelain`.
 
-**Before any `wt merge`**, the operator runs `wf-report.py` — *not yet shipped; it lands in a separate follow-up bead and carries the deterministic pytest/ruff/mypy floor* — and checks `gate.scopeConsistent`. Until it ships, run that pytest/ruff/mypy check by hand. Operating on an advisory gate:
+**Before any `wt merge`**, the operator runs `wf-report.py` — *not yet shipped; it will carry the deterministic pytest/ruff/mypy floor* — and checks `gate.scopeConsistent`. Until it ships, run that pytest/ruff/mypy check by hand. Operating on an advisory gate:
 
 - **Advisory PASS + scopeConsistent + wf-report green** → merge.
 - **Advisory HELD** → inspect. The operator MAY merge an advisory HELD when its reviewer findings are empty/unreproduced AND `gate.scopeConsistent` is true AND `wf-report` shows pytest/ruff/mypy green — this is the operator override (it replaces an in-code BLOCK→CONCERNS demotion, which can't run in-harness because the deterministic floor lives in `wf-report`).
@@ -57,7 +57,7 @@ The harness runs ONE implementation unit per invocation. Deciding what becomes a
 
 1. **Dependency edge = HARD CUT.** A bead never shares an invocation with its blocker — the harness gates a bundle as one unit and cannot merge-then-branch mid-run. List blockers first; merge each before a dependent's invocation runs.
 2. **High-risk goes alone, at `full`.** Any concurrency / security / data-format / irreversible / cross-module-contract change is its own invocation — a HELD must not block innocent beads, and a real BLOCK must not be cross-attributed.
-3. **Default SPLIT for trivial work.** N separate `light` runs are cheaper AND more robust than one bundled `standard` run (a bundle inflates plan steps + the checklist and shares one HELD blast radius). Bundle only mid-cohesion / mid-risk beads where the per-bead fixed overhead actually dominates.
+3. **Default SPLIT for trivial work.** N separate small runs are cheaper AND more robust than one bundled run (a bundle inflates plan steps + the checklist and shares one HELD blast radius) — these are the `light` candidates once its ship floor lifts, and `standard` until then (see **Cost profiles & routing**). Bundle only mid-cohesion / mid-risk beads where the per-bead fixed overhead actually dominates.
 
 Parallelism: run ~2 clusters abreast (not 4); keep Docker e2e OUT of clusters — one serial Phase-7 pass on merged HEAD. Partition clusters so sibling file-footprints are disjoint (cross-check each worktree's `resolvedChangedFiles`); merge ff-only by topo order; re-run the deterministic check on merged HEAD after any rebase.
 
@@ -75,13 +75,13 @@ Gate-bearing stages (per-step or unit verify, diff-audit, the reviewer, fix, the
 
 **Routing (operator-applied):** pick by three signals — `n` = beads in the unit, `lines` = rough changed-line estimate, `risk` = low | medium | high.
 
-- `light` if `risk == low` AND `n ≤ 4` AND `lines ≲ 50`.
+- `light` if `risk == low` AND `n ≤ 4` AND `lines ≲ 50` (currently served by `standard` — see the Ship floor below).
 - `standard` if `risk ≤ medium` AND `n ≤ 8` AND `lines ≲ 400` (and not `light`).
 - `full` if `risk == high` OR `n > 8` OR `lines ≳ 400` OR any change touches concurrency/security/data-format OR you are unsure.
 
 **Risk is a HARD VETO** — one high-risk change forces `full` even at `n == 1` / 3 lines. Thresholds are guidance, not asserts; "unsure → full" is the tiebreaker.
 
-**Ship floor (until measured):** point only `standard` (or `full`) at real beads until `light`'s single reviewer has measured defect-escape data on this artifact mix; `light` stays defined and testable meanwhile.
+**Ship floor (current — overrides the `light` row above):** until `light`'s single reviewer has measured defect-escape data on this artifact mix, route anything the rule would send to `light` to `standard` instead — point only `standard`/`full` at real beads. `light` stays defined and testable; lift this override once the data exists.
 
 > Model-tier savings are unverified — no call wired `opts.model` before this. Run a one-agent honor-check (inspect billed tokens for a forced cheap-model call) before relying on the down-tier; if the runtime ignores `opts.model`, only the dim/reviewer/round trims and the checklist cap carry. Measure light-vs-full as a token RATIO (cache-read accounting is ambiguous in absolutes).
 

@@ -486,7 +486,7 @@ if (P.perStepVerify) {
   // FIX (c): only DEFINITE verify failures (passed===false) gate; no-results do NOT HELD.
   buildFailed = stepResults.some(s => s.verify && s.verify.passed === false)
 } else {
-  // Per-UNIT verify (light/standard-cheap): build all steps, then ONE verify over the whole unit.
+  // Per-UNIT verify (light only — standard/full keep per-step): build all steps, then ONE verify over the whole unit.
   const built = (await pipeline(plan.steps, buildStage)).filter(Boolean)
   const unitVerify = await agent(VERIFY_UNIT_PROMPT(plan), { label: "verify:unit", phase: "Build", schema: VERIFY_STEP_SCHEMA })
   buildFailed = unitVerify ? unitVerify.passed === false : false
