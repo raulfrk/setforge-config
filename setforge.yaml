@@ -67,6 +67,10 @@ tracked_files:
     src: claude/agents/markdown-prose-reviewer.md
     dst: ~/.claude/agents/markdown-prose-reviewer.md
 
+  claude_agent_pitfall_researcher:
+    src: claude/agents/pitfall-researcher.md
+    dst: ~/.claude/agents/pitfall-researcher.md
+
   claude_skill_reviewing_python_code:
     src: claude/skills/reviewing-python-code/SKILL.md
     dst: ~/.claude/skills/reviewing-python-code/SKILL.md
@@ -179,6 +183,7 @@ profiles:
       - claude_agent_claude_md_specifics_reviewer
       - claude_agent_claude_md_prose_reviewer
       - claude_agent_markdown_prose_reviewer
+      - claude_agent_pitfall_researcher
       - vscode_serv_settings
       - vscode_workstation_settings
     # ─── Plugins (marketplace-sourced; offline via local-clone) ───

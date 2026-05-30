@@ -36,6 +36,8 @@ Invoke `superpowers:brainstorming`. Explore intent, requirements, constraints wi
 - the plain-brainstorm alternative,
 - PLUS a one-line recommendation on whether the task is complex enough to warrant the goal. `/goal` is user-typed in an interactive TUI — you cannot invoke it; you only surface the sentence.
 
+**Pitfall research (before the spec).** At the end of brainstorm — before writing the Phase 2 spec — dispatch the `pitfall-researcher` agent (via the Agent tool) for each load-bearing risk dimension the work touches (concurrency, security, error-model, resource-leak, API-misuse, etc.). Its per-dimension smell/bug checklists populate the spec's "Bugs and code smells to avoid" section, which Phase 5 review then checks against. For a multi-bead session, run it once over the combined scope; dispatch multiple dimensions in parallel.
+
 ### Phase 2 — Spec via plan mode
 
 `EnterPlanMode`. Write the spec VERBATIM into the plan body — no summary, no reflow. User reviews via revdiff (plan-review hook fires automatically). For a multi-bead session this is ONE combined spec covering all beads.
