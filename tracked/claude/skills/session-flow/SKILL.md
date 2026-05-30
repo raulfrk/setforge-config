@@ -164,7 +164,7 @@ The `pickup` skill owns the gate: present the matched handoff(s) + each project'
 | 2 | `EnterPlanMode` (built-in) | Spec / multi-option decisions |
 | 3 | `superpowers:writing-plans` | Before Phase 4 |
 | 4 | `superpowers:executing-plans` | Implementation (single-stream) |
-| 4 (parallel) | `superpowers:dispatching-parallel-agents` / `subagent-driven-development` | Multi-bead waves / in-session parallel |
+| 4 (parallel) | `superpowers:dispatching-parallel-agents` / `superpowers:subagent-driven-development` | Multi-bead waves / in-session parallel |
 | 5 | Host-local (see `host-local-workflow`) | After implementation |
 | 6 | `superpowers:verification-before-completion` | Before claiming success |
 | 7 | Same as Phase 5 | Against merged HEAD |
@@ -176,7 +176,5 @@ Also: `superpowers:test-driven-development` (when test IS the spec), `superpower
 <!-- setforge:user-section end host-local host-local-workflow hash=01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b -->
 
 <!-- setforge:user-section start host-local merge-policy -->
-## Merge policy (personal VM)
-
-Default merge mode: `ff-only`. Parallel multi-bead auto-switches to `merge-commit` when siblings cannot fast-forward.
-<!-- setforge:user-section end host-local merge-policy hash=2fce2c72d811e2ea78800612136a406c291e05090afe453561ee57a975957174 -->
+**Merge policy (this host).** Default merge mode: `ff-only`. Parallel multi-bead auto-switches to `merge-commit` when siblings cannot fast-forward.
+<!-- setforge:user-section end host-local merge-policy hash=87509232c71003f90bd3905c33b5e7de9cfbbde95ddc73d73a85aa44f01e7729 -->

@@ -31,10 +31,10 @@ Create a handoff bead to preserve session state for the next session.
 
 ## Discovery at next session
 
-SessionStart → `bd prime` → check `~/handoff/` for open beads → read content (project path, epic, context, suggested next-steps) → close the handoff bead (consumed) → `cd <project-dir>` → `bd show <epic-id>` + `bd ready` → present handoff context to user → **interactive gate**: `AskUserQuestion` with ready beads as options (handoff's suggested task marked Recommended) → user picks → claim and begin.
+Discovery is automatic and owned by the `pickup` skill — not this one. At session start the `handoff-discovery` SessionStart hook scans `~/handoff/`, path-matches each open handoff's `Workdir:` path against the session's start dir, and injects any match as context pointing at `pickup`. The `pickup` skill then runs the resume gate: present the matched handoff(s) + each project's `bd ready`, the user picks one or several, `pickup` closes the consumed handoff(s), claims, and enters the flow. See the `pickup` skill and the `session-flow` "Auto-resume" section for the full lifecycle.
 
-If `~/handoff/` does not exist, there are no handoffs — skip to normal `bd ready` flow. The directory is created on first handoff, not at setup time.
+If `~/handoff/` does not exist there are no handoffs; the hook creates + inits it for next time. The directory is created on first handoff or first session-start scan, not at setup time.
 
 ## Closing
 
-Handoff bead is closed immediately after reading — before presenting the interactive gate. Ephemeral, not long-lived.
+The consumed handoff bead is closed by `pickup` AFTER the user picks what to resume — never before the gate. It stays open until then, so an un-resumed handoff resurfaces next session. Ephemeral once consumed, not long-lived.
