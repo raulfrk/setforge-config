@@ -45,7 +45,7 @@ Invoke `superpowers:brainstorming`. Explore intent, requirements, constraints wi
 On approval:
 - **Carve** the combined spec into each selected bead's own `--design` / `--acceptance`. Each bead keeps an independent, self-runnable contract (a carved bead's acceptance must not depend on a sibling being merged first unless a real bd dep exists). The bd issue is the durable contract; the spec file is a historical snapshot.
 
-When writing the spec, include a "Bugs and code smells to avoid" section listing implementation pitfalls specific to the domain. Phase 5 review checks against these.
+When writing the spec, include a "Bugs and code smells to avoid" section listing implementation pitfalls specific to the domain — populated from the Phase 1 pitfall-research checklists where available. Phase 5 review checks against these.
 
 When revising a spec after review, open with a "Changes in this revision" section listing what changed and why — so the reviewer can focus on deltas without rereading the entire document.
 
