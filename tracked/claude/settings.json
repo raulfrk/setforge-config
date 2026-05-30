@@ -31,6 +31,15 @@
           }
         ],
         "matcher": ""
+      },
+      {
+        "hooks": [
+          {
+            "command": "bash \"$HOME/.claude/scripts/handoff-discovery.sh\"",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
       }
     ]
   },
