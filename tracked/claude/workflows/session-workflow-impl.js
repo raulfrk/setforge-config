@@ -1,18 +1,22 @@
 export const meta = {
   name: 'session-workflow-impl',
   description: 'Parameterized implementation harness — anticipatory pitfall research, planning, gated build pipeline, and a capped worst-of-N review/fix that resolves+freezes the changed-file set and audits it each round, against a spec.',
-  whenToUse: 'When the user has an approved spec and wants it implemented end-to-end with built-in risk research and review gating. Pass args as an object {specPath, bdId, basePath}; all three are required. The harness anticipates smells/bugs per risk dimension, builds step-by-step with per-step verification, then runs a capped worst-of-N review/fix loop that — each round — resolves+freezes one changed-file set, audits it, and reviews it, up to an advisory PASS gate or the cap.',
+  whenToUse: 'When the user has an approved spec and wants it implemented end-to-end with built-in risk research and review gating. Pass args as an object {specPath, bdId, basePath, profile}; specPath/bdId/basePath are required, profile (light|standard|full) is optional and defaults to full. The harness anticipates smells/bugs per risk dimension, builds step-by-step with per-step verification, then runs a capped worst-of-N review/fix loop that — each round — resolves+freezes one changed-file set, audits it, and reviews it, up to an advisory PASS gate or the cap.',
   phases: [{"title":"Research","detail":"Parallel inline per-dimension research prompt modeled on the pitfall-researcher agent, one per risk dimension; merge + dedup into one checklist"},{"title":"Plan","detail":"Single agent consumes spec + merged checklist, emits an ordered build plan"},{"title":"Build","detail":"Pipeline over plan steps: build agent then verify agent; verify gates progression"},{"title":"Review/Fix","detail":"Per round: resolve+freeze the changed-file set, run the diff-audit on it, then a capped worst-of-N review; worst verdict + build-verify signal computed in code into an advisory gate; dispatch fix agent until PASS or cap"}],
 }
 
 // session-workflow-impl: Research → Plan → pipeline(Build → Verify) → capped Review/Fix
 //   (each Review/Fix round: resolve+freeze changed-file set → in-loop diff-audit → worst-of-N review → fix)
-// args is an object: { specPath, bdId, basePath }. ALL THREE required.
+// args is an object: { specPath, bdId, basePath, profile }. specPath/bdId/basePath required;
+// profile (light|standard|full) optional, default full (= today's behavior byte-for-byte).
 // The merge GATE is ADVISORY (the harness never merges): computed in code as worst-of-N === PASS
 // AND no checklist item positively flagged present-but-unverified AND no definite build-verify failure.
 
 const MAX_REVIEW_ROUNDS = 3
 const MAX_REVIEWERS = 8
+// Read-volume cap: the merged checklist is re-embedded in every downstream prompt, so its
+// SIZE (not the agent count) is the dominant token cost. Cap to the top-N items by severity.
+const CHECKLIST_CAP = 20
 
 // Host-local specialist reviewers available as agentType. The review planner
 // maps changed files onto these; for any review dimension none of them cover
@@ -39,6 +43,19 @@ const RISK_DIMENSIONS = [
   { key: "resource-leak", label: "resource leak", focus: "unreleased handles/listeners, uncleared timers, missing cleanup in finally, unbounded caches/loops" },
   { key: "api-misuse", label: "API misuse", focus: "wrong primitive choice, contract mismatches, type/shape assumptions, out-of-order result mapping" },
 ]
+
+// Cost profiles selected by the `profile` arg (default `full` = today's behavior, byte-for-byte).
+// Knobs: dims (which RISK_DIMENSIONS keys to research), maxReviewers, maxRounds, perStepVerify
+// (false = one per-UNIT verify after the build pipeline instead of per-step), models (per-stage
+// model override). Gate-bearing stages — verify/unit-verify, diff-audit, the reviewer, fix, the
+// diff resolver — are NEVER down-tiered, so they carry no models key. The routing heuristic (which
+// profile for a task) lives in the session-workflow skill.
+const PROFILES = {
+  full:     { dims: RISK_DIMENSIONS.map(d => d.key), maxReviewers: MAX_REVIEWERS, maxRounds: MAX_REVIEW_ROUNDS, perStepVerify: true, models: {} },
+  standard: { dims: ["error-model", "api-misuse", "security"], maxReviewers: 3, maxRounds: 2, perStepVerify: true, models: { research: "sonnet", build: "sonnet" } },
+  light:    { dims: ["error-model", "api-misuse"], maxReviewers: 1, maxRounds: 1, perStepVerify: false, models: { research: "sonnet", plan: "sonnet", build: "sonnet" } },
+}
+const PROFILE_NAMES = Object.keys(PROFILES)
 
 // ─── Schemas ───
 const CHECKLIST_ITEM_SCHEMA = {
@@ -174,9 +191,14 @@ if (!ARGS || typeof ARGS !== "object") ARGS = {}
 const SPEC_PATH = (typeof ARGS.specPath === "string" && ARGS.specPath.trim()) || ""
 const BD_ID = (typeof ARGS.bdId === "string" && ARGS.bdId.trim()) || ""
 const BASE_PATH = (typeof ARGS.basePath === "string" && ARGS.basePath.trim()) || ""
+// Cost profile: light | standard | full. Invalid/absent → full (fail safe toward over-review).
+const PROFILE = (typeof ARGS.profile === "string" && PROFILE_NAMES.includes(ARGS.profile.trim())) ? ARGS.profile.trim() : "full"
+const P = PROFILES[PROFILE]
 if (!SPEC_PATH || !BD_ID || !BASE_PATH) {
   return { error: "session-workflow-impl requires args {specPath, bdId, basePath}; ALL THREE are mandatory (basePath drives the diff resolver — an ambiguous cwd reproduces the divergence bug). Pass them via Workflow({name: 'session-workflow-impl', args: {specPath, bdId, basePath}})." }
 }
+
+log("profile: " + PROFILE + " (dims=" + P.dims.length + " maxReviewers=" + P.maxReviewers + " maxRounds=" + P.maxRounds + " perStepVerify=" + P.perStepVerify + ")")
 
 // ─── Rank objects (computed in code, not by model) ───
 const verdictRank = { PASS: 0, CONCERNS: 1, BLOCK: 2 }
@@ -226,6 +248,15 @@ const computeGate = ({ reviews, auditFindings, buildFailed, frozenPaths }) => {
   // FIX (c): a DEFINITE build-verify failure HELDs the gate (no-results do not, to avoid flake-HELDs).
   const gatePassed = worstVerdict === "PASS" && unverifiedIds.length === 0 && !buildFailed
   return { worstVerdict, unverifiedIds, scopeConsistent, gatePassed }
+}
+
+// ─── Pure: cap the merged checklist to the top-N items by severity (high > medium > low) ───
+// Stable within a severity tier. The cap applies to the WHOLE working checklist (not just the
+// prompt) so the gate's per-id bookkeeping and the audit-omission check stay consistent with
+// what reviewers/auditors were actually shown.
+const capChecklist = (items, n) => {
+  const rank = { high: 0, medium: 1, low: 2 }
+  return [...items].sort((a, b) => (rank[a.severity] ?? 9) - (rank[b.severity] ?? 9)).slice(0, n)
 }
 
 // ─── Prompts ───
@@ -281,6 +312,16 @@ const VERIFY_PROMPT = (step) =>
   "Verify ONLY this step. Run the verify clause if it is a command; otherwise inspect. " +
   "Return passed=true only with concrete evidence (command output or specific inspection). " +
   "List any failures. Default passed=false if uncertain. Structured output only."
+
+const VERIFY_UNIT_PROMPT = (plan) =>
+  "## Unit Verifier\n\n" +
+  "Spec: " + SPEC_PATH + "\n" +
+  "Codebase base path: " + BASE_PATH + "\n" +
+  "\n## What was built (the whole unit, step by step)\n" +
+  plan.steps.map(s => "- " + s.id + ": " + s.title + (s.verify ? " — verify: " + s.verify : "")).join("\n") + "\n\n" +
+  "## Task\n" +
+  "Verify the WHOLE unit against the spec in one pass: run each step's verify clause where it is a command, otherwise inspect the produced changes as a whole. " +
+  "Return passed=true only with concrete evidence (command output or specific inspection). List any failures. Default passed=false if uncertain. Structured output only."
 
 const AUDIT_PROMPT = (checklistBlock, changedBlock) =>
   "## Diff Auditor\n\n" +
@@ -346,12 +387,15 @@ const FIX_PROMPT = (issuesBlock, checklistBlock) =>
   "Report status, a summary, the issue ids you addressed, and files touched. Structured output only."
 
 // ─── Phase: Research (anticipatory, parallel per dimension) ───
+// Profile selects which risk dimensions to research (null = all).
+const activeDims = RISK_DIMENSIONS.filter(d => P.dims.includes(d.key))
 const researchResults = (await parallel(
-  RISK_DIMENSIONS.map(dim => () =>
+  activeDims.map(dim => () =>
     agent(RESEARCH_PROMPT(dim), {
       label: "research:" + dim.key,
       phase: "Research",
       schema: RESEARCH_SCHEMA,
+      ...(P.models.research ? { model: P.models.research } : {}),
     }).then(r => {
       if (!r) return null
       log("research " + dim.key + ": " + r.items.length + " items")
@@ -376,8 +420,11 @@ for (const r of researchResults) {
     checklistById.set(item.id, item)
   }
 }
-const checklist = [...checklistById.values()]
-log("merged checklist: " + checklist.length + " items (" + droppedDupes + " dupes dropped) from " + researchResults.length + "/" + RISK_DIMENSIONS.length + " dimensions")
+const mergedChecklist = [...checklistById.values()]
+// Cap to top-N by severity (the whole working checklist, so gate bookkeeping stays consistent
+// with what reviewers/auditors are shown — see capChecklist).
+const checklist = capChecklist(mergedChecklist, CHECKLIST_CAP)
+log("merged checklist: " + mergedChecklist.length + " items (" + droppedDupes + " dupes dropped) from " + researchResults.length + "/" + activeDims.length + " dimensions; capped to " + checklist.length)
 
 if (checklist.length === 0) {
   return { error: "Research produced an empty checklist — all dimension researchers returned null or no items. Cannot gate the build.", specPath: SPEC_PATH }
@@ -392,56 +439,63 @@ const checklistBlock = renderChecklist(checklist)
 
 // ─── Phase: Plan ───
 phase("Plan")
-const plan = await agent(PLAN_PROMPT(checklistBlock), { label: "plan", phase: "Plan", schema: PLAN_SCHEMA })
+const plan = await agent(PLAN_PROMPT(checklistBlock), { label: "plan", phase: "Plan", schema: PLAN_SCHEMA, ...(P.models.plan ? { model: P.models.plan } : {}) })
 if (!plan) {
   return { error: "Plan agent returned no result — cannot derive build steps.", specPath: SPEC_PATH, checklistItems: checklist.length }
 }
 log("plan: " + plan.steps.length + " steps")
 
-// ─── Phase: Build (pipeline — per step: build then verify; verify gates progression) ───
+// ─── Phase: Build (build per step; verify per-step or once per-UNIT, per profile) ───
 phase("Build")
-const buildOutcomes = await pipeline(
-  plan.steps,
-
-  step => agent(BUILD_PROMPT(step, checklistBlock), {
-    label: "build:" + step.id,
-    phase: "Build",
-    schema: BUILD_STEP_SCHEMA,
-  }).then(b => {
-    if (!b) {
-      log("build " + step.id + ": no result (skipped)")
-      return { step, build: null }
-    }
-    log("build " + step.id + ": " + b.status + " — " + b.summary)
-    return { step, build: b }
-  }),
-
-  built => {
-    if (!built.build) return { stepId: built.step.id, built: null, verify: null, gated: false }
-    return agent(VERIFY_PROMPT(built.step), {
-      label: "verify:" + built.step.id,
-      phase: "Build",
-      schema: VERIFY_STEP_SCHEMA,
-    }).then(v => {
-      if (!v) {
-        log("verify " + built.step.id + ": no result — treating as not-passed")
-        return { stepId: built.step.id, built: built.build, verify: null, gated: false }
-      }
-      log("verify " + built.step.id + ": " + (v.passed ? "PASS" : "FAIL") + " — " + v.evidence)
-      return { stepId: built.step.id, built: built.build, verify: v, gated: v.passed === true }
-    }).catch(e => {
-      log("verify " + built.step.id + " errored: " + (e.message || e))
-      return { stepId: built.step.id, built: built.build, verify: null, gated: false }
-    })
+const buildStage = step => agent(BUILD_PROMPT(step, checklistBlock), {
+  label: "build:" + step.id,
+  phase: "Build",
+  schema: BUILD_STEP_SCHEMA,
+  ...(P.models.build ? { model: P.models.build } : {}),
+}).then(b => {
+  if (!b) {
+    log("build " + step.id + ": no result (skipped)")
+    return { step, build: null }
   }
-)
+  log("build " + step.id + ": " + b.status + " — " + b.summary)
+  return { step, build: b }
+})
 
-const stepResults = buildOutcomes.filter(Boolean)
+const verifyStage = built => {
+  if (!built.build) return { stepId: built.step.id, built: null, verify: null, gated: false }
+  return agent(VERIFY_PROMPT(built.step), {
+    label: "verify:" + built.step.id,
+    phase: "Build",
+    schema: VERIFY_STEP_SCHEMA,
+  }).then(v => {
+    if (!v) {
+      log("verify " + built.step.id + ": no result — treating as not-passed")
+      return { stepId: built.step.id, built: built.build, verify: null, gated: false }
+    }
+    log("verify " + built.step.id + ": " + (v.passed ? "PASS" : "FAIL") + " — " + v.evidence)
+    return { stepId: built.step.id, built: built.build, verify: v, gated: v.passed === true }
+  }).catch(e => {
+    log("verify " + built.step.id + " errored: " + (e.message || e))
+    return { stepId: built.step.id, built: built.build, verify: null, gated: false }
+  })
+}
+
+let stepResults, buildFailed
+if (P.perStepVerify) {
+  stepResults = (await pipeline(plan.steps, buildStage, verifyStage)).filter(Boolean)
+  // FIX (c): only DEFINITE verify failures (passed===false) gate; no-results do NOT HELD.
+  buildFailed = stepResults.some(s => s.verify && s.verify.passed === false)
+} else {
+  // Per-UNIT verify (light/standard-cheap): build all steps, then ONE verify over the whole unit.
+  const built = (await pipeline(plan.steps, buildStage)).filter(Boolean)
+  const unitVerify = await agent(VERIFY_UNIT_PROMPT(plan), { label: "verify:unit", phase: "Build", schema: VERIFY_STEP_SCHEMA })
+  buildFailed = unitVerify ? unitVerify.passed === false : false
+  log("verify unit: " + (unitVerify ? (unitVerify.passed ? "PASS" : "FAIL") + " — " + unitVerify.evidence : "no result — not a definite failure"))
+  // Normalize to the per-step result shape; per-unit has no per-step verify, so `gated` reflects build success.
+  stepResults = built.map(b => ({ stepId: b.step.id, built: b.build, verify: null, gated: !!b.build }))
+}
 const failedSteps = stepResults.filter(s => !s.gated)
-// FIX (c): only DEFINITE verify failures (passed===false) gate the merge; no-results / null
-// verifies still log but do NOT HELD, to avoid trading audit-false-HELD for verify-flake-HELD.
-const buildFailed = stepResults.some(s => s.verify && s.verify.passed === false)
-log("build done: " + stepResults.length + " steps, " + (stepResults.length - failedSteps.length) + " verified, " + failedSteps.length + " unverified; buildFailed=" + buildFailed)
+log("build done: " + stepResults.length + " steps, " + (stepResults.length - failedSteps.length) + " gated, " + failedSteps.length + " not-gated; buildFailed=" + buildFailed)
 
 // ─── Phase: Review/Fix (resolve+freeze scope per round; in-loop diff-audit + worst-of-N review; advisory gate in code) ───
 phase("Review/Fix")
@@ -458,7 +512,7 @@ let lastPorcelain = ""
 let lastScopeConsistent = true
 let lastAuditCount = 0
 
-while (round < MAX_REVIEW_ROUNDS) {
+while (round < P.maxRounds) {
   round++
 
   // Resolve + FREEZE the changed-file set for THIS round (the fix agent mutates the tree between rounds).
@@ -500,8 +554,8 @@ while (round < MAX_REVIEW_ROUNDS) {
       reviewerTasks.push({ kind: "adhoc", focus: a.focus, label: "adhoc:" + (normKey(a.aspect).replace(/ /g, "-") || "aspect") })
     }
     if (reviewerTasks.length === 0) reviewerTasks.push({ kind: "adhoc", focus: "General spec-conformance and correctness review of the entire changed-file set.", label: "adhoc:general" })
-    cappedTasks = reviewerTasks.slice(0, MAX_REVIEWERS)
-    if (reviewerTasks.length > MAX_REVIEWERS) log("review plan: " + reviewerTasks.length + " reviewers capped to " + MAX_REVIEWERS)
+    cappedTasks = reviewerTasks.slice(0, P.maxReviewers)
+    if (reviewerTasks.length > P.maxReviewers) log("review plan: " + reviewerTasks.length + " reviewers capped to " + P.maxReviewers)
     log("review plan: " + cappedTasks.map(t => t.label).join(", "))
   }
 
@@ -535,7 +589,7 @@ while (round < MAX_REVIEW_ROUNDS) {
 
   if (gatePassed) break
 
-  if (round >= MAX_REVIEW_ROUNDS) break
+  if (round >= P.maxRounds) break
 
   // Dispatch a fix agent for the next round.
   const issuesBlock =
@@ -558,7 +612,7 @@ while (round < MAX_REVIEW_ROUNDS) {
 
 // Cap reached without passing: log unresolved items, do not loop forever.
 if (!gatePassed) {
-  log("REVIEW CAP REACHED (" + MAX_REVIEW_ROUNDS + " rounds) without PASS. worst verdict=" + worstVerdict +
+  log("REVIEW CAP REACHED (" + P.maxRounds + " rounds) without PASS. worst verdict=" + worstVerdict +
     ", unresolved checklist items=" + unverifiedItems.length)
   for (const c of unverifiedItems) {
     log("  unresolved [" + c.id + "] " + c.statement)
@@ -570,6 +624,7 @@ return {
   bdId: BD_ID,
   basePath: BASE_PATH,
   // FIX (d): the harness never merges — this is the advisory gate verdict, not a merge result.
+  profile: PROFILE,
   gatePassed: gatePassed,
   verdict: worstVerdict,
   iterations: round,
@@ -584,6 +639,10 @@ return {
   unresolvedChecklist: unverifiedItems.map(c => ({ id: c.id, dimension: c.dimension, kind: c.kind, statement: c.statement })),
   findings: lastFindings,
   stats: {
+    profile: PROFILE,
+    maxReviewers: P.maxReviewers,
+    maxRounds: P.maxRounds,
+    perStepVerify: P.perStepVerify,
     dimensionsResearched: researchResults.length,
     dimensionsTotal: RISK_DIMENSIONS.length,
     checklistItems: checklist.length,

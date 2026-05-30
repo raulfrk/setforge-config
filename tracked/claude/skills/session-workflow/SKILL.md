@@ -51,14 +51,49 @@ The harness returns a merge gate, not a merge — and the gate is **ADVISORY**, 
 
 On the decision to merge, the human runs Phase 6 + Phase 7 by hand per `session-flow`: `wt merge --no-squash` (ff-only) → `bd close` → `wt remove`, then the post-merge review against merged HEAD. The harness never runs these.
 
+## Intake & grouping (operator-applied, before launch)
+
+The harness runs ONE implementation unit per invocation. Deciding what becomes a unit is an operator step (the harness has no git/fs to do it). Three rules:
+
+1. **Dependency edge = HARD CUT.** A bead never shares an invocation with its blocker — the harness gates a bundle as one unit and cannot merge-then-branch mid-run. List blockers first; merge each before a dependent's invocation runs.
+2. **High-risk goes alone, at `full`.** Any concurrency / security / data-format / irreversible / cross-module-contract change is its own invocation — a HELD must not block innocent beads, and a real BLOCK must not be cross-attributed.
+3. **Default SPLIT for trivial work.** N separate `light` runs are cheaper AND more robust than one bundled `standard` run (a bundle inflates plan steps + the checklist and shares one HELD blast radius). Bundle only mid-cohesion / mid-risk beads where the per-bead fixed overhead actually dominates.
+
+Parallelism: run ~2 clusters abreast (not 4); keep Docker e2e OUT of clusters — one serial Phase-7 pass on merged HEAD. Partition clusters so sibling file-footprints are disjoint (cross-check each worktree's `resolvedChangedFiles`); merge ff-only by topo order; re-run the deterministic check on merged HEAD after any rebase.
+
+## Cost profiles & routing
+
+The harness runs one fixed pipeline; the `profile` arg scales its knobs. `full` is the default and is byte-for-byte today's behavior, so existing callers and any misroute fail safe toward over-review.
+
+| Profile | Research dims | Reviewers | Rounds | Per-step verify | Cheaper model on |
+|---|---|---|---|---|---|
+| `light` | 2 | 1 | 1 | no (one per-unit verify) | research / plan / build |
+| `standard` | 3 | 3 | 2 | yes | research / build |
+| `full` | all 5 | 8 | 3 | yes | none (all default) |
+
+Gate-bearing stages (per-step or unit verify, diff-audit, the reviewer, fix, the diff resolver) stay on the strong default model in every profile — only generators down-tier. The merged checklist is capped to the top-N items by severity in all profiles (read-volume, not agent count, is the dominant token cost).
+
+**Routing (operator-applied):** pick by three signals — `n` = beads in the unit, `lines` = rough changed-line estimate, `risk` = low | medium | high.
+
+- `light` if `risk == low` AND `n ≤ 4` AND `lines ≲ 50`.
+- `standard` if `risk ≤ medium` AND `n ≤ 8` AND `lines ≲ 400` (and not `light`).
+- `full` if `risk == high` OR `n > 8` OR `lines ≳ 400` OR any change touches concurrency/security/data-format OR you are unsure.
+
+**Risk is a HARD VETO** — one high-risk change forces `full` even at `n == 1` / 3 lines. Thresholds are guidance, not asserts; "unsure → full" is the tiebreaker.
+
+**Ship floor (until measured):** point only `standard` (or `full`) at real beads until `light`'s single reviewer has measured defect-escape data on this artifact mix; `light` stays defined and testable meanwhile.
+
+> Model-tier savings are unverified — no call wired `opts.model` before this. Run a one-agent honor-check (inspect billed tokens for a forced cheap-model call) before relying on the down-tier; if the runtime ignores `opts.model`, only the dim/reviewer/round trims and the checklist cap carry. Measure light-vs-full as a token RATIO (cache-read accounting is ambiguous in absolutes).
+
 ## Launch
 
 Once deployed (`setforge install` syncs the source to `~/.claude/workflows/session-workflow-impl.js`), invoke the harness BY NAME — not by source path:
 
-- **Invoke**: `Workflow({ name: 'session-workflow-impl', args: { specPath, bdId, basePath } })`
+- **Invoke**: `Workflow({ name: 'session-workflow-impl', args: { specPath, bdId, basePath, profile } })`
   - `specPath` — path to the approved spec snapshot (required).
   - `bdId` — the bd issue carrying the contract (required).
   - `basePath` — repo / worktree root the pipeline operates in (**required**: the per-round diff resolver runs `git -C basePath status --porcelain`; an absent basePath now hard-errors).
+  - `profile` — `light` | `standard` | `full`; defaults to `full` if omitted or invalid (safe: over-research a small fix, never under-review a big one). See **Cost profiles & routing** above for the per-profile knobs and the routing rule.
 
 Keep these arg names verbatim; the workflow reads them directly. The source lives at `tracked/claude/workflows/session-workflow-impl.js`; the `name` resolves to the deployed copy under `~/.claude/workflows/`.
 
