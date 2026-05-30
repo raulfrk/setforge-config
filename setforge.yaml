@@ -88,6 +88,14 @@ tracked_files:
     src: claude/skills/handoff/SKILL.md
     dst: ~/.claude/skills/handoff/SKILL.md
 
+  claude_pickup_skill:
+    src: claude/skills/pickup/SKILL.md
+    dst: ~/.claude/skills/pickup/SKILL.md
+
+  claude_handoff_hook:
+    src: claude/scripts/handoff-discovery.sh
+    dst: ~/.claude/scripts/handoff-discovery.sh
+
   vscode_serv_settings:
     src: vscode/vm/settings.json
     dst: ~/.vscode-server/data/Machine/settings.json
@@ -153,6 +161,8 @@ profiles:
       - claude_settings
       - claude_session_flow_skill
       - claude_handoff_skill
+      - claude_pickup_skill
+      - claude_handoff_hook
       - claude_bd_skill
       - claude_wt_skill
       - claude_challenge_skill
