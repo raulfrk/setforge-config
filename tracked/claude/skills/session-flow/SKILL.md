@@ -153,7 +153,7 @@ The `pickup` skill owns the gate: present the matched handoff(s) + each project'
    - Claude proposes a handoff proactively, OR
    - User invokes `/handoff` explicitly.
 3. **Create handoff bead in `~/handoff/`** — ALWAYS in the handoff repo, NEVER in the current project's beads database (auto-inits `~/handoff/` as git repo + beads on first use). See the `handoff` skill for the full field shape; critically, it records the **exact sub-project working path** so `handoff-discovery` can disambiguate (essential in a monorepo where several projects share one repo root).
-4. Handoff bead stays open until the next session consumes it (the `pickup` skill closes it immediately after reading).
+4. Handoff bead stays open until the next session consumes it — the `pickup` skill closes it after the user picks what to resume, never before the gate.
 5. **Discovery at next session**: SessionStart → `bd prime` + `handoff-discovery` hook → path-matched handoff(s) injected → invoke `pickup` → present context → user picks → claim and begin.
 
 ## Superpowers routing table

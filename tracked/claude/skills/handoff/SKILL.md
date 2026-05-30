@@ -31,9 +31,7 @@ Create a handoff bead to preserve session state for the next session.
 
 ## Discovery at next session
 
-Discovery is automatic and owned by the `pickup` skill — not this one. At session start the `handoff-discovery` SessionStart hook scans `~/handoff/`, path-matches each open handoff's `Workdir:` path against the session's start dir, and injects any match as context pointing at `pickup`. The `pickup` skill then runs the resume gate: present the matched handoff(s) + each project's `bd ready`, the user picks one or several, `pickup` closes the consumed handoff(s), claims, and enters the flow. See the `pickup` skill and the `session-flow` "Auto-resume" section for the full lifecycle.
-
-If `~/handoff/` does not exist there are no handoffs; the hook creates + inits it for next time. The directory is created on first handoff or first session-start scan, not at setup time.
+Discovery and the resume gate are owned by the `pickup` skill and the `handoff-discovery` SessionStart hook — not this skill. At session start the hook scans `~/handoff/` (creating + initializing it if absent), path-matches open handoffs' `Workdir:` paths against the session's start dir, and points `pickup` at any match. See the `pickup` skill and the `session-flow` "Auto-resume" section for the full lifecycle — including that the consumed handoff is closed only after the user picks.
 
 ## Closing
 
