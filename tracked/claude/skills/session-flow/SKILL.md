@@ -70,9 +70,9 @@ Invoke `superpowers:executing-plans`. TDD where the contract isn't obvious (`sup
 
 Review approach is host-local — configured in the `host-local-workflow` section below.
 
-The fan is **goal-wrapped** (iterate-to-clean):
-- **Interactive session** → surface a copy-paste `/goal` condition that drives the host-local fan to convergence (e.g. *"the reviewing-* fan reports no Important+ findings on this diff, or stop after N turns"*). You cannot invoke `/goal`; the user runs it.
-- **Background / agent session** (cannot type `/goal`) → run the fan via subagents and loop it yourself until clean. Same iterate-to-clean outcome, environment-appropriate mechanism.
+The fan is **goal-wrapped** (iterate-to-clean). **Always surface a copy-paste `/goal` condition** that drives the host-local fan to convergence — e.g. *"the reviewing-* fan reports no Important+ findings on this diff, or stop after N turns"* — regardless of session type (`/goal` works in interactive, agent-view, and remote sessions). You emit the condition; the user pastes it, and the evaluator forces re-review until the fan comes back clean.
+
+Additionally, when running non-interactively (no one is there to paste), also run the fan directly via subagents and loop it yourself until clean — but still surface the `/goal` condition so the user can drive it themselves when present.
 
 **Placement:** for multi-bead work, each bead gets its review fan in its own worktree **before that bead merges**; then ONE combined goal-wrapped fan runs post-integration (Phase 7). For multi-artifact changes, review each artifact type's diff separately.
 
