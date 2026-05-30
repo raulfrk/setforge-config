@@ -30,7 +30,11 @@ when_to_use: >-
 
 ## The 7-phase flow (STRICT GATE)
 
-Every task MUST follow all 7 phases in order. Escape hatch: user says "just do it" / "skip the flow" for THIS task only. If you judge a task simple enough to skip phases, ask the user first via AskUserQuestion — never skip without explicit consent.
+Every task MUST follow all 7 phases in order. SKIP ONLY after the user EXPLICITLY says so for THIS task — "just do it", "skip the flow", or a direct equivalent.
+
+These signals are NOT skip-permission — they mean run the flow, just leanly: "do all N in one go", "be quick", "knock these out", "batch these", or any speed / efficiency / batching phrasing. Doing several items "in one go" means run the flow ONCE over the whole batch — one brainstorm, one spec, one plan covering all of them — never skip the phases. Do NOT treat a prior message as the consent.
+
+If you think a task is simple enough to skip, you do NOT decide — ask via AskUserQuestion THIS turn and wait for an explicit yes.
 
 ### Phase 1 — Brainstorm
 
