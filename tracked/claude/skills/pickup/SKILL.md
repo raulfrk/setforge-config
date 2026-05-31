@@ -30,10 +30,10 @@ The `~/handoff` repo is a SEPARATE beads database from any project. Operate on i
 
 ## Monorepo note
 
-A monorepo is several projects in one git repo sharing ONE bead DB, with one epic per project. Handoffs are tagged with the EXACT sub-project working path so a root-level session surfaces every sub-project's handoff and the user disambiguates by picking. A single-repo project is one project (one DB, possibly many epics); the same gate applies, usually with a single match.
+A monorepo is several projects in one git repo sharing ONE bead DB, with one epic per project. Handoffs are tagged with the EXACT sub-project working path(s) — one `Workdir:` line per dir the work touches — so a root-level session surfaces every sub-project's handoff and the user disambiguates by picking. A single-repo project is one project (one DB, possibly many epics); the same gate applies, usually with a single match.
 
 ## Relationship to other skills
 
 - `session-flow` owns the full 7-phase flow this skill hands off to; its "Auto-resume" and "Session end + handoff" sections describe the hook + handoff lifecycle.
-- `handoff` owns CREATING handoff beads (including the exact-sub-project-path tag this skill matches on).
+- `handoff` owns CREATING handoff beads (including the `Workdir:` path tag(s) this skill matches on).
 - Invoke `bd-reference` before any `bd` command if not already loaded this session.
