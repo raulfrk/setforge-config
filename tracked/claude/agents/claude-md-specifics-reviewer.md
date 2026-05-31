@@ -52,3 +52,7 @@ Definition of done:
 - [ ] For every observation listed in the spec, traced its codification or its deferral.
 - [ ] If `setforge.yaml` touched: confirmed new entries match existing `tracked_files:` pattern and profile names are valid.
 - [ ] Validated cross-references to skills (bd-reference, wt-reference) point at real skill content.
+
+## Self-improvement
+
+If doing this job reveals a *generic* way THIS agent's instructions could be clearer or more correct, append a one-line `self_improvement:` note to your return (what + why). Do not act on it — the orchestrator surfaces it at the session-end pause for revdiff approval. Generic only; never touch this file's frontmatter (`tools`/`model`/`disallowedTools`); off-limits: hard rails and safety sections.

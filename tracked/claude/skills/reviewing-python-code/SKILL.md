@@ -98,3 +98,14 @@ Overall verdict: <worst-of-four — BLOCK > CONCERNS > PASS>
 - [ ] All 4 agents returned a `Verdict: ...` line.
 - [ ] Consolidated report produced with all 4 sub-reports verbatim.
 - [ ] Worst-of-four overall verdict computed and stated explicitly.
+
+## Self-improvement
+
+While using this skill, stay alert for any *generic* way it could be better — clearer wording, a missing case, a smoother step, a recurring friction it should prevent. Not only failures; any worthwhile improvement, noticed anytime.
+
+- **Don't edit mid-task.** Capture the observation; keep working.
+- **At a completion checkpoint** (a finished unit of work before the next, or session end), pause and, if anything surfaced, propose it as a diff to THIS file via revdiff — one edit per idea, citing what prompted it.
+- **Generic only.** Global config used across every project; never bake in project-specific detail (paths, repo/profile names, bead IDs) unless this artifact is itself project-scoped.
+- **Never auto-apply.** Propose via revdiff; the user approves every edit. Never write it yourself.
+- **Off-limits — never propose edits to:** hard rails, the safety/environment sections, system paths, `setforge:user-section` marker lines or their `hash=`, and *this self-improvement protocol itself* (the mechanism may not rewrite its own leash).
+- **Substantive, not noise.** Rare and load-bearing; not cosmetic rewording; never re-propose a declined idea.

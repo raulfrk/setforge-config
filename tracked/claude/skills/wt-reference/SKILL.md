@@ -82,3 +82,14 @@ For multi-bead waves: run `wt switch --create` N times serially (avoids git inde
 - Don't `wt remove` an unmerged worktree without explicit user confirmation — destructive.
 - Don't run multiple agents in the same worktree — the whole point is isolation.
 - Don't use `Agent` tool's `isolation: worktree` parameter for parallel dispatch in this build — auto-worktrees branch from a stale base AND their sandboxes deny git ops + file edits (empirical 2026-05-12; see bd setforge-7gf).
+
+## Self-improvement
+
+While using this skill, stay alert for any *generic* way it could be better — clearer wording, a missing case, a smoother step, a recurring friction it should prevent. Not only failures; any worthwhile improvement, noticed anytime.
+
+- **Don't edit mid-task.** Capture the observation; keep working.
+- **At a completion checkpoint** (a finished unit of work before the next, or session end), pause and, if anything surfaced, propose it as a diff to THIS file via revdiff — one edit per idea, citing what prompted it.
+- **Generic only.** Global config used across every project; never bake in project-specific detail (paths, repo/profile names, bead IDs) unless this artifact is itself project-scoped.
+- **Never auto-apply.** Propose via revdiff; the user approves every edit. Never write it yourself.
+- **Off-limits — never propose edits to:** hard rails, the safety/environment sections, system paths, `setforge:user-section` marker lines or their `hash=`, and *this self-improvement protocol itself* (the mechanism may not rewrite its own leash).
+- **Substantive, not noise.** Rare and load-bearing; not cosmetic rewording; never re-propose a declined idea.

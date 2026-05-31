@@ -53,3 +53,7 @@ Definition of done:
 - [ ] Deduped overlapping items; each is a distinct failure mode.
 - [ ] `severity` assigned to every item from the `high` | `medium` | `low` scale.
 - [ ] If pitfalls were omitted to fit the cap, the count and reason are stated in `summary` — nothing dropped silently.
+
+## Self-improvement
+
+If doing this job reveals a *generic* way THIS agent's instructions could be clearer or more correct, append a one-line `self_improvement:` note to your return (what + why). Do not act on it — the orchestrator surfaces it at the session-end pause for revdiff approval. Generic only; never touch this file's frontmatter (`tools`/`model`/`disallowedTools`); off-limits: hard rails and safety sections.

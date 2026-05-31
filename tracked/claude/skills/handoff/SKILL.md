@@ -31,8 +31,19 @@ Create a handoff bead to preserve session state for the next session.
 
 ## Discovery at next session
 
-Discovery and the resume gate are owned by the `pickup` skill and the `handoff-discovery` SessionStart hook — not this skill. At session start the hook scans `~/handoff/` (creating + initializing it if absent), path-matches open handoffs' `Workdir:` paths against the session's start dir, and points `pickup` at any match. See the `pickup` skill and the `session-flow` "Auto-resume" section for the full lifecycle — including that the consumed handoff is closed only after the user picks.
+Discovery and the resume gate are owned by the `pickup` skill — not this skill. Resume is opt-in (no SessionStart hook): the next session invokes `pickup` (directly, or via `session-flow`), which scans `~/handoff/`, path-matches open handoffs' `Workdir:` paths against the session's start dir, and runs the gate. See the `pickup` skill and the `session-flow` "Session start" / "Session end + handoff" sections for the full lifecycle — including that the consumed handoff is closed only after the user picks.
 
 ## Closing
 
 The consumed handoff bead is closed by `pickup` AFTER the user picks what to resume — never before the gate. It stays open until then, so an un-resumed handoff resurfaces next session. Ephemeral once consumed, not long-lived.
+
+## Self-improvement
+
+While using this skill, stay alert for any *generic* way it could be better — clearer wording, a missing case, a smoother step, a recurring friction it should prevent. Not only failures; any worthwhile improvement, noticed anytime.
+
+- **Don't edit mid-task.** Capture the observation; keep working.
+- **At a completion checkpoint** (a finished unit of work before the next, or session end), pause and, if anything surfaced, propose it as a diff to THIS file via revdiff — one edit per idea, citing what prompted it.
+- **Generic only.** Global config used across every project; never bake in project-specific detail (paths, repo/profile names, bead IDs) unless this artifact is itself project-scoped.
+- **Never auto-apply.** Propose via revdiff; the user approves every edit. Never write it yourself.
+- **Off-limits — never propose edits to:** hard rails, the safety/environment sections, system paths, `setforge:user-section` marker lines or their `hash=`, and *this self-improvement protocol itself* (the mechanism may not rewrite its own leash).
+- **Substantive, not noise.** Rare and load-bearing; not cosmetic rewording; never re-propose a declined idea.

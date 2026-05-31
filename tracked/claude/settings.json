@@ -12,35 +12,6 @@
         ],
         "matcher": ""
       }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "command": "bd prime",
-            "type": "command"
-          }
-        ],
-        "matcher": ""
-      },
-      {
-        "hooks": [
-          {
-            "command": "echo 'Session started. Invoke the session-flow skill now to load the 7-phase workflow before any work. Also invoke superpowers:using-superpowers to establish skill-invocation discipline.'",
-            "type": "command"
-          }
-        ],
-        "matcher": ""
-      },
-      {
-        "hooks": [
-          {
-            "command": "bash \"$HOME/.claude/scripts/handoff-discovery.sh\"",
-            "type": "command"
-          }
-        ],
-        "matcher": ""
-      }
     ]
   },
   "permissions": {

@@ -65,3 +65,7 @@ Definition of done:
 - [ ] Verified `pathlib.Path` usage; no `os.path.join` in new code.
 - [ ] Reviewed new tests for behavior-vs-implementation framing.
 - [ ] Verified type-hint coverage on every public function / method in the diff.
+
+## Self-improvement
+
+If doing this job reveals a *generic* way THIS agent's instructions could be clearer or more correct, append a one-line `self_improvement:` note to your return (what + why). Do not act on it — the orchestrator surfaces it at the session-end pause for revdiff approval. Generic only; never touch this file's frontmatter (`tools`/`model`/`disallowedTools`); off-limits: hard rails and safety sections.

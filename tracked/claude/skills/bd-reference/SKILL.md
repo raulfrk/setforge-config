@@ -1,6 +1,6 @@
 ---
 name: bd-reference
-description: Beads task-tracking command reference. Invoke at the first sign of bd involvement in a session (other than `bd prime`, which the SessionStart hook fires). Triggers include: any `bd` command (create/update/show/list/ready/close/note/comment/dep/search/recall), claiming an issue when work begins, looking up flag syntax, deciding which persistence layer (memory/note/comment/structured field) to use, lifecycle verbs (defer/supersede/stale/orphans), quality flags (--validate/--acceptance/--design/--notes), or handoff patterns between sessions or agents. If the next action involves creating, updating, claiming, closing, or querying a bd issue, invoke this skill first.
+description: Beads task-tracking command reference. Invoke at the first sign of bd involvement in a session (other than `bd prime`, which the PreCompact hook fires). Triggers include: any `bd` command (create/update/show/list/ready/close/note/comment/dep/search/recall), claiming an issue when work begins, looking up flag syntax, deciding which persistence layer (memory/note/comment/structured field) to use, lifecycle verbs (defer/supersede/stale/orphans), quality flags (--validate/--acceptance/--design/--notes), or handoff patterns between sessions or agents. If the next action involves creating, updating, claiming, closing, or querying a bd issue, invoke this skill first.
 ---
 
 # Beads command reference
@@ -81,3 +81,14 @@ When measure-then-decide work surfaces follow-up beads with concrete counts (e.g
 - `bd undefer <id>` / `bd reopen <id>` — restore deferred / reopen closed.
 - `bd supersede <id> --with=<new-id>` — mark replaced by a newer issue.
 - `bd stale` / `bd orphans` — find untouched issues / broken-dependency issues.
+
+## Self-improvement
+
+While using this skill, stay alert for any *generic* way it could be better — clearer wording, a missing case, a smoother step, a recurring friction it should prevent. Not only failures; any worthwhile improvement, noticed anytime.
+
+- **Don't edit mid-task.** Capture the observation; keep working.
+- **At a completion checkpoint** (a finished unit of work before the next, or session end), pause and, if anything surfaced, propose it as a diff to THIS file via revdiff — one edit per idea, citing what prompted it.
+- **Generic only.** Global config used across every project; never bake in project-specific detail (paths, repo/profile names, bead IDs) unless this artifact is itself project-scoped.
+- **Never auto-apply.** Propose via revdiff; the user approves every edit. Never write it yourself.
+- **Off-limits — never propose edits to:** hard rails, the safety/environment sections, system paths, `setforge:user-section` marker lines or their `hash=`, and *this self-improvement protocol itself* (the mechanism may not rewrite its own leash).
+- **Substantive, not noise.** Rare and load-bearing; not cosmetic rewording; never re-propose a declined idea.

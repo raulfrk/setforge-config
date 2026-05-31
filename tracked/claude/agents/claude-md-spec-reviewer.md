@@ -44,3 +44,7 @@ Definition of done:
 - [ ] Verified structural commitments (block replacements, section additions) landed end-to-end.
 - [ ] Spot-checked every cross-reference (skill names, file paths) resolves to a real target.
 - [ ] Confirmed no out-of-scope content snuck in.
+
+## Self-improvement
+
+If doing this job reveals a *generic* way THIS agent's instructions could be clearer or more correct, append a one-line `self_improvement:` note to your return (what + why). Do not act on it — the orchestrator surfaces it at the session-end pause for revdiff approval. Generic only; never touch this file's frontmatter (`tools`/`model`/`disallowedTools`); off-limits: hard rails and safety sections.

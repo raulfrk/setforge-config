@@ -42,3 +42,7 @@ Definition of done:
 - [ ] Verified header hierarchy matches the surrounding file's pattern.
 - [ ] Resolved every cross-reference and inline link.
 - [ ] Confirmed markdown renders cleanly (code fences closed, tables aligned).
+
+## Self-improvement
+
+If doing this job reveals a *generic* way THIS agent's instructions could be clearer or more correct, append a one-line `self_improvement:` note to your return (what + why). Do not act on it — the orchestrator surfaces it at the session-end pause for revdiff approval. Generic only; never touch this file's frontmatter (`tools`/`model`/`disallowedTools`); off-limits: hard rails and safety sections.

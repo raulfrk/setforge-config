@@ -1,21 +1,20 @@
 ---
 name: session-flow
-description: Dynamic 7-phase work flow (brainstorm → spec → plan → implement → review → fix+merge → post-merge) for single OR multiple beads, with parallel multi-bead waves, goal-wrapped review, learning mode, and host-configurable merge policy. Session lifecycle (auto-resume via handoff hook + pickup skill, epic discovery, session-end handoff). Superset of superpowers — adds bd, wt, revdiff, and handoff conventions on top. Deviation requires explicit user override. - Invoke at session start (SessionStart hook reminds you). Also invoke when starting any non-trivial task, resuming from a handoff, or when the user says 'work', 'implement', 'start working', or 'resume'.
+description: Dynamic 7-phase work flow (brainstorm → spec → plan → implement → review → fix+merge → post-merge) for single OR multiple beads, with parallel multi-bead waves, goal-wrapped review, learning mode, and host-configurable merge policy. Session lifecycle (opt-in handoff resume via the pickup skill, epic discovery, session-end handoff). Superset of superpowers — adds bd, wt, revdiff, and handoff conventions on top. Deviation requires explicit user override. - Invoke when starting any non-trivial task, resuming from a handoff, or when the user says 'work', 'implement', 'start working', or 'resume'.
 ---
 
 Base directory for this skill: /home/raul/.claude/skills/session-flow
 
 ## Session start
 
-1. SessionStart hooks fire `bd prime` (live workflow context) and `handoff-discovery` (scans `~/handoff`, path-matches open handoffs against the session's start dir, injects any match as context — see "Auto-resume" below).
-2. This skill loads (you're reading it now). Also invoke `superpowers:using-superpowers` to establish skill-invocation discipline for the session.
-3. **If the handoff hook injected a match** → invoke the `pickup` skill (it owns the resume gate: read the matched handoff(s), present context + ready beads, you pick one or several, it closes the consumed handoff, claims, and enters the flow). The hook only ever PRESENTS — it never auto-claims.
-4. **Otherwise — select work:**
+1. This skill loads when you invoke it — no SessionStart hook fires it; work-mode is opt-in. Also invoke `superpowers:using-superpowers` to establish skill-invocation discipline for the session.
+2. **Check for a paused handoff** → invoke the `pickup` skill. It scans `~/handoff`, path-matches open handoffs against the session's start dir, and owns the resume gate (present the matched handoff(s) + ready beads; you pick one or several; it closes the consumed handoff, claims, and enters the flow). If nothing matches it says so and falls through to fresh selection. NEVER auto-claim — the user always picks.
+3. **Select work** (no handoff, or you declined resume):
    - Multi-select from `bd ready`, OR the user passes bead IDs directly.
    - **One bead** → single-bead flow (Phases 1–7 over that bead).
    - **N beads** → multi-bead flow (the combined pipeline below; the gate runs ONCE over the batch).
    - If the selection mixes dependency-blocked or clearly unrelated beads → flag it, propose a grouping/sequence (or dropping some), and confirm with the user before brainstorming.
-5. **Discover the current epic** (when resuming a worktree without a fresh selection) — parse the worktree slug for the bd ID → `bd show <id>` → walk `--parent` until `type == "epic"`. Works for both layouts: a single-repo project (many epics, one DB) and a monorepo (one epic per project, one shared DB).
+4. **Discover the current epic** (when resuming a worktree without a fresh selection) — parse the worktree slug for the bd ID → `bd show <id>` → walk `--parent` until `type == "epic"`. Works for both layouts: a single-repo project (many epics, one DB) and a monorepo (one epic per project, one shared DB).
 
 ## The 7-phase flow (STRICT GATE)
 
@@ -31,10 +30,11 @@ There is no size-based "light tier": a one-line change runs the same seven phase
 
 Invoke `superpowers:brainstorming`. Explore intent, requirements, constraints with the user. **Never assume the user's decisions — ask via AskUserQuestion for every uncertainty.** Co-author the design — surface trade-offs, ask exhaustively, ground every option in concrete context. Produces or sharpens the bd issue(s). For a multi-bead session, this is ONE combined brainstorm covering all selected beads.
 
-**Brainstorm goal (premature-convergence guard).** For complex or multi-bead brainstorms, present BOTH:
-- a `/goal` sentence the user can paste — e.g. *"every design ambiguity across the selected beads is resolved and no open questions remain, or stop when I say stop"* (the evaluator forces another turn whenever the design is declared done while ambiguity remains), AND
-- the plain-brainstorm alternative,
-- PLUS a one-line recommendation on whether the task is complex enough to warrant the goal. `/goal` is user-typed in an interactive TUI — you cannot invoke it; you only surface the sentence.
+**Brainstorm goal (premature-convergence guard) — surface `/goal`, then END THE TURN.** For complex or multi-bead brainstorms, this is the FIRST thing you do — before grounding or any clarifying question:
+1. Present the copy-paste `/goal` sentence the user can paste — e.g. *"every design ambiguity across the selected beads is resolved and no open questions remain, or stop when I say stop"* (the evaluator forces another turn whenever the design is declared done while ambiguity remains).
+2. Present the plain-brainstorm alternative.
+3. Give a one-line recommendation on whether the task is complex enough to warrant the goal.
+4. **END THE TURN.** Do NOT proceed to clarifying questions, and do NOT call `EnterPlanMode`, until the user has set or declined the goal. `/goal` is user-typed in an interactive TUI — you cannot invoke it; you surface the sentence, then stop so the user can paste it. Surfacing it mid-turn and continuing in the same turn defeats the evaluator (it engages only between turns).
 
 **Pitfall research (before the spec).** At the end of brainstorm — before writing the Phase 2 spec — dispatch the `pitfall-researcher` agent (via the Agent tool) for each load-bearing risk dimension the work touches (concurrency, security, error-model, resource-leak, API-misuse, etc.). Its per-dimension smell/bug checklists populate the spec's "Bugs and code smells to avoid" section, which Phase 5 review then checks against. For a multi-bead session, run it once over the combined scope; dispatch multiple dimensions in parallel.
 
@@ -72,7 +72,9 @@ Invoke `superpowers:executing-plans`. TDD where the contract isn't obvious (`sup
 
 Review approach is host-local — configured in the `host-local-workflow` section below.
 
-The fan is **goal-wrapped** (iterate-to-clean). **Always surface a copy-paste `/goal` condition** that drives the host-local fan to convergence — e.g. *"the reviewing-* fan reports no Important+ findings on this diff, or stop after N turns"* — regardless of session type (`/goal` works in interactive, agent-view, and remote sessions). You emit the condition; the user pastes it, and the evaluator forces re-review until the fan comes back clean.
+The fan is **goal-wrapped** (iterate-to-clean). Before dispatching it:
+1. **Surface a copy-paste `/goal` review condition** that drives the host-local fan to convergence — e.g. *"the reviewing-* fan reports no Important+ findings on this diff, or stop after N turns"* — regardless of session type (`/goal` works in interactive, agent-view, and remote sessions).
+2. **END THE TURN** so the user can paste it; the evaluator then forces re-review until the fan comes back clean. As in Phase 1, surfacing the condition and continuing in the same turn defeats the evaluator.
 
 Additionally, when running non-interactively (no one is there to paste), also run the fan directly via subagents and loop it yourself until clean — but still surface the `/goal` condition so the user can drive it themselves when present.
 
@@ -137,41 +139,43 @@ Background sessions (bg jobs) have a harness-level isolation guard (`bgIsolation
 
 Never use bare `EnterWorktree` (without `--path`) in a bg session — it creates worktrees at `.claude/worktrees/`, bypassing wt's configured location, hooks, and tracking. The CLAUDE.md "General tools" section carries this rule so it survives context growth; this section provides the full sequence.
 
-## Auto-resume (handoff discovery)
-
-A SessionStart hook (`handoff-discovery`) makes resume frictionless — no need to type "resume from handoff". It is local-only (the `~/handoff` repo is a local concept; the hook no-ops where `~/handoff` is unreachable).
-
-The hook:
-- Reads open handoff beads from `~/handoff` (creating + initializing the repo if missing).
-- Path-matches a handoff's tagged `Workdir:` paths against the session's start dir (`$CLAUDE_PROJECT_DIR`) using a true path-boundary test ("at or below") — a handoff may carry several (e.g. an engine repo + a config repo) and matches when ANY of them is at or below. One match → inject it; several (a monorepo root over multiple sub-projects) → inject all matching; zero → stay silent.
-- Injects matching handoff(s) as context pointing to the `pickup` skill. It never auto-claims.
-
-The `pickup` skill owns the gate: present the matched handoff(s) + each project's `bd ready`, let the user pick one or several (several → feeds the multi-bead flow), close the consumed handoff bead(s), claim, and enter the flow.
-
 ## Session end + handoff
 
 1. If current bd is closed → done. No handoff needed.
 2. If current bd is paused (in_progress but session ending):
    - Claude proposes a handoff proactively, OR
    - User invokes `/handoff` explicitly.
-3. **Create handoff bead in `~/handoff/`** — ALWAYS in the handoff repo, NEVER in the current project's beads database (auto-inits `~/handoff/` as git repo + beads on first use). See the `handoff` skill for the full field shape; critically, it records the **exact sub-project working path(s)** — one `Workdir:` line per dir the work touches — so `handoff-discovery` can disambiguate (essential in a monorepo where several projects share one repo root, or when one handoff spans several repos).
+3. **Create handoff bead in `~/handoff/`** — ALWAYS in the handoff repo, NEVER in the current project's beads database (auto-inits `~/handoff/` as git repo + beads on first use). See the `handoff` skill for the full field shape; critically, it records the **exact sub-project working path(s)** — one `Workdir:` line per dir the work touches — so the `pickup` scan can disambiguate (essential in a monorepo where several projects share one repo root, or when one handoff spans several repos).
 4. Handoff bead stays open until the next session consumes it — the `pickup` skill closes it after the user picks what to resume, never before the gate.
-5. **Discovery at next session**: SessionStart → `bd prime` + `handoff-discovery` hook → path-matched handoff(s) injected → invoke `pickup` → present context → user picks → claim and begin.
+5. **Discovery at next session**: the next session invokes `pickup` (or `session-flow`, which checks pickup at step 2) → pickup scans `~/handoff`, path-matches → presents context → user picks → claim and begin. No hook fires this; resume is opt-in.
 
 ## Superpowers routing table
 
 | Phase | Skill to invoke | When |
 |---|---|---|
-| 1 | `superpowers:brainstorming` | Before creative work |
+| 1 | `superpowers:brainstorming` | Before creative work — surface `/goal` + END TURN before any clarifying question |
 | 2 | `EnterPlanMode` (built-in) | Spec / multi-option decisions |
 | 3 | `superpowers:writing-plans` | Before Phase 4 |
 | 4 | `superpowers:executing-plans` | Implementation (single-stream) |
 | 4 (parallel) | `superpowers:dispatching-parallel-agents` / `superpowers:subagent-driven-development` | Multi-bead waves / in-session parallel |
-| 5 | Host-local (see `host-local-workflow`) | After implementation |
+| 5 | Host-local (see `host-local-workflow`) | After implementation — surface `/goal` review condition + END TURN before dispatching the fan |
 | 6 | `superpowers:verification-before-completion` | Before claiming success |
 | 7 | Same as Phase 5 | Against merged HEAD |
 
 Also: `superpowers:test-driven-development` (when test IS the spec), `superpowers:subagent-driven-development` (in-session parallel sub-tasks), `superpowers:receiving-code-review` (processing review feedback).
+
+## Self-improvement
+
+While using this skill, stay alert for any *generic* way it could be better — clearer wording, a missing case, a smoother step, a recurring friction it should prevent. Not only failures; any worthwhile improvement, noticed anytime.
+
+- **Don't edit mid-task.** Capture the observation; keep working.
+- **At a completion checkpoint** (a finished unit of work before the next, or session end), pause and, if anything surfaced, propose it as a diff to THIS file via revdiff — one edit per idea, citing what prompted it.
+- **Generic only.** Global config used across every project; never bake in project-specific detail (paths, repo/profile names, bead IDs) unless this artifact is itself project-scoped.
+- **Never auto-apply.** Propose via revdiff; the user approves every edit. Never write it yourself.
+- **Off-limits — never propose edits to:** hard rails, the safety/environment sections, system paths, `setforge:user-section` marker lines or their `hash=`, and *this self-improvement protocol itself* (the mechanism may not rewrite its own leash).
+- **Substantive, not noise.** Rare and load-bearing; not cosmetic rewording; never re-propose a declined idea.
+
+**Precedence note (this skill):** the Phase 1 / Phase 5 `/goal` surface-then-END-TURN always takes precedence at a brainstorm or review boundary. A self-improvement pause waits for an actual task-completion or session-end checkpoint and never preempts a `/goal` surface.
 
 <!-- setforge:user-section start host-local host-local-workflow -->
 

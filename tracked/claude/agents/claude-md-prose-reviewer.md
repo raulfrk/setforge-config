@@ -48,3 +48,7 @@ Definition of done:
 - [ ] Flagged verbosity against the "would removing this cause a mistake?" rule.
 - [ ] Flagged clarity / hedging / jargon issues.
 - [ ] If `research_online: true`, fetched at least one genre exemplar; otherwise noted skip.
+
+## Self-improvement
+
+If doing this job reveals a *generic* way THIS agent's instructions could be clearer or more correct, append a one-line `self_improvement:` note to your return (what + why). Do not act on it — the orchestrator surfaces it at the session-end pause for revdiff approval. Generic only; never touch this file's frontmatter (`tools`/`model`/`disallowedTools`); off-limits: hard rails and safety sections.
