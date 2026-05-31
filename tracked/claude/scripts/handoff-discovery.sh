@@ -74,7 +74,8 @@ if not matched:
 
 lines = ["Open handoff(s) match this directory — invoke the `pickup` skill to resume:"]
 for it in matched:
-    lines.append(f"  - {it.get(\"id\")}: {it.get(\"title\")}")
+    hid, htitle = it.get("id"), it.get("title")
+    lines.append(f"  - {hid}: {htitle}")
 if len(matched) > 1:
     lines.append("Multiple matched (monorepo root); pickup will let you choose one or several.")
 
