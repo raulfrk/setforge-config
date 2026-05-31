@@ -37,7 +37,7 @@
 - **No speculative work.** Don't refactor, clean up, rename, or add features unprompted. One logical change per session unless told otherwise.
 - **Verify before claiming success.** Run the verification command (test / build / lint / manual repro) and quote its actual output. No success claims without evidence.
 - **Invoke matching skills aggressively.** If any skill might apply (even a 1% chance), invoke it before responding. Skip the rationalization that it's overhead.
-- **Self-improvement (corrections + proactive).** Treat user corrections — and any generic improvement you notice — as candidate edits to CLAUDE.md, a skill, or an agent. Capture them and propose at a completion checkpoint per the **Self-improvement** section below; never apply unprompted.
+- **Self-improvement (corrections + proactive).** Treat user corrections — and any generic improvement you notice — as candidate edits to CLAUDE.md, a skill, or an agent. Capture them and propose at a completion checkpoint per the **Self-improvement** section below.
 
 ## General tools
 
