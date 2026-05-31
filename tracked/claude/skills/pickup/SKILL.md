@@ -11,7 +11,7 @@ The `~/handoff` repo is a SEPARATE beads database from any project. Operate on i
 
 ## The resume gate
 
-1. **Locate matched handoff(s).** Read the hook-injected context (which handoff bead IDs matched this directory). If invoked directly with no injected context, run `cd ~/handoff && bd list --status open` and path-match each open handoff's tagged sub-project path against the current directory yourself (a handoff matches when its tagged path is at or below the session's start dir — a true path-boundary test, not a substring match).
+1. **Locate matched handoff(s).** Read the hook-injected context (which handoff bead IDs matched this directory). If invoked directly with no injected context, run `cd ~/handoff && bd list --status open` and path-match each open handoff yourself, mirroring the hook exactly (parity is the contract): iterate ALL of a handoff's tagged `Workdir:` paths and treat it as a match when ANY one is at or below the session's start dir — a true path-boundary test, not a substring match.
    - Zero matches → tell the user there's no handoff for this directory; fall back to the normal `session-flow` "Session start" path (select work via `bd ready`).
    - One match → proceed with it.
    - Several matches (a monorepo root over multiple sub-projects) → present all of them; the user may pick one OR several.

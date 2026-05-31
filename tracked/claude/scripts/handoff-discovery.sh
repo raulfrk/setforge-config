@@ -42,16 +42,21 @@ def at_or_below(tagged, base):
     t, b = norm(tagged), norm(base)
     return bool(t) and bool(b) and (t == b or t.startswith(b + os.sep))
 
-def tagged_path(item):
-    # Prefer an explicit "Workdir: <path>" line in the description; fall back
-    # to the path in the title format "Handoff: <name> (<path>)".
+def tagged_paths(item):
+    # Collect EVERY "Workdir: <path>" line in the description (in order), so a
+    # handoff spanning multiple repos surfaces in each tagged dir; fall back to
+    # the path in the title format "Handoff: <name> (<path>)" as a 1-element
+    # list when there are no Workdir lines. Returns [] when neither is present.
     desc = item.get("description") or ""
+    paths = []
     for line in desc.splitlines():
         m = re.match(r"\s*Workdir:\s*(.+?)\s*$", line)
         if m:
-            return m.group(1)
+            paths.append(m.group(1))
+    if paths:
+        return paths
     m = re.search(r"\(([^()]+)\)\s*$", item.get("title") or "")
-    return m.group(1) if m else ""
+    return [m.group(1)] if m else []
 
 try:
     data = json.load(sys.stdin)
@@ -66,7 +71,7 @@ for it in items:
     # so filter status ourselves.
     if (it.get("status") or "").lower() == "closed":
         continue
-    if at_or_below(tagged_path(it), project):
+    if any(at_or_below(p, project) for p in tagged_paths(it)):
         matched.append(it)
 
 if not matched:
