@@ -21,10 +21,10 @@ Dispatch inputs:
 
 Your aspects to check:
 
-1. **Missing requirements** — every load-bearing item from `--acceptance` and the spec is implemented. If acceptance includes commands that must exit 0, each command resolves to something runnable in the diff.
+1. **Missing requirements** — every load-bearing item from `--acceptance` and the spec is implemented. If acceptance includes commands that must exit 0, each command resolves to something runnable in the diff. When acceptance says "add symbol X to file Y" but X already exists at `BASE`, diff `BASE..HEAD` on Y before judging: a *reused* pre-existing symbol satisfies the requirement in substance (and is often the correct call over a duplicate). Verify provenance against `BASE`, not mere presence at `HEAD` — score it met and flag only the stale "added" wording.
 2. **Scope additions** — every meaningful change in the diff traces to a spec/contract requirement. Out-of-scope changes are CRITICAL findings (they violate the "keep changes small" rule).
-3. **Deviation justifications** — per observation D from setforge-23k, when the implementer's commit message claims "X was already true at <line>", verify that claim against the actual pre-branch state. Made-up justifications are IMPORTANT findings even when the change itself is sound.
-4. **Acceptance command runnability** — for each command in `--acceptance`, confirm the diff makes it runnable / true. E.g., if acceptance says `test -f foo.py`, confirm `foo.py` is present in `HEAD`.
+3. **Deviation justifications** — per observation D from setforge-23k, when the implementer's commit message claims "X was already true at <line>", verify that claim against the actual pre-branch state. Made-up justifications are IMPORTANT findings even when the change itself is sound. When the implementer instead overrides a buggy *acceptance/spec line* (a wrong worked example, or an "add X" criterion for an X that already exists), that follows the same precedent as a buggy spec-text claim: once you verify the override is correct, grade it CONCERNS-to-amend (recommend amending the bead text), NOT BLOCK.
+4. **Acceptance command runnability** — for each command in `--acceptance`, confirm the diff makes it runnable / true. E.g., if acceptance says `test -f foo.py`, confirm `foo.py` is present in `HEAD`. Beware a repo-wide `--cov-fail-under` in pytest `addopts`: it makes any single-file or sub-suite acceptance command exit non-zero on *coverage* even when every test passes. Verify the targeted run with `--no-cov` AND the full suite, and distinguish "tests failed" from "global coverage gate failed" before grading a command unrunnable.
 
 Output format (strictly):
 
