@@ -23,7 +23,7 @@ Your aspects to check:
 
 1. **Function length** — per the Python conventions in CLAUDE.md (function size, nesting depth). Long functions are IMPORTANT findings; suggest extraction.
 2. **Abstractions justified** — every new class / dataclass / Protocol / module boundary should serve a real need surfaced in the diff. Speculative abstractions are MINOR.
-3. **Error model coherence** — exceptions raised at boundaries; no swallowed exceptions; `from <exc>` chains preserved (no orphan `raise`). Violations are IMPORTANT.
+3. **Error model coherence** — exceptions raised at boundaries; no swallowed exceptions; `from <exc>` chains preserved (no orphan `raise`). Also trace each parse of external/hand-editable input (JSON/YAML/TOML, env vars, on-disk files) to its first attribute/index access: a syntactically-valid but non-conforming input — e.g. valid JSON that is a list or scalar where a dict is expected, or a record missing the expected keys — must be wrapped in a domain exception, not allowed to leak an unwrapped `AttributeError`/`KeyError`/`TypeError`. A decode-error-only guard (`except JSONDecodeError`) that lets wrong-shape input through is an IMPORTANT finding, and a type annotation the parse does not actually validate is a lie at the trust boundary. Violations are IMPORTANT.
 4. **Subprocess safety** — list args (no `shell=True` with non-literal), `check=True`, `timeout=`, `shutil.which()` for binaries. Violations are CRITICAL.
 5. **Path safety** — `pathlib.Path` and `/`; no path concatenation from user input. Violations are CRITICAL if user-controllable.
 6. **Simplification opportunities** — could a 20-line function be a 3-line one? Could a dict-of-callables be a `match`/`case`? Suggestions are MINOR.
@@ -47,6 +47,7 @@ Definition of done:
 - [ ] Audited every new subprocess call for shell-injection risk.
 - [ ] Audited every new path construction for traversal risk.
 - [ ] Looked for `raise ... ` without `from <exc>` chains.
+- [ ] Traced each external-input parse to its first attribute/index access — non-conforming-but-syntactically-valid input is wrapped in a domain exception, not leaking an unwrapped builtin.
 - [ ] Flagged speculative or unjustified abstractions.
 
 ## Self-improvement
