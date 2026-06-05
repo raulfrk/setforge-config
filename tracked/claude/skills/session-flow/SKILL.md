@@ -49,6 +49,8 @@ When writing the spec, include a "Bugs and code smells to avoid" section listing
 
 When revising a spec after review, open with a "Changes in this revision" section listing what changed and why — so the reviewer can focus on deltas without rereading the entire document.
 
+Before requesting approval, run a **decision-coverage check**: walk every Phase-1 `AskUserQuestion` answer and confirm each is reflected in the spec — and survives into the carved `--design` / `--acceptance`. A decision the user explicitly made that silently fails to land in the spec won't get built; without this check, review (or the user) becomes the last line of defense instead of the spec.
+
 ### Phase 3 — Plan
 
 Invoke `superpowers:writing-plans`. Implementation plan as a normal response (NOT plan mode). Walk implementation against actual code; verify symbol names exist; catch typos before code is written. MANDATORY before Phase 4 regardless of change size. For a multi-bead session, write **one plan per carved bead** (cross-bead ordering/overlap lives in the wave plan, Phase 4).
