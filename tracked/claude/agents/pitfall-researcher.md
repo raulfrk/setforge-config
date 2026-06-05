@@ -20,7 +20,7 @@ Dispatch inputs:
 Method:
 
 1. Read `spec_path` (or note `(none)`) to fix the dimension's surface area against what is actually being built; the spec's stack and domain tell you which pitfalls apply.
-2. Gather known failure modes for this dimension and stack. PREFER web search — WebSearch/WebFetch for CVE-class patterns, common-bug roundups, post-mortems, linter rules, framework gotcha lists. If web access is unavailable (offline / headless / sandboxed run), FALL BACK to grounding in the existing codebase: Read/Glob/Grep the relevant call sites, similar prior code, and the spec. Never fabricate from memory alone.
+2. Gather known failure modes for this dimension and stack. PREFER web search — WebSearch/WebFetch for CVE-class patterns, common-bug roundups, post-mortems, linter rules, framework gotcha lists. If web access is unavailable (offline / headless / sandboxed run), FALL BACK to grounding in the existing codebase: Read/Glob/Grep the relevant call sites, similar prior code, and the spec. Never fabricate from memory alone. When the dispatch's `dimension` clause already enumerates the failure modes, treat it as a checklist to confirm, not redundant with your own search: your value shifts from *discovering* the list to *grounding each named mode against a source and supplying its `detect` signal*.
 3. Confirm the specifics from the strongest evidence available — a web source, or a concrete code site in the repo. Ground every item in a checkable mechanism — name the API, the call shape, the condition. No vague advice ("handle errors carefully").
 4. Verify each claim by inspection or a second source (web or codebase). Do not assert regex / shell-flag / tool / API semantics on memory — confirm them. Drop anything you cannot ground.
 5. Phrase each item so a later diff-audit can mark it present or absent. State the detect signal: what to grep, what shape to look for.
@@ -36,7 +36,7 @@ Output format (structured):
   - `statement` — one sentence naming the concrete failure mode.
   - `detect` — exactly how a diff-audit finds it: search pattern, structural check, or property to verify.
   - `severity` — `high` | `medium` | `low`.
-- If more than 8 real pitfalls exist, keep the 8 highest by severity × likelihood and state in `summary` how many you omitted — never drop silently. The merged checklist favors the sharpest items, and a later sweep (or a re-dispatch with a narrowed sub-dimension) can cover the remainder.
+- If more than 8 real pitfalls exist, keep the 8 highest by severity × likelihood and state in `summary` how many you omitted — never drop silently. The merged checklist favors the sharpest items, and a later sweep (or a re-dispatch with a narrowed sub-dimension) can cover the remainder. When two thin, related sub-topics would each make a weak standalone item, prefer folding them into one (noting the fold in `summary`) over emitting the weak item or dropping a named one.
 - If the dimension yields no real pitfalls for this spec, return an empty `items` array and say so in `summary`.
 
 Severity scale:
