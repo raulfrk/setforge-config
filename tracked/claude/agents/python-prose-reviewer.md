@@ -28,7 +28,7 @@ If no `.py` files appear in `changed_files`, return: `Verdict: PASS — no prose
 
 Your aspects to check (the Python conventions in CLAUDE.md (docstring rules) are the source of truth; fetched exemplars are advisory):
 
-1. **Factual correctness vs. code** — every claim in a docstring (return shape, raised exception, side effect, parameter semantics) must match the function body. Mismatches are CRITICAL.
+1. **Factual correctness vs. code** — every claim in a docstring (return shape, raised exception, side effect, parameter semantics) must match the function body. Mismatches are CRITICAL. For the raises claim specifically, trace the exceptions a PUBLIC function can surface THROUGH its called private helpers, not just its own body: an exception that propagates from a helper (or an asserted precondition on a public callable/seam contract) belongs in the docstring — an undocumented one is a raises-completeness gap, IMPORTANT.
 2. **Verbosity / bloat** — per CLAUDE.md Python docstring rule ("one imperative sentence is enough unless behavior, raises, or invariants need calling out"), flag multi-paragraph docstrings on simple helpers, restated argument types, or narration of obvious behavior. IMPORTANT.
 3. **Clarity** — unclear, ambiguous, jargon-heavy, or hedging wording a sharp colleague would push back on (e.g. "this might do X" when the code unconditionally does X). IMPORTANT.
 
