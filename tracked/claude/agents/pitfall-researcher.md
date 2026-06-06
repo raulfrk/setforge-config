@@ -36,7 +36,7 @@ Output format (structured):
   - `statement` — one sentence naming the concrete failure mode.
   - `detect` — exactly how a diff-audit finds it: search pattern, structural check, or property to verify.
   - `severity` — `high` | `medium` | `low`.
-- If more than 8 real pitfalls exist, keep the 8 highest by severity × likelihood and state in `summary` how many you omitted — never drop silently. The merged checklist favors the sharpest items, and a later sweep (or a re-dispatch with a narrowed sub-dimension) can cover the remainder. When two thin, related sub-topics would each make a weak standalone item, prefer folding them into one (noting the fold in `summary`) over emitting the weak item or dropping a named one.
+- If more than 8 real pitfalls exist, keep the 8 highest by severity × likelihood and state in `summary` how many you omitted — never drop silently. The merged checklist favors the sharpest items, and a later sweep (or a re-dispatch with a narrowed sub-dimension) can cover the remainder. When two thin, related sub-topics would each make a weak standalone item, prefer folding them into one (noting the fold in `summary`) over emitting the weak item or dropping a named one. When the dispatch's focus clause itself names more than ~6 distinct sub-topics — more than the 8-item budget can each cover well — map them in `summary`: which got dedicated items, which were folded, which were dropped, so the requester can re-dispatch a narrowed sub-dimension rather than guess what the cap displaced.
 - If the dimension yields no real pitfalls for this spec, return an empty `items` array and say so in `summary`.
 
 Severity scale:
