@@ -116,22 +116,22 @@ tracked_files:
     src: vscode/vm/settings.json
     dst: ~/.vscode-server/data/Machine/settings.json
     preserve_user_keys:
-      - claudeCode.allowDangerouslySkipPermissions
-      - claudeCode.initialPermissionMode
+    - claudeCode.allowDangerouslySkipPermissions
+    - claudeCode.initialPermissionMode
       # Top-level editor.fontSize is host-local (per-host display preference);
       # whatever this VM's settings.json holds survives install.
-      - editor.fontSize
+    - editor.fontSize
       # Nested-path archetype (setforge-nen.19): `[python]`'s `editor.fontSize`
       # is host-local while sibling formatter / actions stay tracked.
-      - "[python] > editor.fontSize"
+    - "[python] > editor.fontSize"
 
   vscode_workstation_settings:
     src: vscode/workstation/settings.json
     dst: "{{ vscode_user_dir }}/settings.json"
     template: true
     preserve_user_keys:
-      - claudeCode.allowDangerouslySkipPermissions
-      - claudeCode.initialPermissionMode
+    - claudeCode.allowDangerouslySkipPermissions
+    - claudeCode.initialPermissionMode
 
 # ============================================================================
 # Claude marketplaces — registered via `claude plugin marketplace add`.
@@ -176,53 +176,54 @@ profiles:
   debian-vm:
     # ─── Claude content (markdown, settings, skills, agents, commands) ───
     tracked_files:
-      - claude_md
-      - claude_settings
-      - claude_session_flow_skill
-      - claude_handoff_skill
-      - claude_pickup_skill
-      - claude_bd_skill
-      - claude_wt_skill
-      - claude_challenge_skill
-      - claude_skill_reviewing_python_code
-      - claude_skill_reviewing_claude_md
-      - claude_skill_reviewing_markdown
-      - claude_skill_reviewing_rust_code
-      - claude_agent_python_spec_reviewer
-      - claude_agent_python_substance_reviewer
-      - claude_agent_python_specifics_reviewer
-      - claude_agent_python_prose_reviewer
-      - claude_agent_claude_md_spec_reviewer
-      - claude_agent_claude_md_form_reviewer
-      - claude_agent_claude_md_substance_reviewer
-      - claude_agent_claude_md_specifics_reviewer
-      - claude_agent_claude_md_prose_reviewer
-      - claude_agent_markdown_prose_reviewer
-      - claude_agent_pitfall_researcher
-      - claude_agent_rust_spec_reviewer
-      - claude_agent_rust_substance_reviewer
-      - claude_agent_rust_specifics_reviewer
-      - vscode_serv_settings
-      - vscode_workstation_settings
+    - claude_md
+    - claude_settings
+    - claude_session_flow_skill
+    - claude_handoff_skill
+    - claude_pickup_skill
+    - claude_bd_skill
+    - claude_wt_skill
+    - claude_challenge_skill
+    - claude_skill_reviewing_python_code
+    - claude_skill_reviewing_claude_md
+    - claude_skill_reviewing_markdown
+    - claude_skill_reviewing_rust_code
+    - claude_agent_python_spec_reviewer
+    - claude_agent_python_substance_reviewer
+    - claude_agent_python_specifics_reviewer
+    - claude_agent_python_prose_reviewer
+    - claude_agent_claude_md_spec_reviewer
+    - claude_agent_claude_md_form_reviewer
+    - claude_agent_claude_md_substance_reviewer
+    - claude_agent_claude_md_specifics_reviewer
+    - claude_agent_claude_md_prose_reviewer
+    - claude_agent_markdown_prose_reviewer
+    - claude_agent_pitfall_researcher
+    - claude_agent_rust_spec_reviewer
+    - claude_agent_rust_substance_reviewer
+    - claude_agent_rust_specifics_reviewer
+    - vscode_serv_settings
+    - vscode_workstation_settings
     # ─── Plugins (marketplace-sourced; offline via local-clone) ───
     claude_plugins:
-      - superpowers
-      - wiki
-      - revdiff
-      - revdiff-planning
+    - superpowers
+    - wiki
+    - revdiff
+    - revdiff-planning
     # ─── VS Code extensions ───
     extensions:
       include:
-        - anthropic.claude-code
-        - charliermarsh.ruff
-        - esbenp.prettier-vscode
-        - github.copilot-chat
-        - gruntfuggly.todo-tree
-        - mhutchie.git-graph
-        - ms-python.debugpy
-        - ms-python.python
-        - ms-python.vscode-pylance
-        - ms-python.vscode-python-envs
-        - redhat.vscode-yaml
-        - streetsidesoftware.code-spell-checker
-        - tamasfe.even-better-toml
+      - anthropic.claude-code
+      - charliermarsh.ruff
+      - esbenp.prettier-vscode
+      - github.copilot-chat
+      - gruntfuggly.todo-tree
+      - mhutchie.git-graph
+      - ms-python.debugpy
+      - ms-python.python
+      - ms-python.vscode-pylance
+      - ms-python.vscode-python-envs
+      - redhat.vscode-yaml
+      - streetsidesoftware.code-spell-checker
+      - tamasfe.even-better-toml
+schema_version: '1.2'
