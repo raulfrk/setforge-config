@@ -75,7 +75,7 @@ Invoke `superpowers:executing-plans`. TDD where the contract isn't obvious (`sup
 Review approach is host-local — configured in the `host-local-workflow` section below.
 
 The fan is **goal-wrapped** (iterate-to-clean). Before dispatching it:
-1. **Surface a copy-paste `/goal` review condition** that drives the host-local fan to convergence — e.g. *"the reviewing-* fan reports no Important+ findings on this diff, or stop after N turns"* — regardless of session type (`/goal` works in interactive, agent-view, and remote sessions).
+1. **Surface a copy-paste `/goal` review condition** that drives the host-local fan to convergence — e.g. *"the reviewing-* fan reports no Important+ findings on this diff (each finding fixed or triaged to a follow-up bead), or stop after N turns"* — regardless of session type (`/goal` works in interactive, agent-view, and remote sessions). If a finding is too large to fix in-session and the user **defers** it to a follow-up bead, the named diff can no longer be made clean and the goal will not auto-clear — tell the user to `/goal clear` (the legitimate "scope changed" exception to the usual don't-suggest-clear rule).
 2. **END THE TURN** so the user can paste it; the evaluator then forces re-review until the fan comes back clean. As in Phase 1, surfacing the condition and continuing in the same turn defeats the evaluator.
 
 Additionally, when running non-interactively (no one is there to paste), also run the fan directly via subagents and loop it yourself until clean — but still surface the `/goal` condition so the user can drive it themselves when present.
