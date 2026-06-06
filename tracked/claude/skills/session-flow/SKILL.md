@@ -74,7 +74,7 @@ Invoke `superpowers:executing-plans`. TDD where the contract isn't obvious (`sup
 
 Use the custom multi-aspect review fans, picked by artifact type:
 - `reviewing-python-code` — Python source / pyproject / CI / pre-commit (4 aspect agents: spec, substance, specifics, prose).
-- `reviewing-claude-md` — `.md` under `tracked/claude/` — docs / skills / agents (5 aspect agents).
+- `reviewing-claude-md` — docs / skills / agents under `tracked/claude/` (5 aspect agents).
 - `reviewing-markdown` — generic `.md` outside `tracked/claude/` (1 prose agent).
 - `reviewing-rust-code` — Rust source / Cargo manifests / toolchain + lint configs / Rust CI (3 aspect agents: spec, substance, specifics; runs clippy + fmt once and feeds the output to the agents).
 
