@@ -24,7 +24,7 @@ Your aspects to check:
 
 1. **Ownership / borrow idioms:**
    - Param typed `&String` / `&Vec<T>` / `&Box<T>` instead of `&str` / `&[T]` / `&T`: IMPORTANT (clippy `ptr_arg`).
-   - `.clone()` / `.to_owned()` / `.to_string()` to dodge the borrow checker where restructuring (scope the borrow, split-borrow, take `&`) is the real fix: IMPORTANT (`unnecessary_to_owned`; `redundant_clone` is nursery/allow-by-default, so it may be ABSENT from `clippy_fmt_output` — scan for it manually).
+   - `.clone()` / `.to_owned()` / `.to_string()` to dodge the borrow checker where restructuring (scope the borrow, split-borrow, take `&`) is the real fix: IMPORTANT (`unnecessary_to_owned`; `redundant_clone` is nursery and the skill's pre-pass enables nursery as warnings, so it should appear in `clippy_fmt_output` — but it's a known-buggy lint, so confirm each hit manually, and if the pre-pass is `(unavailable: ...)` scan for it yourself).
    - `.clone()` on a `Copy` type: MINOR (`clone_on_copy`).
    - Explicit lifetimes elision would supply: MINOR (`needless_lifetimes` — confirm before suggesting `--fix`, it has known false positives). Small `Copy` type passed `&T`: MINOR (`trivially_copy_pass_by_ref`).
 2. **Iterator / collection idioms:**
@@ -57,8 +57,8 @@ Your aspects to check:
    - Out-of-scope items deferred to new bd issues with dep links, not inline-fixed.
 9. **Clippy / fmt interpretation** (reading `clippy_fmt_output`):
    - `clippy::perf` — apply nearly always; low-risk speedups (`unnecessary_to_owned`, `needless_collect`, `large_enum_variant`).
-   - `clippy::pedantic` — review prompts, NOT auto-BLOCK (occasional false positives).
-   - `clippy::nursery` — cherry-pick; buggy / in-progress. Never authoritative.
+   - `clippy::pedantic` — the skill's pre-pass enables this group with `-W`, so expect these lines; treat them as review prompts, NOT auto-BLOCK (occasional false positives).
+   - `clippy::nursery` — also enabled by the pre-pass; cherry-pick, buggy / in-progress. Never authoritative.
    - A non-empty `cargo fmt --check` diff is a binary formatting-drift smell: report it (MINOR), but never let it mask the idiom items above (`rustfmt` does not catch them).
    - If `clippy_fmt_output` is `(unavailable: ...)`, say so in your report and note that machine-catchable lints were NOT verified.
 
@@ -75,7 +75,7 @@ Output format (strictly):
 Definition of done:
 
 - [ ] `bd show <bd_id>` loaded; --acceptance / --design / --notes read.
-- [ ] Read `clippy_fmt_output` and triaged its lints by group (perf/pedantic/nursery); noted if unavailable.
+- [ ] Read `clippy_fmt_output` (pre-pass enables perf + pedantic + nursery as warnings) and triaged its lints by group; noted if unavailable.
 - [ ] Scanned signatures for `&String`/`&Vec`/`&Box` params and borrow-appeasing `.clone()`.
 - [ ] Scanned for index-loops and `.unwrap()` on `.find`/`.get` in non-test code.
 - [ ] Audited new public types for common-derive hygiene and `From`/`Display`/`Error` impls.

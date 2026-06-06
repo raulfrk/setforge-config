@@ -40,9 +40,11 @@ Compute (or accept as input):
 Run from the crate/workspace root and **capture stdout+stderr without failing the skill on non-zero exit** — compile errors, lint hits, and formatting drift are *findings*, not skill failures:
 
 ```
-cargo clippy --all-targets --message-format=short
+cargo clippy --all-targets --message-format=short -- -W clippy::pedantic -W clippy::nursery
 cargo fmt --check
 ```
+
+The `-W clippy::pedantic -W clippy::nursery` flags are load-bearing: both groups are **allow-by-default**, so a bare `cargo clippy` emits only the warn-by-default lints and the `rust-specifics-reviewer` would have no pedantic/nursery lines to triage. Enabling them as warnings (`-W`, not `-D`) surfaces the full signal the specifics agent is told to interpret, without failing the build.
 
 Toolchain caveat (this VM): invoke so the rustup shim resolves the pinned toolchain — ensure `~/.cargo/bin` is on `PATH` (`PATH="$HOME/.cargo/bin:$PATH" cargo ...`). A stale system `cargo` mis-resolves `rustc` and fails to parse a v4 `Cargo.lock`.
 
