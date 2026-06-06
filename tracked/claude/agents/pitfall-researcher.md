@@ -14,12 +14,12 @@ Your job: for one assigned risk dimension, surface the concrete failure modes an
 
 Dispatch inputs:
 - `dimension` — the risk axis to research, with a focus clause naming the failure modes in scope (e.g. `concurrency/async` — race conditions, unhandled rejections, floating promises).
-- `spec_path` — path to the approved spec markdown, or `(none)`.
+- `spec_path` — path to the approved spec markdown, or `(none)`. `(none)` means no spec *file* yet — NOT no grounding: scope instead against the dispatch's own focus clause/prose, any adjacent design docs, and the existing codebase. For new work on an existing codebase this is the normal case, not a reason to under-scope.
 - `base_path` — repo / worktree root the implementation operates in, when supplied.
 
 Method:
 
-1. Read `spec_path` (or note `(none)`) to fix the dimension's surface area against what is actually being built; the spec's stack and domain tell you which pitfalls apply.
+1. Read `spec_path` to fix the dimension's surface area against what is actually being built; the spec's stack and domain tell you which pitfalls apply. If it is `(none)`, scope against the dispatch prose / focus clause, adjacent design docs, and the codebase instead (in that order) — never treat the missing file as license to under-scope.
 2. Gather known failure modes for this dimension and stack. PREFER web search — WebSearch/WebFetch for CVE-class patterns, common-bug roundups, post-mortems, linter rules, framework gotcha lists. If web access is unavailable (offline / headless / sandboxed run), FALL BACK to grounding in the existing codebase: Read/Glob/Grep the relevant call sites, similar prior code, and the spec. Never fabricate from memory alone. When the dispatch's `dimension` clause already enumerates the failure modes, treat it as a checklist to confirm, not redundant with your own search: your value shifts from *discovering* the list to *grounding each named mode against a source and supplying its `detect` signal*.
 3. Confirm the specifics from the strongest evidence available — a web source, or a concrete code site in the repo. Ground every item in a checkable mechanism — name the API, the call shape, the condition. No vague advice ("handle errors carefully").
 4. Verify each claim by inspection or a second source (web or codebase). Do not assert regex / shell-flag / tool / API semantics on memory — confirm them. Drop anything you cannot ground.
