@@ -72,10 +72,16 @@ Invoke `superpowers:executing-plans`. TDD where the contract isn't obvious (`sup
 
 ### Phase 5 — Review fan
 
-Review approach is host-local — configured in the `host-local-workflow` section below.
+Use the custom multi-aspect review fans, picked by artifact type:
+- `reviewing-python-code` — Python source / pyproject / CI / pre-commit (4 aspect agents: spec, substance, specifics, prose).
+- `reviewing-claude-md` — `.md` under `tracked/claude/` — docs / skills / agents (5 aspect agents).
+- `reviewing-markdown` — generic `.md` outside `tracked/claude/` (1 prose agent).
+- `reviewing-rust-code` — Rust source / Cargo manifests / toolchain + lint configs / Rust CI (3 aspect agents: spec, substance, specifics; runs clippy + fmt once and feeds the output to the agents).
+
+Mixed-artifact changes invoke every applicable fan in parallel; review each artifact type's diff separately.
 
 The fan is **goal-wrapped** (iterate-to-clean). Before dispatching it:
-1. **Surface a copy-paste `/goal` review condition** that drives the host-local fan to convergence — e.g. *"the reviewing-* fan reports no Important+ findings on this diff (each finding fixed or triaged to a follow-up bead), or stop after N turns"* — regardless of session type (`/goal` works in interactive, agent-view, and remote sessions). If a finding is too large to fix in-session and the user **defers** it to a follow-up bead, the named diff can no longer be made clean and the goal will not auto-clear — tell the user to `/goal clear` (the legitimate "scope changed" exception to the usual don't-suggest-clear rule).
+1. **Surface a copy-paste `/goal` review condition** that drives the fan to convergence — e.g. *"the reviewing-* fan reports no Important+ findings on this diff (each finding fixed or triaged to a follow-up bead), or stop after N turns"* — regardless of session type (`/goal` works in interactive, agent-view, and remote sessions). If a finding is too large to fix in-session and the user **defers** it to a follow-up bead, the named diff can no longer be made clean and the goal will not auto-clear — tell the user to `/goal clear` (the legitimate "scope changed" exception to the usual don't-suggest-clear rule).
 2. **END THE TURN** so the user can paste it; the evaluator then forces re-review until the fan comes back clean. As in Phase 1, surfacing the condition and continuing in the same turn defeats the evaluator.
 
 Additionally, when running non-interactively (no one is there to paste), also run the fan directly via subagents and loop it yourself until clean — but still surface the `/goal` condition so the user can drive it themselves when present.
@@ -160,7 +166,7 @@ Never use bare `EnterWorktree` (without `--path`) in a bg session — it creates
 | 3 | `superpowers:writing-plans` | Before Phase 4 |
 | 4 | `superpowers:executing-plans` | Implementation (single-stream) |
 | 4 (parallel) | `superpowers:dispatching-parallel-agents` / `superpowers:subagent-driven-development` | Multi-bead waves / in-session parallel |
-| 5 | Host-local (see `host-local-workflow`) | After implementation — surface `/goal` review condition + END TURN before dispatching the fan |
+| 5 | `reviewing-*` fan by artifact type (see Phase 5) | After implementation — surface `/goal` review condition + END TURN before dispatching the fan |
 | 6 | `superpowers:verification-before-completion` | Before claiming success |
 | 7 | Same as Phase 5 | Against merged HEAD |
 
@@ -178,10 +184,6 @@ While using this skill, stay alert for any *generic* way it could be better — 
 - **Substantive, not noise.** Rare and load-bearing; not cosmetic rewording; never re-propose a declined idea.
 
 **Precedence note (this skill):** the Phase 1 / Phase 5 `/goal` surface-then-END-TURN always takes precedence at a brainstorm or review boundary. A self-improvement pause waits for an actual task-completion or session-end checkpoint and never preempts a `/goal` surface.
-
-<!-- setforge:user-section start host-local host-local-workflow -->
-
-<!-- setforge:user-section end host-local host-local-workflow hash=01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b -->
 
 <!-- setforge:user-section start host-local merge-policy -->
 **Merge policy (this host).** Default merge mode: `ff-only`. Parallel multi-bead auto-switches to `merge-commit` when siblings cannot fast-forward.
