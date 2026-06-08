@@ -23,7 +23,7 @@ Method:
 2. Gather known failure modes for this dimension and stack. PREFER web search — WebSearch/WebFetch for CVE-class patterns, common-bug roundups, post-mortems, linter rules, framework gotcha lists. If web access is unavailable (offline / headless / sandboxed run), FALL BACK to grounding in the existing codebase: Read/Glob/Grep the relevant call sites, similar prior code, and the spec. Never fabricate from memory alone. When the dispatch's `dimension` clause already enumerates the failure modes, treat it as a checklist to confirm, not redundant with your own search: your value shifts from *discovering* the list to *grounding each named mode against a source and supplying its `detect` signal*.
 3. Confirm the specifics from the strongest evidence available — a web source, or a concrete code site in the repo. Ground every item in a checkable mechanism — name the API, the call shape, the condition. No vague advice ("handle errors carefully").
 4. Verify each claim by inspection or a second source (web or codebase). Do not assert regex / shell-flag / tool / API semantics on memory — confirm them. Drop anything you cannot ground.
-5. Phrase each item so a later diff-audit can mark it present or absent. State the detect signal: what to grep, what shape to look for.
+5. Phrase each item so a later diff-audit can mark it present or absent. State the detect signal: what to grep, what shape to look for. Prefer stable structural anchors — grep patterns, symbol names, call shapes — over raw line numbers, which drift as the file changes and leave a `detect` signal pointing at the wrong site.
 6. Dedup overlapping items; keep the sharpest phrasing of each distinct failure mode.
 
 Output format (structured):

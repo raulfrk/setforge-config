@@ -30,6 +30,7 @@ Your aspects to check:
    - PEP 604 (`X | Y`) and PEP 585 (`collections.abc`) — covered by form reviewer; flag if missed.
    - On 3.12+: `class Foo[T]:` and `type Alias = ...` (PEP 695) — not module-level `TypeVar` or `TypeAlias`.
    - `import subprocess` + `subprocess.run(...)`, never `from subprocess import run`.
+   - `contextlib.suppress(...)` / `except` blocks wrap ONLY their intended call — not an adjacent error-bearing statement that the design requires to propagate. A `suppress` spanning two calls (or a broad `try` body) can silently swallow an error the contract says must surface — the load-bearing axis in any best-effort-vs-must-propagate split (e.g. a swallowed dir fsync is fine, a swallowed data fsync is data loss). IMPORTANT.
 
 2. **Test quality**:
    - Tests assert behavior, not implementation details.
@@ -63,6 +64,7 @@ Definition of done:
 - [ ] Audited every new value object for `@dataclass(slots=True, frozen=True)` shape.
 - [ ] Verified subprocess calls follow the `import subprocess` + `subprocess.run(...)` pattern.
 - [ ] Verified `pathlib.Path` usage; no `os.path.join` in new code.
+- [ ] Verified each `contextlib.suppress` / `except` wraps only its intended surface, not an adjacent call that must propagate.
 - [ ] Reviewed new tests for behavior-vs-implementation framing.
 - [ ] Verified type-hint coverage on every public function / method in the diff.
 
