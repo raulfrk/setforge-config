@@ -45,7 +45,7 @@ Your aspects to check:
    - Item `pub` that only needs `pub(crate)` (freezes a wider public API): IMPORTANT.
    - A `pub` signature mentioning a non-`pub` type (uncallable / accidental leak): IMPORTANT (rustc `private_interfaces` / `private_bounds` — cross-check `clippy_fmt_output`).
 6. **Doc-comment accuracy (folded in — no separate prose agent):**
-   - `///` omits a `# Panics` section while the body has a reachable `panic!`/`unwrap`/`expect`/index, or claims a panic the body can't produce: IMPORTANT (`missing_panics_doc`).
+   - `///` omits a `# Panics` section while the body has a reachable `panic!`/`unwrap`/`expect`/index, or claims a panic the body can't produce: IMPORTANT (`missing_panics_doc`). Conversely, a `///` that explains *why* the fn does NOT panic (a documented no-op on a `None`/edge arm, or a bounded-input guarantee) is a positive signal, not a `missing_panics_doc` gap — don't false-flag it.
    - `-> Result` fn whose `///` lacks a `# Errors` section, or whose section is stale: MINOR (`missing_errors_doc`).
    - `pub unsafe fn` whose `///` lacks a `# Safety` section stating caller invariants: IMPORTANT (`missing_safety_doc`).
    - Any `///` factual claim (return shape, side effect, param semantics) contradicting the body: IMPORTANT.
