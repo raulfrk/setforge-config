@@ -40,7 +40,7 @@ Invoke `superpowers:brainstorming`. Explore intent, requirements, constraints wi
 
 ### Phase 2 — Spec via plan mode
 
-`EnterPlanMode`. Write the spec VERBATIM into the plan body — no summary, no reflow. User reviews via revdiff (plan-review hook fires automatically). For a multi-bead session this is ONE combined spec covering all beads.
+`EnterPlanMode`. Open the plan with a short plain-language **summary section** (what the change is and why, written for a reader who hasn't seen the spec — plain alternative + the headline trade-off), then write the spec VERBATIM into the plan body below it — no summarizing or reflowing the spec ITSELF. User reviews via revdiff (plan-review hook fires automatically). For a multi-bead session this is ONE combined spec covering all beads.
 
 On approval:
 - **Carve** the combined spec into each selected bead's own `--design` / `--acceptance`. Each bead keeps an independent, self-runnable contract (a carved bead's acceptance must not depend on a sibling being merged first unless a real bd dep exists). The bd issue is the durable contract; the spec file is a historical snapshot.
@@ -106,7 +106,7 @@ Select beads (multi-select / IDs) → ONE combined brainstorm → ONE spec (plan
 
 ## Learning mode
 
-Some projects optimize for understanding over speed (e.g. borrowsmith). **Detection:** ask when the project is selected ("learning-focused session?"); default to yes for known learning projects.
+Some projects optimize for understanding over speed. **Detection:** learning mode is **opt-in** — default to the standard flow, and offer it ("learning-focused session?") only when a project's own project-scoped instructions mark it learning-default, or the user asks. Do not auto-enable it by project name.
 
 When ON, the review step becomes a teaching protocol (per bead, parallel still allowed):
 1. Write the bead's diff to a temp file with **inline explanatory annotations** — what changed, why, and the reasoning.
