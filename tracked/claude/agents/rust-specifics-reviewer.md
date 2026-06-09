@@ -47,6 +47,7 @@ Your aspects to check:
 6. **Doc-comment accuracy (folded in — no separate prose agent):**
    - `///` omits a `# Panics` section while the body has a reachable `panic!`/`unwrap`/`expect`/index, or claims a panic the body can't produce: IMPORTANT (`missing_panics_doc`). Conversely, a `///` that explains *why* the fn does NOT panic (a documented no-op on a `None`/edge arm, or a bounded-input guarantee) is a positive signal, not a `missing_panics_doc` gap — don't false-flag it.
    - `-> Result` fn whose `///` lacks a `# Errors` section, or whose section is stale: MINOR (`missing_errors_doc`).
+   - A crate-/module-level **hand-maintained doc index** — a `//!` module-map table or a type-hierarchy / ASCII-tree block enumerating public items — that omits public items this diff ADDS (a new `pub` type, variant, or re-export): MINOR. `cargo doc` emits no warning for this, so it drifts silently; when the diff introduces new public surface, diff it against any such block.
    - `pub unsafe fn` whose `///` lacks a `# Safety` section stating caller invariants: IMPORTANT (`missing_safety_doc`).
    - Any `///` factual claim (return shape, side effect, param semantics) contradicting the body: IMPORTANT.
 7. **Test quality:**
