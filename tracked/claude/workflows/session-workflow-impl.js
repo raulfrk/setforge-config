@@ -1502,16 +1502,20 @@ const implementBead = async (a, setup, checklist) => {
     if (!res) { state.evidence = "range resolver returned no result"; break }
     const parsed = parseNameStatus(res.nameStatus)
     if (parsed.count === 0) { state.evidence = "empty committed range " + state.baseSha + "...HEAD — the build committed nothing to review"; break }
-    const frozen = new Set(parsed.files.map(f => f.path))
+    const frozen = new Set(parsed.files.flatMap(f => f.oldPath ? [f.path, f.oldPath] : [f.path]))
     if (prevFrozen) {
       for (const p of frozen) if (!prevFrozen.has(p)) state.scopeGrowth.push(p)
       state.scopeGrowth = [...new Set(state.scopeGrowth)].sort()
     }
     prevFrozen = frozen
     // Paths are reduced to a safe charset in code (anything else renders as ?), which is
-    // what justifies splicing changedBlock unfenced into the audit/plan/review prompts —
-    // same rationale as the wavesBlock exemption. Scope membership checks use the RAW
-    // paths, so an exotic filename fails closed via scopeConsistent.
+    // what justifies splicing changedBlock unfenced into the audit/plan/review prompts.
+    // Residual risk acknowledged: unlike the slug-only wavesBlock, this charset keeps
+    // spaces, so a sentence-shaped FILENAME (committed by a steered builder) renders
+    // verbatim — accepted because excluding spaces would false-HELD legitimate filenames
+    // via the raw-path scope check, and the audit + synthetic conjuncts bound the blast
+    // radius. Scope membership checks use the RAW paths, so an exotic filename fails
+    // closed via scopeConsistent.
     const renderPath = (p) => String(p || "").replace(/[^A-Za-z0-9 ._/-]/g, "?")
     const changedBlock =
       "Resolved changed-file set (orchestrator-authoritative — operate ONLY on these; any file not listed is OUT OF SCOPE):\n" +
@@ -1630,7 +1634,14 @@ const implementBead = async (a, setup, checklist) => {
     }
     if (state.rounds >= P.roundsBackstop) {
       state.verdict = gate.worstVerdict
-      state.evidence = "roundsBackstop (" + P.roundsBackstop + ") reached; unresolved findings=" + gate.totalFindings + " unverified=" + gate.unverifiedIds.join(",")
+      const detailLines = [
+        ...gate.reviewFindings.map(f => "(" + f.severity + ") " + f.detail),
+        ...synthetic.map(f => "(" + f.severity + ") " + f.detail),
+        ...gate.unverifiedIds.map(id => "(unverified) checklist item " + id),
+      ].join(" | ").slice(0, 2000)
+      // The finding DETAILS are what the operator crafts operatorGuidance from — counts
+      // alone left nothing durable to retry against (Q-H).
+      state.evidence = "roundsBackstop (" + P.roundsBackstop + ") reached; unresolved: " + (detailLines || "(none captured)")
       break
     }
 
