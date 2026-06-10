@@ -428,7 +428,7 @@ const validateStage = (a) => {
         if (wavesProblem) return "intake round > 1: " + wavesProblem
         if (a.askedQuestions == null) return "intake round > 1 requires args.askedQuestions (cumulative; use nextArgs)"
         if (a.gate1Answers == null) return "intake round > 1 requires args.gate1Answers (cumulative answers object)"
-        if (a.overlapAdvisories == null || a.openDepsOutsideSet == null) return "intake round > 1 requires args.overlapAdvisories and args.openDepsOutsideSet carried from the round-1 payload (use nextArgs — a silently dropped carry degrades the convergence decision)"
+        if (a.overlapAdvisories == null || a.openDepsOutsideSet == null || typeof a.overlapPredictorFailed !== "boolean") return "intake round > 1 requires args.overlapAdvisories, args.openDepsOutsideSet, and boolean args.overlapPredictorFailed carried from the round-1 payload (use nextArgs — a silently dropped carry degrades the convergence decision)"
       }
       return null
     }
@@ -466,7 +466,7 @@ const validateStage = (a) => {
         for (const bid of Object.keys(a.worktrees)) {
           if (!inSet.has(bid)) return "implement stage: args.worktrees carries a foreign key (not in beadIds): " + JSON.stringify(bid)
         }
-        if (!SHA_RE.test(a.mainSha || "")) return "implement stage with waveCursor > 1 requires args.mainSha (the main tip recorded at the last merge gate)"
+        if (typeof a.mainSha !== "string" || !SHA_RE.test(a.mainSha)) return "implement stage with waveCursor > 1 requires args.mainSha (sha string of the main tip recorded at the last merge gate)"
         if (a.mergedBeads == null) return "implement stage with waveCursor > 1 requires args.mergedBeads (the GATE 3 ritual's outcome — without it, closed wave-1 beads read as stale state)"
         // Carry COVERAGE, not just shape: mergedBeads must come from PRIOR waves only, and
         // every prior-wave bead must be accounted for — merged, or carried with its
@@ -483,8 +483,8 @@ const validateStage = (a) => {
       return null
     }
     case "phase7": {
-      if (!SHA_RE.test(a.preWaveSha || "")) return "phase7 stage requires args.preWaveSha (sha recorded before the first merge gate)"
-      if (!SHA_RE.test(a.mainSha || "")) return "phase7 stage requires args.mainSha (current main tip recorded at the last merge gate)"
+      if (typeof a.preWaveSha !== "string" || !SHA_RE.test(a.preWaveSha)) return "phase7 stage requires args.preWaveSha (sha string recorded before the first merge gate)"
+      if (typeof a.mainSha !== "string" || !SHA_RE.test(a.mainSha)) return "phase7 stage requires args.mainSha (sha string of the main tip recorded at the last merge gate)"
       if (!Array.isArray(a.mergedBeads) || a.mergedBeads.length < 1) return "phase7 stage requires args.mergedBeads"
       const mbProblem = validMergedBeads(a.mergedBeads, a.beadIds)
       if (mbProblem) return "phase7 stage: " + mbProblem
@@ -502,6 +502,9 @@ const validateStage = (a) => {
 // Coverage is reconciled input-vs-returned — facts the probe omits are problems, not
 // passes (mirrors the bead-reader identity reconciliation).
 const runProbe = async (a) => {
+  if (a.worktrees != null && (typeof a.worktrees !== "object" || Array.isArray(a.worktrees))) {
+    return { failed: err("args.worktrees must be a plain object when present — refusing to skip worktree verification on a corrupted carry", { got: a.worktrees }) }
+  }
   const merged = new Set((a.stage === "phase7" || a.stage === "implement") ? (a.mergedBeads || []) : [])
   const rawEntries = Object.entries(a.worktrees || {})
   // Slug == bead id by convention, so each carried path is pinned to its exact expected
@@ -682,7 +685,7 @@ const runIntake = async (a) => {
   // Agent-coined ids become gate1Answers keys caller-side: normalize to slug shape so a
   // hostile/sloppy id (e.g. __proto__, free text) cannot corrupt the answers object.
   const normalizeQId = (id) => {
-    const slug = String(id || "").toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[^a-z0-9]+/, "").slice(0, 64)
+    const slug = String(id || "").toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[^a-z0-9]+/, "").slice(0, 60)
     return SLUG_RE.test(slug) ? slug : "q"
   }
   const uniqueId = (id) => {
