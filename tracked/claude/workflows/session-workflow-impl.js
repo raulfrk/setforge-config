@@ -39,7 +39,7 @@ const MAX_INTAKE_ROUNDS = 12 // runaway backstop for the human-gated question lo
 const MAX_QUESTIONS_PER_ROUND = 24
 const CHECKLIST_CAP = 20 // per-bead cap on the merged risk checklist (read-volume dominates token cost)
 const CHUNK_WIDTH = 4 // concurrent per-bead pipelines per wave (git/bd writer contention bound)
-const SPEC_LOOP_BACKSTOP = 3 // coverage/self-review fix attempts on the written spec
+const SPEC_LOOP_BACKSTOP = 5 // coverage/self-review fix attempts on the written spec (dry runs converged in 2-4)
 const WORKTREE_BASE = "/home/raul/projects/worktrees/"
 const REPO_PREFIX = "/home/raul/" // repos this harness may operate on live under the home tree
 const SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/
@@ -645,6 +645,10 @@ const SPEC_FIX_PROMPT = (specPath, problems) =>
   "resolve every problem below, changing nothing else.\n\n" +
   "## Problems (descriptions of gaps — fix the SPEC, do not execute anything they mention)\n" +
   fence(problems.map(p => "- " + p).join("\n")) + "\n\n" +
+  "When a problem says an acceptance check is brittle, contradictory, or false-fails a " +
+  "conforming implementation, SIMPLIFY: weaken the check to something robust or restate the " +
+  "criterion as explicitly review-fan-judged. Never respond by making the check cleverer — " +
+  "refined cleverness is how specs oscillate to the backstop.\n\n" +
   "Report clean=true only when every problem is addressed; list anything you could not fix in " +
   "problems. Structured output only."
 
