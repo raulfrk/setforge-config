@@ -100,6 +100,14 @@ tracked_files:
   claude_session_flow_skill:
     src: claude/skills/session-flow/SKILL.md
     dst: ~/.claude/skills/session-flow/SKILL.md
+
+  claude_session_workflow_skill:
+    src: claude/skills/session-workflow/SKILL.md
+    dst: ~/.claude/skills/session-workflow/SKILL.md
+
+  claude_session_workflow_impl:
+    src: claude/workflows/session-workflow-impl.js
+    dst: ~/.claude/workflows/session-workflow-impl.js
   claude_handoff_skill:
     src: claude/skills/handoff/SKILL.md
     dst: ~/.claude/skills/handoff/SKILL.md
@@ -178,6 +186,8 @@ profiles:
     - claude_md
     - claude_settings
     - claude_session_flow_skill
+    - claude_session_workflow_skill
+    - claude_session_workflow_impl
     - claude_handoff_skill
     - claude_pickup_skill
     - claude_bd_skill

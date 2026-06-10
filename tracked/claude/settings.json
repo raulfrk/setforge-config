@@ -18,8 +18,14 @@
     "allow": [
       "Bash(bd *)",
       "Bash(bd)",
+      "Bash(wt switch *)",
+      "Bash(wt list)",
+      "Bash(wt list *)",
       "Skill(superpowers:*)",
       "Skill(wiki:*)"
+    ],
+    "deny": [
+      "Bash(git push*)"
     ]
   },
   "skipAutoPermissionPrompt": true,

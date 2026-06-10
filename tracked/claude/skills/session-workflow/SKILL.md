@@ -42,7 +42,7 @@ The backstop is NOT the review exit — every profile's loops run converge-until
 
 ## Permission prep (before the first run)
 
-Workflow subagents inherit the session's tool allowlist and prompt mid-run for anything outside it. Verify the project settings allow `bd` and `wt switch`/`wt list` plus local git, and DENY `git push*`, `wt merge*`, `wt remove*`, `bd close*`, and force variants — the denies are the machine enforcement of the merge gate and the hard rails (prefix-match allowlists are bypassable; deny beats allow). Deployment of these rules ships with the setforge profile; this skill only states the requirement.
+Workflow subagents inherit the session's tool allowlist and prompt mid-run for anything outside it. Verify the deployed settings allow `bd` and `wt switch`/`wt list`, and DENY `git push*` — the one machine-enforced hard rail. Merge-gate verbs (`wt merge`, `wt remove`, `bd close`) are deliberately NOT allowlisted: an agent attempting one stalls at a permission prompt instead of succeeding silently, while the main session still executes the ritual on the user's confirmation. These rules ship with the setforge profile (the tracked settings.json); this skill only states the requirement.
 
 ## Re-entry and recovery
 
