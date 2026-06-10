@@ -218,6 +218,39 @@ const topoWaves = (beadIds, edges) => {
 
 const err = (message, extra) => ({ gate: "ERROR", error: message, ...(extra || {}) })
 
+// ─── Pure: the converge-loop gate (v2) ───
+// The exit condition is the FULL conjunction — every weakening of it in the v1 trial
+// produced a false PASS. Verify failures and porcelain leftovers arrive as
+// syntheticFindings, so the zero-findings conjunct covers them.
+// reviews: [{verdict, checklist:[{id,present,verified}], scopedFiles:[], findings:[]}]
+// planned: reviewer count the plan dispatched; fewer returned => fanComplete false => no PASS.
+// auditFindings: Set<id> flagged present-but-unverified (or omitted) by THIS round's audit.
+// Returns { gatePassed, worstVerdict, fanComplete, scopeConsistent, unverifiedIds,
+//           reviewFindings, totalFindings }.
+const computeGateV2 = ({ reviews, planned, auditFindings, syntheticFindings, frozenPaths }) => {
+  const fanComplete = planned > 0 && reviews.length >= planned
+  const worstRank = reviews.reduce((acc, r) => Math.max(acc, verdictRank[r.verdict] ?? verdictRank.BLOCK), 0)
+  const worstVerdict = fanComplete ? verdictName[worstRank] : "BLOCK"
+  const unverified = new Set()
+  for (const r of reviews) {
+    for (const c of (r.checklist || [])) {
+      if (c.present === true && c.verified !== true) unverified.add(c.id)
+    }
+  }
+  for (const id of auditFindings) unverified.add(id)
+  let scopeConsistent = true
+  for (const r of reviews) {
+    for (const f of (r.scopedFiles || [])) {
+      if (!frozenPaths.has(f)) scopeConsistent = false
+    }
+  }
+  const reviewFindings = reviews.flatMap(r => (r.findings || []))
+    .sort((a, b) => ((sevRank[a.severity] ?? 9) - (sevRank[b.severity] ?? 9)) || String(a.detail).localeCompare(String(b.detail)))
+  const totalFindings = reviewFindings.length + syntheticFindings.length
+  const gatePassed = fanComplete && worstVerdict === "PASS" && totalFindings === 0 && unverified.size === 0 && scopeConsistent
+  return { gatePassed, worstVerdict, fanComplete, scopeConsistent, unverifiedIds: [...unverified].sort(), reviewFindings, totalFindings }
+}
+
 // ─── Schemas ───
 
 const PROBE_SCHEMA = {
@@ -1316,19 +1349,266 @@ const runIntake = async (a) => {
   }
 }
 
-// ─── Stage: implement — wave setup real; per-bead pipeline + rebase land in follow-ups ───
+// ─── Stage: implement — carve, wave setup, per-bead pipeline (rebase lands in a follow-up) ───
 
 const rebaseWorktrees = async (a, setups) => ({
   gate: "NOT_IMPLEMENTED", stage: "implement", step: "rebase",
   note: "rebase path lands in a follow-up change; do not proceed past waveCursor 1 on this revision",
 })
 
-const implementWave = async (a, setups) => ({
-  gate: "NOT_IMPLEMENTED", stage: "implement", step: "per-bead-pipeline",
-  note: "per-bead implement pipeline (plan/build/verify/review-fix) lands in a follow-up change; wave setup completed",
-  worktrees: Object.fromEntries(setups.map(s => [s.beadId, s.path])),
-  baseShas: Object.fromEntries(setups.map(s => [s.beadId, s.baseSha])),
-})
+// One bead's plan -> build (commits) -> verify -> converge-until-clean review loop.
+// Returns a per-bead result object — NEVER throws state into shared scope; mixed wave
+// results are aggregated by the caller without collapsing.
+const implementBead = async (a, setup, checklist) => {
+  const beadId = setup.beadId
+  const wt = setup.path
+  const checklistBlock = renderChecklist(checklist)
+  const guidance = (a.operatorGuidance && a.operatorGuidance[beadId]) || ""
+  // A bead that already PASSed a prior attempt (tipSha recorded) but was not merged
+  // re-enters at the review loop only — its committed work is in the worktree.
+  const skipBuild = Object.hasOwn(a.tipShas || {}, beadId)
+  const carve = (a.carvePreview || []).find(c => c.beadId === beadId)
+  const beadContract = carve ? ("design: " + carve.design + "\n\nacceptance: " + carve.acceptance) : "(no carved contract found)"
+  const state = { beadId, gate: "HELD", verdict: "BLOCK", rounds: 0, scopeGrowth: [], baseSha: setup.baseSha, tipSha: null, evidence: "" }
+
+  let plan = null
+  const buildVerifyFindings = []
+  if (!skipBuild) {
+    plan = await agent(PLAN_PROMPT_B(a.specPath, beadId, wt, beadContract, checklistBlock), {
+      label: "plan:" + beadId, phase: "Build", schema: PLAN_SCHEMA,
+    })
+    if (!plan) return { ...state, evidence: "plan agent returned no result" }
+    for (const step of plan.steps) {
+      const b = await agent(BUILD_PROMPT_B(a.specPath, beadId, wt, step, checklistBlock), {
+        label: "build:" + beadId + ":" + step.id, phase: "Build", schema: BUILD_STEP_SCHEMA,
+      })
+      if (!b || b.status === "blocked") {
+        return { ...state, evidence: "build step " + step.id + " " + (b ? "blocked: " + (b.notes || b.summary || "") : "returned no result") }
+      }
+      if (P.perStepVerify) {
+        const v = await agent(VERIFY_PROMPT_B(beadId, wt, step), {
+          label: "verify:" + beadId + ":" + step.id, phase: "Build", schema: VERIFY_STEP_SCHEMA,
+        })
+        if (!v) buildVerifyFindings.push({ severity: "high", detail: "step " + step.id + ": verifier returned no result — unverified" })
+        else if (v.passed === false) buildVerifyFindings.push({ severity: "high", detail: "step " + step.id + " verify FAILED: " + (v.evidence || "") + " " + (v.failures || []).join("; ") })
+      }
+    }
+    if (!P.perStepVerify) {
+      const v = await agent(VERIFY_UNIT_PROMPT_B(beadId, wt, plan), {
+        label: "verify:" + beadId + ":unit", phase: "Build", schema: VERIFY_STEP_SCHEMA,
+      })
+      if (!v) buildVerifyFindings.push({ severity: "high", detail: "unit verifier returned no result — unverified" })
+      else if (v.passed === false) buildVerifyFindings.push({ severity: "high", detail: "unit verify FAILED: " + (v.evidence || "") + " " + (v.failures || []).join("; ") })
+    }
+  }
+
+  // Converge-until-clean review loop. Exit ONLY on the full-conjunction PASS or the backstop.
+  const findingsSeenByFixer = new Set()
+  let prevFrozen = null
+  let reviewTasks = null
+  let knownTypes = new Set()
+  while (true) {
+    state.rounds++
+    const res = await agent(RESOLVE_RANGE_PROMPT(wt, state.baseSha), {
+      label: "resolve:" + beadId + ":r" + state.rounds, phase: "Review/Fix", schema: RESOLVE_RANGE_SCHEMA, model: ECHO_MODEL,
+    })
+    if (!res) { state.evidence = "range resolver returned no result"; break }
+    const parsed = parseNameStatus(res.nameStatus)
+    if (parsed.count === 0) { state.evidence = "empty committed range " + state.baseSha + "...HEAD — the build committed nothing to review"; break }
+    const frozen = new Set(parsed.files.map(f => f.path))
+    if (prevFrozen) {
+      for (const p of frozen) if (!prevFrozen.has(p)) state.scopeGrowth.push(p)
+      state.scopeGrowth = [...new Set(state.scopeGrowth)].sort()
+    }
+    prevFrozen = frozen
+    const changedBlock =
+      "Resolved changed-file set (orchestrator-authoritative — operate ONLY on these; any file not listed is OUT OF SCOPE):\n" +
+      parsed.files.map(f => "- " + f.status + " " + (f.oldPath ? f.oldPath + " -> " : "") + f.path).sort().join("\n") +
+      "\n\nFetch per-file content via `git -C " + wt + " diff " + state.baseSha + "...HEAD -- <path>` (read added files directly)."
+
+    // Synthetic findings: porcelain leftovers + verify results — they enter the SAME
+    // zero-findings conjunct as reviewer findings (Q-D/Q-G).
+    const synthetic = []
+    const porc = parsePorcelain(res.porcelain)
+    if (porc.count > 0) {
+      synthetic.push({ severity: "high", detail: "uncommitted-leftovers: the working tree is not clean after a claimed-complete step (" + porc.files.map(f => f.path).sort().join(", ") + ") — commit them if they belong to the work, remove them otherwise" })
+    }
+    if (state.rounds === 1) {
+      synthetic.push(...buildVerifyFindings)
+    } else if (plan) {
+      const rv = await agent(REVERIFY_PROMPT(beadId, wt, plan), {
+        label: "reverify:" + beadId + ":r" + state.rounds, phase: "Review/Fix", schema: VERIFY_STEP_SCHEMA,
+      })
+      if (!rv) synthetic.push({ severity: "high", detail: "round re-verifier returned no result — the round's fixes are unverified" })
+      else if (rv.passed === false) synthetic.push({ severity: "high", detail: "verify FAILED after fixes: " + (rv.evidence || "") + " " + (rv.failures || []).join("; ") })
+    }
+
+    const audit = await agent(AUDIT_PROMPT_B(beadId, wt, changedBlock, checklistBlock), {
+      label: "audit:" + beadId + ":r" + state.rounds, phase: "Review/Fix", schema: AUDIT_SCHEMA,
+    })
+    const auditById = new Map(((audit && Array.isArray(audit.items)) ? audit.items : []).map(it => [it.id, it]))
+    const auditFindings = new Set()
+    for (const c of checklist) {
+      const ai = auditById.get(c.id)
+      if (!ai || (ai.present === true && ai.verified !== true)) auditFindings.add(c.id)
+    }
+
+    // Review plan once; re-plan when this round's range introduces artifact types
+    // (extensions) the existing plan never saw.
+    const types = new Set([...frozen].map(p => { const m = p.match(/\.[A-Za-z0-9]+$/); return m ? m[0].toLowerCase() : "(noext)" }))
+    if (!reviewTasks || [...types].some(t => !knownTypes.has(t))) {
+      const rp = await agent(REVIEW_PLAN_PROMPT_B(changedBlock), {
+        label: "review-plan:" + beadId + ":r" + state.rounds, phase: "Review/Fix", schema: REVIEW_PLAN_SCHEMA,
+      })
+      const tasks = []
+      const usedTypes = new Set()
+      for (const x of ((rp && rp.assigned) || [])) {
+        if (REGISTERED_TYPES.has(x.agentType) && !usedTypes.has(x.agentType)) {
+          usedTypes.add(x.agentType)
+          tasks.push({ kind: "named", agentType: x.agentType, label: x.agentType })
+        }
+      }
+      for (const x of ((rp && rp.adhoc) || [])) {
+        if (x && typeof x.focus === "string" && x.focus.trim()) {
+          tasks.push({ kind: "adhoc", focus: x.focus, label: "adhoc:" + (qKey(x.aspect || "aspect").replace(/ /g, "-") || "aspect") })
+        }
+      }
+      if (tasks.length === 0) tasks.push({ kind: "adhoc", focus: "General contract-conformance and correctness review of the entire changed-file set.", label: "adhoc:general" })
+      reviewTasks = tasks.slice(0, P.maxReviewers)
+      knownTypes = new Set([...knownTypes, ...types])
+    }
+
+    const dispatchFan = (suffix) => parallel(reviewTasks.map(task => () =>
+      agent(REVIEW_PROMPT_B(task, beadId, wt, changedBlock, checklistBlock, state.rounds, guidance),
+        task.kind === "named"
+          ? { agentType: task.agentType, label: "review:" + beadId + ":r" + state.rounds + suffix + ":" + task.label, phase: "Review/Fix", schema: REVIEW_VERDICT_SCHEMA }
+          : { label: "review:" + beadId + ":r" + state.rounds + suffix + ":" + task.label, phase: "Review/Fix", schema: REVIEW_VERDICT_SCHEMA })
+    ))
+    let reviews = (await dispatchFan("")).filter(Boolean)
+    if (reviews.length < reviewTasks.length) {
+      // ONE free retry: a transient agent failure is not a code problem, no fix ran, the
+      // tree did not change — re-dispatch the fan without consuming the backstop (Q-E).
+      log("bead " + beadId + " r" + state.rounds + ": fan incomplete (" + reviews.length + "/" + reviewTasks.length + ") — one free retry")
+      reviews = (await dispatchFan(":retry")).filter(Boolean)
+    }
+
+    const gate = computeGateV2({ reviews, planned: reviewTasks.length, auditFindings, syntheticFindings: synthetic, frozenPaths: frozen })
+    log("bead " + beadId + " r" + state.rounds + ": worst=" + gate.worstVerdict + " findings=" + gate.totalFindings + " unverified=" + gate.unverifiedIds.length + " scopeOk=" + gate.scopeConsistent + " fanOk=" + gate.fanComplete + (state.scopeGrowth.length ? " growth=" + state.scopeGrowth.length : ""))
+
+    if (gate.gatePassed) {
+      state.gate = "PASS"
+      state.verdict = "PASS"
+      state.evidence = "clean round " + state.rounds + ": full fan PASS, zero findings, checklist verified, scope consistent"
+      break
+    }
+    if (!gate.fanComplete && reviews.length === 0) {
+      state.evidence = "review fan returned nothing even after the free retry — transient infrastructure failure"
+      break
+    }
+    if (state.rounds >= P.roundsBackstop) {
+      state.verdict = gate.worstVerdict
+      state.evidence = "roundsBackstop (" + P.roundsBackstop + ") reached; unresolved findings=" + gate.totalFindings + " unverified=" + gate.unverifiedIds.join(",")
+      break
+    }
+
+    // Fix round. Dedup feeds the FIXER ONLY (don't re-fix identical findings); the exit
+    // count above always used the raw round findings (Q-C).
+    const allFindings = [
+      ...gate.reviewFindings,
+      ...synthetic,
+      ...gate.unverifiedIds.map(id => ({ severity: "high", detail: "checklist item present-but-unverified: " + id })),
+    ]
+    const freshForFixer = allFindings.filter(f => {
+      const k = qKey(f.detail)
+      if (findingsSeenByFixer.has(k)) return false
+      findingsSeenByFixer.add(k)
+      return true
+    })
+    const repeats = allFindings.length - freshForFixer.length
+    const issuesBlock =
+      "Worst-of-fan verdict: " + gate.worstVerdict + "\n\n" +
+      (freshForFixer.length
+        ? "Findings:\n" + freshForFixer.map(f => "- (" + f.severity + ") " + f.detail).join("\n")
+        : "(every finding this round repeats an earlier one verbatim — they were NOT fixed; fix them now)") +
+      (repeats > 0 ? "\n\n(" + repeats + " finding(s) repeat earlier rounds verbatim — previous fixes did not resolve them.)" : "")
+    const fix = await agent(FIX_PROMPT_B(beadId, wt, a.specPath, issuesBlock, checklistBlock), {
+      label: "fix:" + beadId + ":r" + state.rounds, phase: "Review/Fix", schema: FIX_SCHEMA,
+    })
+    if (!fix) log("bead " + beadId + " r" + state.rounds + ": fix agent returned no result — next round re-measures unchanged tree")
+  }
+
+  if (state.gate === "PASS") {
+    const tip = await agent(TIP_SHA_PROMPT(wt), {
+      label: "tip:" + beadId, phase: "Review/Fix", schema: TIP_SHA_SCHEMA, model: ECHO_MODEL,
+    })
+    const sha = tip && typeof tip.sha === "string" ? tip.sha.trim() : ""
+    if (SHA_RE.test(sha)) {
+      state.tipSha = sha
+    } else {
+      state.gate = "HELD"
+      state.evidence += "; PASS but the tip-sha echo failed — range end unrecorded, hold for the operator"
+    }
+  }
+  return state
+}
+
+const implementWave = async (a, setups) => {
+  // No phase() here: per-bead pipelines run concurrently and every agent call inside
+  // them carries an explicit `phase:` option (Build / Review/Fix).
+  const results = []
+  // Chunked parallelism: at most CHUNK_WIDTH per-bead pipelines run concurrently (git/bd
+  // writer-contention bound); chunks are sequential.
+  for (const batch of chunked(setups, CHUNK_WIDTH)) {
+    const rs = (await parallel(batch.map(s => () => implementBead(a, s, (a.checklist && a.checklist[s.beadId]) || [])))).filter(Boolean)
+    const gotIds = new Set(rs.map(r => r.beadId))
+    for (const s of batch) {
+      if (!gotIds.has(s.beadId)) {
+        rs.push({ beadId: s.beadId, gate: "HELD", verdict: "BLOCK", rounds: 0, scopeGrowth: [], baseSha: s.baseSha, tipSha: null, evidence: "per-bead pipeline crashed (thunk error) — re-run this bead via the same-cursor retry" })
+      }
+    }
+    results.push(...rs)
+  }
+  results.sort((x, y) => x.beadId.localeCompare(y.beadId))
+
+  // Durable outcomes for non-PASS beads (Q-H), serialized — bd is a single-writer store.
+  for (const r of results.filter(x => x.gate !== "PASS")) {
+    const noteText = "session-workflow wave " + a.waveCursor + " outcome: " + r.gate + " (" + r.verdict + ") after " + r.rounds + " round(s). " + r.evidence +
+      (r.scopeGrowth.length ? " Scope growth: " + r.scopeGrowth.join(", ") : "")
+    await agent(BD_NOTE_PROMPT(a.repoPath, r.beadId, noteText), {
+      label: "bd-note:" + r.beadId, phase: "Review/Fix", schema: BD_NOTE_SCHEMA,
+    })
+  }
+
+  const beads = Object.fromEntries(results.map(r => [r.beadId, r]))
+  const mergeReady = results.filter(r => r.gate === "PASS").map(r => r.beadId)
+  const held = results.filter(r => r.gate === "HELD").map(r => r.beadId)
+  const blocked = results.filter(r => r.gate === "BLOCKED").map(r => r.beadId)
+  const worktreesOut = { ...(a.worktrees || {}), ...Object.fromEntries(setups.map(s => [s.beadId, s.path])) }
+  const baseShasOut = { ...(a.baseShas || {}), ...Object.fromEntries(setups.map(s => [s.beadId, s.baseSha])) }
+  const tipShasOut = { ...(a.tipShas || {}), ...Object.fromEntries(results.filter(r => r.tipSha).map(r => [r.beadId, r.tipSha])) }
+  const lastWave = a.waveCursor === a.waves.length
+  const runStats = {
+    ...(a.runStats || {}),
+    ["wave" + a.waveCursor]: {
+      rounds: Object.fromEntries(results.map(r => [r.beadId, r.rounds])),
+      passed: mergeReady.length, held: held.length, blocked: blocked.length,
+    },
+  }
+  const nextArgs = {
+    ...a,
+    stage: lastWave ? "phase7" : "implement",
+    waveCursor: lastWave ? a.waveCursor : a.waveCursor + 1,
+    worktrees: worktreesOut, baseShas: baseShasOut, tipShas: tipShasOut, runStats,
+    mergedBeads: a.mergedBeads || [],
+  }
+  return {
+    gate: "GATE3", stage: "implement", waveCursor: a.waveCursor,
+    beads, mergeReady, held, blocked,
+    worktrees: worktreesOut, baseShas: baseShasOut, tipShas: tipShasOut, runStats,
+    nextArgs,
+    note: "Merge ritual per merge-ready bead: wt merge --no-squash (ff-only) -> bd close -> wt remove. Record preWaveSha (main tip BEFORE this run's first merge) once, and the new mainSha after merging; append merged ids to nextArgs.mergedBeads. For HELD/BLOCKED beads: merge the passed ones first, then re-invoke the SAME waveCursor with operatorGuidance — passed-but-unmerged beads re-enter at the review loop only. " + (lastWave ? "This was the last wave: next stage is phase7 (requires preWaveSha, mainSha, verifyCommands)." : "Then re-invoke with nextArgs."),
+  }
+}
 
 const runImplement = async (a) => {
   const probed = await runProbe(a)
@@ -1340,6 +1620,23 @@ const runImplement = async (a) => {
   }
 
   phase("Carve")
+  // Carve the WHOLE batch's contracts up front (idempotent — agents skip matching ones),
+  // serialized: bd is a single-writer store.
+  const previewById = new Map((a.carvePreview || []).map(c => [c.beadId, c]))
+  let epicId = (a.runStats && typeof a.runStats.epicId === "string" && validSlug(a.runStats.epicId)) ? a.runStats.epicId : null
+  const allBeads = [...a.beadIds].sort()
+  for (const [i, beadId] of allBeads.entries()) {
+    const preview = previewById.get(beadId)
+    const c = await agent(CARVE_PROMPT(a.repoPath, beadId, preview.design, preview.acceptance, i === 0 && !epicId), {
+      label: "carve:" + beadId, phase: "Carve", schema: CARVE_SCHEMA,
+    })
+    if (!c || c.beadId !== beadId || !["updated", "skipped-matching"].includes(c.outcome)) {
+      return err("contract carve failed for " + beadId + " — refusing to build against an uncarved contract", { got: c || null })
+    }
+    if (i === 0 && !epicId && typeof c.epicId === "string" && validSlug(c.epicId)) epicId = c.epicId
+  }
+  if (epicId) a = { ...a, runStats: { ...(a.runStats || {}), epicId } }
+
   const waveBeads = [...a.waves[a.waveCursor - 1]].sort()
   const setups = []
   // SEQUENTIAL by design: concurrent `wt switch --create` calls race on the shared .git
