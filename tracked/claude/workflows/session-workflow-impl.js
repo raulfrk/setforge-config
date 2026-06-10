@@ -1,7 +1,7 @@
 export const meta = {
   name: 'session-workflow-impl',
   description: 'Staged, gate-bounded orchestration of the full 7-phase session methodology over a batch of bd issues. One invocation runs ONE gate-bounded segment selected by args.stage (intake | spec | implement | phase7) and returns a gate payload with nextArgs for the re-invocation; human gates (brainstorm answers, spec approval, per-wave merges) happen in the session between invocations.',
-  whenToUse: 'Invoke via the session-workflow skill, which owns the gate protocol. Args object: { stage, beadIds, repoPath, intakeRound?, gate1Answers?, askedQuestions?, contextSummary?, waves?, overlapAdvisories?, archiveDir?, specPath?, specApproved?, waveCursor?, worktrees?, baseShas?, mergedBeads?, preWaveSha?, mainSha?, profile? }. stage/beadIds/repoPath are always required; each stage validates its own additional fields and refuses (structured error) rather than guessing. The intake stage runs ONE round of the converging question loop per invocation; the caller re-invokes with cumulative answers until converged.',
+  whenToUse: 'Invoke via the session-workflow skill, which owns the gate protocol. Args object: { stage, beadIds, repoPath, intakeRound?, gate1Answers?, askedQuestions?, contextSummary?, waves?, overlapAdvisories?, overlapPredictorFailed?, openDepsOutsideSet?, archiveDir?, specPath?, specApproved?, waveCursor?, worktrees?, baseShas?, mergedBeads?, preWaveSha?, mainSha?, profile? }. stage/beadIds/repoPath are always required; each stage validates its own additional fields and refuses (structured error) rather than guessing. The intake stage runs ONE round of the converging question loop per invocation; the caller re-invokes with cumulative answers until converged.',
   phases: [
     { title: 'Validate', detail: 'Args contract + world-state probe; refuse on mismatch' },
     { title: 'Intake', detail: 'Per-bead contract readers, repo context, dep graph -> waves, overlap prediction, one exhaustive question round; converges across invocations' },
@@ -200,10 +200,11 @@ const CRITIC_SCHEMA = {
 }
 
 const WT_SETUP_SCHEMA = {
-  type: "object", required: ["beadId", "path", "baseSha"],
+  type: "object", required: ["beadId", "path", "branch", "baseSha", "claimed"],
   properties: {
     beadId: { type: "string" },
     path: { type: "string" },
+    branch: { type: "string", description: "output of git rev-parse --abbrev-ref HEAD in the worktree" },
     baseSha: { type: "string" },
     created: { type: "boolean", description: "false when an existing worktree was reused" },
     claimed: { type: "boolean" },
@@ -300,11 +301,14 @@ const WT_SETUP_PROMPT = (repoPath, beadId, slug) =>
   "1. If the directory " + WORKTREE_BASE + slug + " already exists, REUSE it — do not recreate. " +
   "Otherwise run: `wt switch --create " + slug + " --yes` (ignore a 'Cannot change directory' " +
   "warning — the worktree is still created).\n" +
-  "2. Verify the worktree exists: `ls -d " + WORKTREE_BASE + slug + "`. Report its path EXACTLY as " + WORKTREE_BASE + slug + ".\n" +
+  "2. Verify the worktree exists: `ls -d " + WORKTREE_BASE + slug + "`. Report its path EXACTLY as " + WORKTREE_BASE + slug + ". " +
+  "Also report the checked-out branch: `git -C " + WORKTREE_BASE + slug + " rev-parse --abbrev-ref HEAD` — report as branch. " +
+  "It must be `" + slug + "`; if a reused directory is on a DIFFERENT branch (e.g. main, or another bead's branch), report it verbatim and do NOT switch it.\n" +
   "3. Record the BRANCH POINT (not HEAD — a reused worktree may already carry commits): " +
   "`git -C " + WORKTREE_BASE + slug + " merge-base HEAD main` — report as baseSha. " +
   "If branch `main` does not exist, use the repository's default branch in its place.\n" +
-  "4. Claim the bead (idempotent — re-claiming your own bead is fine): `bd update " + beadId + " --claim`.\n\n" +
+  "4. Claim the bead (idempotent — re-claiming your own bead is fine): `bd update " + beadId + " --claim`. " +
+  "Report claimed=true ONLY if the command succeeded and the bead is now assigned to this session's actor.\n\n" +
   RETRY_NOTE + "\n\n" +
   "Report beadId, path, baseSha, created (false when reused), claimed, and one line of evidence " +
   "(the key command outputs). Do NOT edit any files, do NOT merge, do NOT remove anything. " +
@@ -362,6 +366,23 @@ const validAskedQuestions = (aq) => {
   return null
 }
 
+const validGate1Answers = (ga) => {
+  if (ga == null || typeof ga !== "object" || Array.isArray(ga)) return "args.gate1Answers must be a plain object keyed by question id"
+  if (ga.extraNotes != null && !(Array.isArray(ga.extraNotes) && ga.extraNotes.every(n => typeof n === "string"))) {
+    return "args.gate1Answers.extraNotes must be an array of strings when present"
+  }
+  return null
+}
+
+const validMergedBeads = (mb, beadIds) => {
+  if (!Array.isArray(mb)) return "args.mergedBeads must be an array"
+  const inSet = new Set(beadIds)
+  for (const id of mb) {
+    if (!validSlug(id) || !inSet.has(id)) return "mergedBeads member is not one of args.beadIds: " + JSON.stringify(id)
+  }
+  return null
+}
+
 const validOverlapAdvisories = (oa) => {
   if (oa == null) return null
   if (!Array.isArray(oa)) return "args.overlapAdvisories must be an array"
@@ -388,15 +409,20 @@ const validateStage = (a) => {
         if (aqProblem) return "intake round > 1: " + aqProblem
         const oaProblem = validOverlapAdvisories(a.overlapAdvisories)
         if (oaProblem) return "intake round > 1: " + oaProblem
-        if (a.gate1Answers == null || typeof a.gate1Answers !== "object") return "intake round > 1 requires args.gate1Answers (cumulative answers object)"
+        const gaProblem = validGate1Answers(a.gate1Answers)
+        if (gaProblem) return "intake round > 1: " + gaProblem
       }
       return null
     }
     case "spec": {
-      if (a.gate1Answers == null || typeof a.gate1Answers !== "object") return "spec stage requires args.gate1Answers"
+      const gaProblem = validGate1Answers(a.gate1Answers)
+      if (gaProblem) return "spec stage: " + gaProblem
       if (typeof a.contextSummary !== "string" || !a.contextSummary) return "spec stage requires args.contextSummary (from the intake payload's nextArgs)"
       const wavesProblem = validWaves(a.waves, a.beadIds)
       if (wavesProblem) return "spec stage: " + wavesProblem
+      // archiveDir/specPath have no fixed global prefix; the slice that first puts them
+      // in agent prompts (spec/implement bodies) must add containment against the
+      // host-policy prefix it establishes — absPathOk alone is NOT enough there.
       if (!absPathOk(a.archiveDir || "")) return "spec stage requires args.archiveDir (absolute path for the spec file)"
       return null
     }
@@ -406,13 +432,23 @@ const validateStage = (a) => {
       const wavesProblem = validWaves(a.waves, a.beadIds)
       if (wavesProblem) return "implement stage: " + wavesProblem
       if (!isInt(a.waveCursor) || a.waveCursor > a.waves.length) return "implement stage requires args.waveCursor in 1.." + (Array.isArray(a.waves) ? a.waves.length : "?")
-      if (a.waveCursor > 1 && (a.worktrees == null || typeof a.worktrees !== "object")) return "implement stage with waveCursor > 1 requires args.worktrees (carried from prior payloads)"
+      if (a.mergedBeads != null) {
+        const mbProblem = validMergedBeads(a.mergedBeads, a.beadIds)
+        if (mbProblem) return "implement stage: " + mbProblem
+      }
+      if (a.waveCursor > 1) {
+        if (a.worktrees == null || typeof a.worktrees !== "object") return "implement stage with waveCursor > 1 requires args.worktrees (carried from prior payloads)"
+        if (a.baseShas == null || typeof a.baseShas !== "object") return "implement stage with waveCursor > 1 requires args.baseShas (per-bead branch points, carried from prior payloads)"
+        if (!SHA_RE.test(a.mainSha || "")) return "implement stage with waveCursor > 1 requires args.mainSha (the main tip recorded at the last merge gate)"
+      }
       return null
     }
     case "phase7": {
       if (!SHA_RE.test(a.preWaveSha || "")) return "phase7 stage requires args.preWaveSha (sha recorded before the first merge gate)"
       if (!SHA_RE.test(a.mainSha || "")) return "phase7 stage requires args.mainSha (current main tip recorded at the last merge gate)"
       if (!Array.isArray(a.mergedBeads) || a.mergedBeads.length < 1) return "phase7 stage requires args.mergedBeads"
+      const mbProblem = validMergedBeads(a.mergedBeads, a.beadIds)
+      if (mbProblem) return "phase7 stage: " + mbProblem
       return null
     }
     default: return "unreachable"
@@ -422,8 +458,10 @@ const validateStage = (a) => {
 // ─── World-state probe (every stage, intake included) ───
 
 // Stage-appropriate bead-status rule, enforced in CODE on the probe's verbatim facts:
-// intake/spec/implement expect no bead is already closed; phase7 expects every MERGED
-// bead to be closed (the GATE 3 merge ritual closes them).
+// no UNMERGED bead may be closed before phase7; MERGED beads (closed by the GATE 3 merge
+// ritual) are exempt at implement waveCursor>1, and at phase7 they MUST be closed.
+// Coverage is reconciled input-vs-returned — facts the probe omits are problems, not
+// passes (mirrors the bead-reader identity reconciliation).
 const runProbe = async (a) => {
   const rawEntries = Object.entries(a.worktrees || {})
   const badEntries = rawEntries.filter(([beadId, p]) => !validSlug(beadId) || !absPathOk(p) || !p.startsWith(WORKTREE_BASE))
@@ -432,8 +470,11 @@ const runProbe = async (a) => {
       badEntries: badEntries.map(([beadId, p]) => ({ beadId, path: p })),
     }) }
   }
+  if (a.mainSha != null && !(typeof a.mainSha === "string" && SHA_RE.test(a.mainSha))) {
+    return { failed: err("args.mainSha is present but not a valid sha — refusing to silently skip the main-tip check on a corrupted carry", { got: a.mainSha }) }
+  }
   const expect = {
-    mainSha: typeof a.mainSha === "string" && SHA_RE.test(a.mainSha) ? a.mainSha : null,
+    mainSha: typeof a.mainSha === "string" ? a.mainSha : null,
     worktrees: rawEntries
       .map(([beadId, p]) => ({ beadId, path: p }))
       .sort((x, y) => x.beadId.localeCompare(y.beadId)),
@@ -443,21 +484,31 @@ const runProbe = async (a) => {
   })
   if (!probe) return { failed: err("world-state probe returned no result — refusing to proceed unverified") }
   const problems = [...(probe.problems || [])]
-  if (expect.mainSha && probe.mainSha && !probe.mainSha.startsWith(expect.mainSha) && !expect.mainSha.startsWith(probe.mainSha)) {
-    problems.push("mainSha mismatch: expected " + expect.mainSha + ", observed " + probe.mainSha)
-  }
-  for (const w of (probe.worktrees || [])) {
-    if (w.exists === false) problems.push("expected worktree missing: " + w.beadId + " at " + (w.path || "?"))
-  }
-  const merged = new Set(a.stage === "phase7" ? (a.mergedBeads || []) : [])
-  for (const b of (probe.beads || [])) {
-    if (b.exists === false) { problems.push("bead not found: " + b.id); continue }
-    const status = String(b.status || "").toLowerCase()
-    if (a.stage === "phase7" && merged.has(b.id) && !status.includes("closed")) {
-      problems.push("merged bead " + b.id + " is not closed (status: " + (b.status || "?") + ") — the merge ritual did not complete")
+  if (expect.mainSha) {
+    if (!SHA_RE.test(probe.mainSha || "")) {
+      problems.push("probe did not report a valid mainSha (expected " + expect.mainSha + ")")
+    } else if (!probe.mainSha.startsWith(expect.mainSha) && !expect.mainSha.startsWith(probe.mainSha)) {
+      problems.push("mainSha mismatch: expected " + expect.mainSha + ", observed " + probe.mainSha)
     }
-    if (a.stage !== "phase7" && status.includes("closed")) {
-      problems.push("bead " + b.id + " is already closed — stale stage for this batch")
+  }
+  const wtById = new Map((probe.worktrees || []).map(w => [w.beadId, w]))
+  for (const w of expect.worktrees) {
+    const got = wtById.get(w.beadId)
+    if (!got || typeof got.exists !== "boolean") problems.push("probe did not report on expected worktree: " + w.beadId + " at " + w.path)
+    else if (got.exists === false) problems.push("expected worktree missing: " + w.beadId + " at " + w.path)
+  }
+  const beadById = new Map((probe.beads || []).map(b => [b.id, b]))
+  const merged = new Set((a.stage === "phase7" || a.stage === "implement") ? (a.mergedBeads || []) : [])
+  for (const id of a.beadIds) {
+    const b = beadById.get(id)
+    if (!b) { problems.push("probe did not report on bead: " + id); continue }
+    if (b.exists === false) { problems.push("bead not found: " + id); continue }
+    const status = String(b.status || "").toLowerCase()
+    if (a.stage === "phase7" && merged.has(id) && !status.includes("closed")) {
+      problems.push("merged bead " + id + " is not closed (status: " + (b.status || "?") + ") — the merge ritual did not complete")
+    }
+    if (a.stage !== "phase7" && !merged.has(id) && status.includes("closed")) {
+      problems.push("bead " + id + " is already closed — stale stage for this batch")
     }
   }
   if (probe.ok !== true || problems.length > 0) {
@@ -498,10 +549,10 @@ const runIntake = async (a) => {
     const repoCtx = await agent(REPO_READER_PROMPT(a.repoPath), {
       label: "read:repo", phase: "Intake", schema: REPO_CONTEXT_SCHEMA,
     })
-    if (!repoCtx) {
+    if (!repoCtx || typeof repoCtx.summary !== "string" || !repoCtx.summary.trim()) {
       // Same posture as the bead readers: a silently-degraded contextSummary would be
       // frozen into nextArgs and sign off every later round's convergence decision.
-      return err("repo-context reader returned no result — refusing to brainstorm on amputated repo context")
+      return err("repo-context reader returned no result or an empty summary — refusing to brainstorm on amputated repo context")
     }
     const ordered = ids.map(i => byId.get(i))
     const edges = ordered.flatMap(r => (r.depIds || []).map(to => ({ from: r.beadId, to })))
@@ -532,9 +583,9 @@ const runIntake = async (a) => {
         "deps: " + ((r.depIds || []).slice().sort().join(", ") || "(none)") + "\n" +
         "files-likely: " + ((r.filesLikely || []).slice().sort().join(", ") || "(unknown)")
       ).join("\n\n") +
-      "\n\n## Repo\n" + ((repoCtx && repoCtx.summary) || "(repo reader unavailable)") +
-      (repoCtx && repoCtx.conventions ? "\nconventions: " + repoCtx.conventions : "") +
-      (repoCtx && (repoCtx.testCommands || []).length ? "\ntest-commands: " + repoCtx.testCommands.join(" | ") : "")
+      "\n\n## Repo\n" + repoCtx.summary +
+      (repoCtx.conventions ? "\nconventions: " + repoCtx.conventions : "") +
+      ((repoCtx.testCommands || []).length ? "\ntest-commands: " + repoCtx.testCommands.join(" | ") : "")
   } else {
     contextSummary = a.contextSummary
     waves = a.waves
@@ -546,8 +597,9 @@ const runIntake = async (a) => {
   const askedQuestions = (a.askedQuestions || []).map(q => ({ id: q.id, question: q.question }))
   const answersEntries = Object.entries(a.gate1Answers || {}).filter(([k]) => k !== "extraNotes").sort((x, y) => x[0].localeCompare(y[0]))
   const extraNotes = (a.gate1Answers && a.gate1Answers.extraNotes) || []
+  const renderAnswer = (v) => typeof v === "string" ? v : JSON.stringify(v)
   const answersBlock =
-    (answersEntries.length ? answersEntries.map(([k, v]) => "- " + k + ": " + String(v)).join("\n") : "(none yet)") +
+    (answersEntries.length ? answersEntries.map(([k, v]) => "- " + k + ": " + renderAnswer(v)).join("\n") : "(none yet)") +
     (extraNotes.length ? "\n\nUser additions:\n" + extraNotes.map(n => "- " + String(n)).join("\n") : "")
   const askedBlock = askedQuestions.length
     ? askedQuestions.map(q => "- [" + q.id + "] " + q.question).join("\n")
@@ -615,8 +667,13 @@ const runIntake = async (a) => {
       }
       criticFresh.sort((x, y) => x.id.localeCompare(y.id))
       questions = criticFresh.slice(0, MAX_QUESTIONS_PER_ROUND)
-      // critic non-converged with zero expressible questions: surface uncovered ground to the
-      // human rather than looping blind — the payload below carries `uncovered`.
+      if (questions.length === 0 && uncovered.length === 0) {
+        // A critic that neither converges, names uncovered ground, nor asks anything is a
+        // malformed adjudication — error loudly rather than emit an unactionable payload.
+        return err("coverage critic neither converged nor named uncovered ground nor produced fresh questions — adjudication is malformed; re-invoke to retry the round")
+      }
+      // critic non-converged with zero expressible questions but named uncovered ground:
+      // surface it to the human rather than looping blind — the payload carries `uncovered`.
     }
   }
 
@@ -628,7 +685,9 @@ const runIntake = async (a) => {
     contextSummary, waves, overlapAdvisories, openDepsOutsideSet, overlapPredictorFailed,
   }
   const nextArgs = converged
-    ? { ...carry, stage: "spec", intakeRound: undefined }
+    // gate1Answers may be legitimately absent when round 1 converges outright; the spec
+    // stage requires the field, so the emitted nextArgs must satisfy its own validator.
+    ? { ...carry, stage: "spec", intakeRound: undefined, gate1Answers: a.gate1Answers ?? {} }
     : carry
 
   const stalled = !converged && questions.length === 0
@@ -684,12 +743,15 @@ const runImplement = async (a) => {
     const setup = await agent(WT_SETUP_PROMPT(a.repoPath, beadId, slug), {
       label: "wt-setup:" + beadId, phase: "Carve", schema: WT_SETUP_SCHEMA,
     })
-    // Pin the result to the loop's inputs: the echoed path must be exactly the dictated
-    // one, and the carry maps are keyed by the loop's beadId — a confused agent echoing a
-    // different id or path must fail loudly, never corrupt the carry.
-    if (!setup || setup.path !== expectedPath || !SHA_RE.test(setup.baseSha || "")) {
+    // Pin the result to the loop's inputs: echoed id, path, and branch must be exactly the
+    // dictated ones, the claim must have succeeded, and the carry maps are keyed by the
+    // loop's beadId — a confused agent must fail loudly, never corrupt the carry. The
+    // branch check also catches a stale reused directory sitting on main (or another
+    // bead's branch), where commits would otherwise land outside this bead's range.
+    if (!setup || setup.beadId !== beadId || setup.path !== expectedPath ||
+        setup.branch !== slug || setup.claimed !== true || !SHA_RE.test(setup.baseSha || "")) {
       return err("worktree setup failed for " + beadId + " — aborting the wave before any build work", {
-        expectedPath, completedSetups: setups.map(s => s.beadId), got: setup || null,
+        expectedPath, expectedBranch: slug, completedSetups: setups.map(s => s.beadId), got: setup || null,
       })
     }
     setups.push({ ...setup, beadId, path: expectedPath })
