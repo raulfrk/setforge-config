@@ -433,7 +433,7 @@ const PLAN_SCHEMA = {
     steps: { type: "array", minItems: 1, maxItems: 12, items: {
       type: "object", required: ["id", "title", "instruction"],
       properties: {
-        id: { type: "string" },
+        id: { type: "string", description: "stable UNIQUE lowercase-dash id (lowercase letters/digits/dots/dashes)" },
         title: { type: "string" },
         instruction: { type: "string" },
         verify: { type: "string" },
@@ -662,7 +662,9 @@ const SPEC_WRITER_PROMPT = (a, answersBlock, checklistBlock, expectedSpecPath, w
   "4. Wave plan — verbatim.\n" +
   "5. Verification commands — split the repo's test commands into cheap (fast unit/lint, safe to run " +
   "every review round) and full (the expensive/canonical gate, run once per integration pass). " +
-  "Derive from the batch context's test-commands; do not invent commands.\n" +
+  "Derive from the batch context's test-commands; do not invent commands. BOTH tiers must be " +
+  "non-empty: where the repo offers no command for a tier, state a prose criterion as the entry " +
+  "instead (e.g. 'review-fan-judged: the claude-md fan passes clean') — never an empty list.\n" +
   "6. Bugs and code smells to avoid — the merged checklist, verbatim.\n\n" +
   "Report specPath EXACTLY as written, verifyCommands {cheap, full}, and carvePreview " +
   "(per-bead {beadId, design, acceptance} matching section 3). Structured output only."
@@ -722,7 +724,8 @@ const PLAN_PROMPT_B = (specPath, beadId, wt, beadContract, checklistBlock) =>
   "## Risk checklist (carry these constraints into every step)\n" + fence(checklistBlock) + "\n\n" +
   "## Task\n" +
   "Produce an ORDERED build plan for THIS bead only: independently buildable+verifiable steps. " +
-  "Each step: stable id, short title, concrete instruction (which files, what behavior), a verify " +
+  "Each step: a stable UNIQUE lowercase-dash id (lowercase letters/digits/dots/dashes, e.g. " +
+  "add-validator, s1), short title, concrete instruction (which files, what behavior), a verify " +
   "clause (command or observable property), relevantChecklist ids. Order so each step depends " +
   "only on earlier ones. Structured output only."
 
@@ -750,7 +753,7 @@ const VERIFY_PROMPT_B = (beadId, wt, step) =>
 const VERIFY_UNIT_PROMPT_B = (beadId, wt, plan) =>
   "## Unit Verifier: " + beadId + "\n\n" +
   "Worktree: " + wt + "\n\n## What was built\n" +
-  cmdFence(plan.steps.map(s => "- " + s.id + ": " + s.title + (s.verify ? " — verify: " + s.verify : "")).join("\n")) + "\n\n" +
+  cmdFence(plan.steps.map(s => "- " + s.id + ": " + safeHeader(s.title) + (s.verify ? " — verify: " + s.verify : "")).join("\n")) + "\n\n" +
   "Verify the WHOLE unit in one pass: run each step's verify clause where it is a command, " +
   "otherwise inspect. passed=true only with concrete QUOTED evidence. Default passed=false " +
   "if uncertain. Structured output only."
@@ -1459,7 +1462,7 @@ const implementBead = async (a, setup, checklist) => {
     // Step ids become journal labels (the replay key): duplicates would alias two
     // different build prompts onto one cached result and silently skip a step.
     const stepIds = plan.steps.map(s => s.id)
-    if (new Set(stepIds).size !== stepIds.length || stepIds.some(id => !validSlug(String(id || "")))) {
+    if (new Set(stepIds).size !== stepIds.length || stepIds.some(id => typeof id !== "string" || !SLUG_RE.test(id))) {
       return { ...state, evidence: "plan emitted duplicate or malformed step ids (" + stepIds.join(", ") + ") — refusing to build against aliased labels" }
     }
     for (const step of plan.steps) {
