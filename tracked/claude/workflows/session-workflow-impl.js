@@ -471,13 +471,24 @@ const runIntake = async (a) => {
   }
 
   const seen = new Set(askedQuestions.map(q => qKey(q.question)))
+  // Ids key the gate1Answers object, so they must be unique across the WHOLE run even when
+  // two generators coin the same id for different questions: suffix deterministic ordinals.
+  const usedIds = new Set(askedQuestions.map(q => q.id))
+  const uniqueId = (id) => {
+    if (!usedIds.has(id)) { usedIds.add(id); return id }
+    let n = 2
+    while (usedIds.has(id + "-" + n)) n++
+    const fresh = id + "-" + n
+    usedIds.add(fresh)
+    return fresh
+  }
   const fresh = []
   for (const g of gens) {
     for (const q of (g.questions || [])) {
       const k = qKey(q.question)
       if (!q.id || !q.question || seen.has(k)) continue
       seen.add(k)
-      fresh.push({ id: q.id, question: q.question, grounding: q.grounding || "", options: q.options || [] })
+      fresh.push({ id: uniqueId(q.id), question: q.question, grounding: q.grounding || "", options: q.options || [] })
     }
   }
   fresh.sort((x, y) => x.id.localeCompare(y.id))
@@ -500,7 +511,7 @@ const runIntake = async (a) => {
         const k = qKey(q.question)
         if (!q.id || !q.question || seen.has(k)) continue
         seen.add(k)
-        criticFresh.push({ id: q.id, question: q.question, grounding: q.grounding || "", options: q.options || [] })
+        criticFresh.push({ id: uniqueId(q.id), question: q.question, grounding: q.grounding || "", options: q.options || [] })
       }
       criticFresh.sort((x, y) => x.id.localeCompare(y.id))
       questions = criticFresh.slice(0, MAX_QUESTIONS_PER_ROUND)
