@@ -1265,7 +1265,7 @@ const runIntake = async (a) => {
       })
     }
     const repoCtx = await agent(REPO_READER_PROMPT(a.repoPath), {
-      label: "read:repo", phase: "Intake", schema: REPO_CONTEXT_SCHEMA,
+      label: "read:repo-context", phase: "Intake", schema: REPO_CONTEXT_SCHEMA,
     })
     if (!repoCtx || typeof repoCtx.summary !== "string" || !repoCtx.summary.trim()) {
       // Same posture as the bead readers: a silently-degraded contextSummary would be
@@ -1640,8 +1640,12 @@ const implementBead = async (a, setup, checklist) => {
         ...gate.unverifiedIds.map(id => "(unverified) checklist item " + id),
       ].join(" | ").slice(0, 2000)
       // The finding DETAILS are what the operator crafts operatorGuidance from — counts
-      // alone left nothing durable to retry against (Q-H).
-      state.evidence = "roundsBackstop (" + P.roundsBackstop + ") reached; unresolved: " + (detailLines || "(none captured)")
+      // alone left nothing durable to retry against (Q-H). When the final round failed
+      // with zero details (scope breach / unactionable verdict), name THAT cause.
+      const fallbackCause = gate.scopeConsistent
+        ? "non-PASS verdict(s) carrying zero findings — unactionable adjudication"
+        : "reviewers cited files outside the frozen range (scopeConsistent=false)"
+      state.evidence = "roundsBackstop (" + P.roundsBackstop + ") reached; unresolved: " + (detailLines || fallbackCause)
       break
     }
 
