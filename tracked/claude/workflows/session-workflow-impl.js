@@ -1201,6 +1201,7 @@ const validateStage = (a) => {
       // archiveDir lives under the home tree like repoPath (the spec writer creates a
       // file there via an agent).
       if (!absPathOk(a.archiveDir || "") || !a.archiveDir.startsWith(REPO_PREFIX)) return "spec stage requires args.archiveDir (absolute path under " + REPO_PREFIX + " for the spec file)"
+      if ((a.archiveDir + "/").startsWith(a.repoPath.replace(/\/+$/, "") + "/")) return "spec stage: archiveDir must live OUTSIDE repoPath — untracked run artifacts inside the repo dirty the porcelain checks"
       if (typeof a.specFileName !== "string" || !SPECFILE_RE.test(a.specFileName)) return "spec stage requires args.specFileName (lowercase slug ending in .md, e.g. batch-spec.md)"
       const rsProblem = validRunStats(a.runStats)
       if (rsProblem) return "spec stage: " + rsProblem
@@ -1303,6 +1304,7 @@ const validateStage = (a) => {
       const clProblem = validChecklistMap(a.checklist, a.beadIds)
       if (clProblem) return "phase7 stage requires the GATE 2 per-bead checklist carried in args: " + clProblem
       if (!absPathOk(a.archiveDir || "") || !a.archiveDir.startsWith(REPO_PREFIX)) return "phase7 stage requires args.archiveDir (the final report is written there)"
+      if ((a.archiveDir + "/").startsWith(a.repoPath.replace(/\/+$/, "") + "/")) return "phase7 stage: archiveDir must live OUTSIDE repoPath — the report file would dirty main's porcelain and self-block the HELD re-invocation"
       if (typeof a.specFileName !== "string" || !SPECFILE_RE.test(a.specFileName)) return "phase7 stage requires args.specFileName (the report name derives from it)"
       if (a.specPath != null && !(absPathOk(a.specPath) && a.specPath.startsWith(REPO_PREFIX))) return "phase7 stage: specPath must be an absolute path under " + REPO_PREFIX + " when present"
       if (a.deferredFindings != null) {
@@ -1312,8 +1314,11 @@ const validateStage = (a) => {
           if (d.reason != null && typeof d.reason !== "string") return "phase7 stage: deferredFindings reason must be a string when present"
         }
       }
-      if (a.priorFindingsFixed != null && !(Array.isArray(a.priorFindingsFixed) && a.priorFindingsFixed.every(f => f && typeof f.summary === "string" && typeof f.commitSha === "string" && SHA_RE.test(f.commitSha)))) {
-        return "phase7 stage: priorFindingsFixed must be an array of {round, summary, commitSha} when present"
+      if (a.priorFindingsFixed != null && !(Array.isArray(a.priorFindingsFixed) && a.priorFindingsFixed.every(f => f && typeof f.summary === "string" && typeof f.commitSha === "string" && SHA_RE.test(f.commitSha) && (f.round == null || Number.isInteger(f.round))))) {
+        return "phase7 stage: priorFindingsFixed must be an array of {round?, summary, commitSha} when present"
+      }
+      if (a.priorMergeOnlyFiles != null && !(Array.isArray(a.priorMergeOnlyFiles) && a.priorMergeOnlyFiles.every(p => typeof p === "string"))) {
+        return "phase7 stage: priorMergeOnlyFiles must be an array of strings when present"
       }
       return null
     }
@@ -1617,9 +1622,13 @@ const rebaseWorktrees = async (a) => {
     const rb = await agent(REBASE_PROMPT(a.repoPath, wt, beadId), {
       label: "rebase:" + beadId, phase: "Rebase", schema: REBASE_SCHEMA,
     })
+    const shaMatchesMain = (sha) => typeof sha === "string" && SHA_RE.test(sha) && (sha.startsWith(a.mainSha) || a.mainSha.startsWith(sha))
+    // newBaseSha must BE the validated main tip (merge-base HEAD main == main after a
+    // completed rebase): accepting any well-formed sha would let a mis-echo silently
+    // truncate the full-range re-review to a suffix of the bead's diff.
     const pinned = rb && rb.beadId === beadId && (
       (rb.outcome === "semantic-conflict") ||
-      (rb.outcome === "rebased" && typeof rb.newBaseSha === "string" && SHA_RE.test(rb.newBaseSha))
+      (rb.outcome === "rebased" && shaMatchesMain(rb.newBaseSha))
     )
     if (!pinned) {
       return { failed: err("rebase agent failed or returned an unpinned result for " + beadId + " — aborting the rebase step; completed rebases are carried in completedBaseShas (re-invoke with them merged into baseShas)", {
@@ -1997,7 +2006,9 @@ const runImplement = async (a) => {
     if (probed.probe && typeof probed.probe.mainSha === "string" && SHA_RE.test(probed.probe.mainSha)) {
       a = { ...a, preWaveSha: probed.probe.mainSha }
     } else {
-      log("wave 1: the probe reported no valid mainSha — preWaveSha NOT frozen; record the pre-merge main tip manually before the first merge")
+      // Proceeding without the frozen pre-merge tip makes the phase-7 range unrecoverable
+      // once merges happen (the GATE 3 note even asserts the freeze succeeded). Refuse.
+      return err("the probe reported no valid mainSha at wave 1 — preWaveSha cannot be frozen; supply preWaveSha explicitly (current pre-merge main tip) and re-invoke")
     }
   }
 
@@ -2223,7 +2234,9 @@ const runPhase7 = async (a) => {
   // phase 7 must never re-file follow-ups for findings already triaged (idempotent re-run).
   const seededDeferrals = (a.deferredFindings || []).map(d => ({ beadId: d.beadId, detail: d.detail, reason: d.reason || "(carried)" }))
   const state = { rounds: 0, verdict: "HELD", evidence: "", findingsFixed: [...(a.priorFindingsFixed || [])], deferredBeads: [...seededDeferrals] }
-  let mergeOnlyFiles = null
+  // Merge-only attribution is a ROUND-1-OF-THE-FIRST-RUN fact: on a re-invocation the
+  // prior run's fix commits sit in the combined range but are not merge artifacts.
+  let mergeOnlyFiles = a.priorMergeOnlyFiles != null ? [...a.priorMergeOnlyFiles] : null
   let reviewTasks = null
   let knownTypes = new Set()
   const findingsSeenByFixer = new Set()
@@ -2402,10 +2415,15 @@ const runPhase7 = async (a) => {
     })
     if (!fix) { log("phase7 r" + state.rounds + ": fix agent returned no result — next round re-measures"); continue }
     if (fix.status !== "blocked") {
-      if (typeof fix.commitSha === "string" && SHA_RE.test(fix.commitSha.trim())) {
-        state.findingsFixed.push({ round: state.rounds, summary: fix.summary, commitSha: fix.commitSha.trim(), addressed: fix.addressed || [] })
+      const sha = typeof fix.commitSha === "string" ? fix.commitSha.trim() : ""
+      const prevSha = state.findingsFixed.length ? state.findingsFixed[state.findingsFixed.length - 1].commitSha : a.mainSha
+      const isNewCommit = SHA_RE.test(sha) && !(sha.startsWith(prevSha) || prevSha.startsWith(sha))
+      if (isNewCommit) {
+        state.findingsFixed.push({ round: state.rounds, summary: fix.summary, commitSha: sha, addressed: fix.addressed || [] })
       } else {
-        log("phase7 r" + state.rounds + ": fixer claimed " + fix.status + " without a valid commit sha — next round's porcelain/resolve re-measures")
+        // An all-triage round legitimately commits nothing — the echoed HEAD is the prior
+        // tip and must not be recorded as a fix.
+        log("phase7 r" + state.rounds + ": fixer reported " + fix.status + " with no NEW commit — nothing recorded; next round re-measures")
       }
     }
     // Deferral triage (large-follow-up bar): file follow-ups, serialized; a filed finding
@@ -2473,6 +2491,7 @@ const runPhase7 = async (a) => {
       mainSha: state.findingsFixed.length ? state.findingsFixed[state.findingsFixed.length - 1].commitSha : a.mainSha,
       deferredFindings: state.deferredBeads.map(d => ({ beadId: d.beadId, detail: d.detail, reason: d.reason })),
       priorFindingsFixed: state.findingsFixed,
+      priorMergeOnlyFiles: mergeOnlyFiles || [],
     },
     note: converged
       ? "Phase 7 converged: combined fan clean and the full canonical gate passed. The batch is complete."
