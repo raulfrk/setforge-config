@@ -231,7 +231,7 @@ const PROBE_PROMPT = (repoPath, beadIds, expect) =>
     : "") +
   (expect.mainSha ? "\nExpected mainSha (verify it matches what you observe): " + expect.mainSha + "\n" : "") +
   "\nReport ok=true only if everything you could check is consistent; list every inconsistency in problems. " +
-  "Report facts verbatim — do not fix anything. Structured output only."
+  "Report facts verbatim — do not fix anything.\n\n" + RETRY_NOTE + "\n\nStructured output only."
 
 const BEAD_READER_PROMPT = (repoPath, beadId, allIds) =>
   "## Bead Contract Reader: " + beadId + "\n\n" +
@@ -242,8 +242,8 @@ const BEAD_READER_PROMPT = (repoPath, beadId, allIds) =>
   "- title, a 3-6 sentence designSummary, a 1-3 sentence acceptanceSummary\n" +
   "- depIds: ids THIS bead depends on (from its dependency/blocked-by lines), restricted to real bd ids\n" +
   "- openDepsOutsideSet: depIds that are still open AND not in this selected set: " + allIds.join(", ") + "\n" +
-  "- filesLikely: repo-relative paths this bead will probably touch (best effort from the contract text)\n" +
-  "Structured output only."
+  "- filesLikely: repo-relative paths this bead will probably touch (best effort from the contract text)\n\n" +
+  RETRY_NOTE + "\n\nStructured output only."
 
 const REPO_READER_PROMPT = (repoPath) =>
   "## Repo Context Reader\n\n" +
@@ -358,10 +358,13 @@ const validWaves = (waves, beadIds) => {
 
 const validAskedQuestions = (aq) => {
   if (!Array.isArray(aq)) return "args.askedQuestions must be an array"
+  const ids = new Set()
   for (const q of aq) {
     if (!q || typeof q.id !== "string" || !q.id || typeof q.question !== "string" || !q.question) {
       return "askedQuestions entries must be {id, question} strings (got " + JSON.stringify(q) + ")"
     }
+    if (ids.has(q.id)) return "askedQuestions carries duplicate id " + JSON.stringify(q.id) + " — ids key gate1Answers and must be unique"
+    ids.add(q.id)
   }
   return null
 }
@@ -401,16 +404,29 @@ const validateStage = (a) => {
       const round = a.intakeRound ?? 1
       if (!isInt(round)) return "args.intakeRound must be an integer >= 1"
       if (round > MAX_INTAKE_ROUNDS) return "args.intakeRound exceeds MAX_INTAKE_ROUNDS=" + MAX_INTAKE_ROUNDS + " — the brainstorm is not converging; resolve the open ground with the human before re-invoking"
+      // Carried fields are validated whenever PRESENT (round 1 included — a malformed
+      // erroneous carry must fail loudly, not flow garbage into fenced blocks).
+      if (a.gate1Answers != null) {
+        const gaProblem = validGate1Answers(a.gate1Answers)
+        if (gaProblem) return "intake: " + gaProblem
+      }
+      if (a.askedQuestions != null) {
+        const aqProblem = validAskedQuestions(a.askedQuestions)
+        if (aqProblem) return "intake: " + aqProblem
+      }
+      if (a.overlapAdvisories != null) {
+        const oaProblem = validOverlapAdvisories(a.overlapAdvisories)
+        if (oaProblem) return "intake: " + oaProblem
+      }
+      if (a.openDepsOutsideSet != null && !(Array.isArray(a.openDepsOutsideSet) && a.openDepsOutsideSet.every(d => typeof d === "string"))) {
+        return "intake: args.openDepsOutsideSet must be an array of strings when present"
+      }
       if (round > 1) {
         if (typeof a.contextSummary !== "string" || !a.contextSummary) return "intake round > 1 requires args.contextSummary carried from the round-1 payload (use nextArgs)"
         const wavesProblem = validWaves(a.waves, a.beadIds)
         if (wavesProblem) return "intake round > 1: " + wavesProblem
-        const aqProblem = validAskedQuestions(a.askedQuestions)
-        if (aqProblem) return "intake round > 1: " + aqProblem
-        const oaProblem = validOverlapAdvisories(a.overlapAdvisories)
-        if (oaProblem) return "intake round > 1: " + oaProblem
-        const gaProblem = validGate1Answers(a.gate1Answers)
-        if (gaProblem) return "intake round > 1: " + gaProblem
+        if (a.askedQuestions == null) return "intake round > 1 requires args.askedQuestions (cumulative; use nextArgs)"
+        if (a.gate1Answers == null) return "intake round > 1 requires args.gate1Answers (cumulative answers object)"
       }
       return null
     }
@@ -439,7 +455,11 @@ const validateStage = (a) => {
       if (a.waveCursor > 1) {
         if (a.worktrees == null || typeof a.worktrees !== "object") return "implement stage with waveCursor > 1 requires args.worktrees (carried from prior payloads)"
         if (a.baseShas == null || typeof a.baseShas !== "object") return "implement stage with waveCursor > 1 requires args.baseShas (per-bead branch points, carried from prior payloads)"
+        for (const [bid, sha] of Object.entries(a.baseShas)) {
+          if (!validSlug(bid) || !SHA_RE.test(String(sha || ""))) return "implement stage: args.baseShas carries a malformed entry: " + JSON.stringify({ [bid]: sha })
+        }
         if (!SHA_RE.test(a.mainSha || "")) return "implement stage with waveCursor > 1 requires args.mainSha (the main tip recorded at the last merge gate)"
+        if (a.mergedBeads == null) return "implement stage with waveCursor > 1 requires args.mergedBeads (the GATE 3 ritual's outcome — without it, closed wave-1 beads read as stale state)"
       }
       return null
     }
@@ -463,10 +483,13 @@ const validateStage = (a) => {
 // Coverage is reconciled input-vs-returned — facts the probe omits are problems, not
 // passes (mirrors the bead-reader identity reconciliation).
 const runProbe = async (a) => {
+  const merged = new Set((a.stage === "phase7" || a.stage === "implement") ? (a.mergedBeads || []) : [])
   const rawEntries = Object.entries(a.worktrees || {})
-  const badEntries = rawEntries.filter(([beadId, p]) => !validSlug(beadId) || !absPathOk(p) || !p.startsWith(WORKTREE_BASE))
+  // Slug == bead id by convention, so each carried path is pinned to its exact expected
+  // value, not just the prefix.
+  const badEntries = rawEntries.filter(([beadId, p]) => !validSlug(beadId) || p !== WORKTREE_BASE + beadId)
   if (badEntries.length > 0) {
-    return { failed: err("args.worktrees carries malformed entries (id fails slug check, or path not under " + WORKTREE_BASE + ") — refusing to proceed on a corrupted carry", {
+    return { failed: err("args.worktrees carries malformed entries (id fails slug check, or path is not exactly " + WORKTREE_BASE + "<beadId>) — refusing to proceed on a corrupted carry", {
       badEntries: badEntries.map(([beadId, p]) => ({ beadId, path: p })),
     }) }
   }
@@ -475,7 +498,10 @@ const runProbe = async (a) => {
   }
   const expect = {
     mainSha: typeof a.mainSha === "string" ? a.mainSha : null,
+    // Merged beads' worktrees were removed by the GATE 3 ritual (wt remove) — exempt them
+    // from the must-exist rule, mirroring the status exemption below.
     worktrees: rawEntries
+      .filter(([beadId]) => !merged.has(beadId))
       .map(([beadId, p]) => ({ beadId, path: p }))
       .sort((x, y) => x.beadId.localeCompare(y.beadId)),
   }
@@ -492,19 +518,23 @@ const runProbe = async (a) => {
     }
   }
   const wtById = new Map((probe.worktrees || []).map(w => [w.beadId, w]))
+  if ((probe.worktrees || []).length !== wtById.size) problems.push("probe reported duplicate worktree entries — conflicting facts")
   for (const w of expect.worktrees) {
     const got = wtById.get(w.beadId)
     if (!got || typeof got.exists !== "boolean") problems.push("probe did not report on expected worktree: " + w.beadId + " at " + w.path)
     else if (got.exists === false) problems.push("expected worktree missing: " + w.beadId + " at " + w.path)
+    else if (typeof got.path === "string" && got.path !== w.path) problems.push("probe checked the wrong path for " + w.beadId + ": " + got.path + " (expected " + w.path + ")")
   }
   const beadById = new Map((probe.beads || []).map(b => [b.id, b]))
-  const merged = new Set((a.stage === "phase7" || a.stage === "implement") ? (a.mergedBeads || []) : [])
+  if ((probe.beads || []).length !== beadById.size) problems.push("probe reported duplicate bead entries — conflicting facts")
   for (const id of a.beadIds) {
     const b = beadById.get(id)
     if (!b) { problems.push("probe did not report on bead: " + id); continue }
     if (b.exists === false) { problems.push("bead not found: " + id); continue }
     const status = String(b.status || "").toLowerCase()
-    if (a.stage === "phase7" && merged.has(id) && !status.includes("closed")) {
+    if (merged.has(id) && !status.includes("closed")) {
+      // Applies at implement waveCursor>1 AND phase7: a bead listed as merged but still
+      // open means the GATE 3 ritual (wt merge -> bd close -> wt remove) did not complete.
       problems.push("merged bead " + id + " is not closed (status: " + (b.status || "?") + ") — the merge ritual did not complete")
     }
     if (a.stage !== "phase7" && !merged.has(id) && status.includes("closed")) {
@@ -572,7 +602,7 @@ const runIntake = async (a) => {
     overlapPredictorFailed = !overlap
     overlapAdvisories = ((overlap && overlap.pairs) || [])
       .map(p => ({ a: p.a, b: p.b, files: (p.files || []).slice().sort(), note: p.note || "" }))
-      .sort((x, y) => (x.a + x.b).localeCompare(y.a + y.b))
+      .sort((x, y) => (x.a + " " + x.b).localeCompare(y.a + " " + y.b))
 
     contextSummary =
       "## Batch\n" +
