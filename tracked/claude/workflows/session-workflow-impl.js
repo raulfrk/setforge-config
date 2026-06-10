@@ -1567,22 +1567,64 @@ const runIntake = async (a) => {
 
 // ─── Stage: implement — carve, wave setup, per-bead pipeline (rebase lands in a follow-up) ───
 
-const rebaseWorktrees = async (a, setups) => ({
-  gate: "NOT_IMPLEMENTED", stage: "implement", step: "rebase",
-  note: "rebase path lands in a follow-up change; do not proceed past waveCursor 1 on this revision",
-})
+// Rebase every carried (prior-wave, unmerged) worktree onto the new main, SERIALIZED.
+// Mechanical conflicts: the agent resolves and the full-range converge re-review
+// validates. Semantic collisions: BLOCKED mid-rebase, both sides recorded (Q-L). A
+// failed/unpinned agent aborts BUT carries every completed bead's updated baseSha — a
+// bare error dropping partial rebases is the partial-result loss the checklist bans.
+// Returns { failed } | { results, rebased, a } with a's baseShas updated.
+const rebaseWorktrees = async (a) => {
+  const merged = new Set(a.mergedBeads || [])
+  const priorWaves = a.waves.slice(0, a.waveCursor - 1).flat()
+  const carried = priorWaves.filter(id => !merged.has(id) && Object.hasOwn(a.worktrees || {}, id)).sort()
+  const results = []
+  const rebased = {}
+  let baseShas = { ...(a.baseShas || {}) }
+  for (const beadId of carried) {
+    const wt = a.worktrees[beadId]
+    const rb = await agent(REBASE_PROMPT(a.repoPath, wt, beadId), {
+      label: "rebase:" + beadId, phase: "Rebase", schema: REBASE_SCHEMA,
+    })
+    const pinned = rb && rb.beadId === beadId && (
+      (rb.outcome === "semantic-conflict" ) ||
+      (rb.outcome === "rebased" && typeof rb.newBaseSha === "string" && SHA_RE.test(rb.newBaseSha))
+    )
+    if (!pinned) {
+      return { failed: err("rebase agent failed or returned an unpinned result for " + beadId + " — aborting the rebase step; completed rebases are carried in completedBaseShas (re-invoke with them merged into baseShas)", {
+        completedBaseShas: baseShas, completedRebased: rebased, got: rb || null,
+      }) }
+    }
+    if (rb.outcome === "semantic-conflict") {
+      results.push({
+        beadId, gate: "BLOCKED", verdict: "BLOCK", rounds: 0, scopeGrowth: [],
+        baseSha: baseShas[beadId] || null, tipSha: null,
+        evidence: "semantic conflict during rebase — worktree left mid-rebase with markers in place (no --abort); both sides: " + (rb.conflictSummary || "(no summary reported)"),
+      })
+      continue
+    }
+    baseShas = { ...baseShas, [beadId]: rb.newBaseSha }
+    rebased[beadId] = rb.newBaseSha
+    // Full-range converge re-review against the NEW base (review-only re-entry; the
+    // skipBuild round-1 re-verify covers Q-D's re-verify-after-rebase requirement).
+    const aForBead = { ...a, baseShas }
+    const result = await implementBead(aForBead, { beadId, path: wt, baseSha: rb.newBaseSha }, (a.checklist && a.checklist[beadId]) || [], true)
+    results.push(result)
+  }
+  return { results, rebased, a: { ...a, baseShas } }
+}
 
 // One bead's plan -> build (commits) -> verify -> converge-until-clean review loop.
 // Returns a per-bead result object — NEVER throws state into shared scope; mixed wave
 // results are aggregated by the caller without collapsing.
-const implementBead = async (a, setup, checklist) => {
+const implementBead = async (a, setup, checklist, forceSkipBuild = false) => {
   const beadId = setup.beadId
   const wt = setup.path
   const checklistBlock = renderChecklist(checklist)
   const guidance = (a.operatorGuidance && a.operatorGuidance[beadId]) || ""
   // A bead that already PASSed a prior attempt (tipSha recorded) but was not merged
-  // re-enters at the review loop only — its committed work is in the worktree.
-  const skipBuild = Object.hasOwn(a.tipShas || {}, beadId)
+  // re-enters at the review loop only — its committed work is in the worktree. The
+  // rebase path forces the same review-only re-entry for HELD beads (no tipSha).
+  const skipBuild = forceSkipBuild || Object.hasOwn(a.tipShas || {}, beadId)
   const carve = (a.carvePreview || []).find(c => c.beadId === beadId)
   const beadContract = carve ? ("design: " + carve.design + "\n\nacceptance: " + carve.acceptance) : "(no carved contract found)"
   const state = { beadId, gate: "HELD", verdict: "BLOCK", rounds: 0, scopeGrowth: [], baseSha: setup.baseSha, tipSha: null, evidence: "" }
@@ -1832,10 +1874,10 @@ const implementBead = async (a, setup, checklist) => {
   return state
 }
 
-const implementWave = async (a, setups) => {
+const implementWave = async (a, setups, rebaseResults = [], rebasedMap = {}) => {
   // No phase() here: per-bead pipelines run concurrently and every agent call inside
   // them carries an explicit `phase:` option (Build / Review/Fix).
-  const results = []
+  const results = [...rebaseResults]
   // Chunked parallelism: at most CHUNK_WIDTH per-bead pipelines run concurrently (git/bd
   // writer-contention bound); chunks are sequential.
   for (const batch of chunked(setups, CHUNK_WIDTH)) {
@@ -1874,6 +1916,8 @@ const implementWave = async (a, setups) => {
   const worktreesOut = { ...(a.worktrees || {}), ...Object.fromEntries(setups.map(s => [s.beadId, s.path])) }
   const baseShasOut = { ...(a.baseShas || {}), ...Object.fromEntries(setups.map(s => [s.beadId, s.baseSha])) }
   const tipShasOut = { ...(a.tipShas || {}), ...Object.fromEntries(results.filter(r => r.tipSha).map(r => [r.beadId, r.tipSha])) }
+  // Rebased beads' branch points moved: their stale tipShas (if any) were superseded by
+  // the re-review's fresh tip; their baseShas are already updated in `a` by the rebase.
   const lastWave = a.waveCursor === a.waves.length
   const priorWaveStats = (a.runStats || {})["wave" + a.waveCursor] || {}
   const mergedInWave = a.waves[a.waveCursor - 1].filter(id => (a.mergedBeads || []).includes(id)).length
@@ -1895,6 +1939,7 @@ const implementWave = async (a, setups) => {
   return {
     gate: "GATE3", stage: "implement", waveCursor: a.waveCursor,
     beads, mergeReady, held, blocked,
+    rebased: rebasedMap, preWaveSha: a.preWaveSha ?? null,
     worktrees: worktreesOut, baseShas: baseShasOut, tipShas: tipShasOut, runStats,
     nextArgs,
     note: "Merge ritual per merge-ready bead: wt merge --no-squash (ff-only) -> bd close -> wt remove. Record preWaveSha (main tip BEFORE this run's first merge) once, and the new mainSha after merging; append merged ids to nextArgs.mergedBeads. For HELD/BLOCKED beads: merge the passed ones first, then re-invoke at stage 'implement' with the SAME waveCursor and operatorGuidance (override nextArgs.stage back to 'implement' on the last wave, and decrement nextArgs.waveCursor back to this wave on any other) — passed-but-unmerged beads re-enter at the review loop only. Keep a HELD bead's worktree on disk until phase7 even if you intend to drop it — implement invocations require carried worktrees to exist. " + (lastWave ? "This was the last wave: when every bead is merged (or consciously dropped via droppedBeads), proceed to phase7 (requires preWaveSha, mainSha, verifyCommands)." : "Then re-invoke with nextArgs."),
@@ -1912,23 +1957,30 @@ const runImplement = async (a) => {
     a = { ...a, preWaveSha: probed.probe.mainSha }
   }
 
+  let rebaseResults = []
+  let rebasedMap = {}
   if (a.waveCursor > 1) {
     phase("Rebase")
-    return await rebaseWorktrees(a, [])
+    const rb = await rebaseWorktrees(a)
+    if (rb.failed) return rb.failed
+    rebaseResults = rb.results
+    rebasedMap = rb.rebased
+    a = rb.a
   }
 
   phase("Carve")
   const mergedNow = new Set(a.mergedBeads || [])
   const waveBeads = [...a.waves[a.waveCursor - 1]].filter(id => !mergedNow.has(id)).sort()
-  if (waveBeads.length === 0) {
+  if (waveBeads.length === 0 && rebaseResults.length === 0) {
     return err("wave " + a.waveCursor + " has no unmerged beads — nothing to retry; advance waveCursor (or proceed to phase7 after the last wave) instead of re-invoking this cursor")
   }
-  // Carve the WHOLE batch's contracts up front (idempotent — agents skip matching ones),
-  // serialized: bd is a single-writer store.
+  // Carve the WHOLE batch's contracts up front at wave 1 only (idempotent — agents skip
+  // matching ones), serialized: bd is a single-writer store. Later waves' contracts were
+  // carved then; re-carving them against closed/merged siblings would churn bd.
   const previewById = new Map((a.carvePreview || []).map(c => [c.beadId, c]))
   let epicId = (a.runStats && typeof a.runStats.epicId === "string" && validSlug(a.runStats.epicId)) ? a.runStats.epicId : null
   const mergedForCarve = new Set(a.mergedBeads || [])
-  const allBeads = [...a.beadIds].filter(id => !mergedForCarve.has(id)).sort()
+  const allBeads = a.waveCursor === 1 ? [...a.beadIds].filter(id => !mergedForCarve.has(id)).sort() : []
   for (const [i, beadId] of allBeads.entries()) {
     const preview = previewById.get(beadId)
     const c = await agent(CARVE_PROMPT(a.repoPath, beadId, preview.design, preview.acceptance, i === 0 && !epicId), {
@@ -1970,7 +2022,7 @@ const runImplement = async (a) => {
   }
 
   phase("Build")
-  return await implementWave(a, setups)
+  return await implementWave(a, setups, rebaseResults, rebasedMap)
 }
 
 // ─── Stage: spec (pitfall research -> writer -> coverage + self-review -> GATE 2) ───
