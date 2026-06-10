@@ -5,9 +5,9 @@ description: Autonomous batch implementation via the session-workflow-impl workf
 
 # Session Workflow
 
-A sibling of `session-flow`, not a replacement: `session-flow` remains the default for interactive and exploratory work. Pick this skill when a batch of bd issues is well-scoped enough to run autonomously — the `session-workflow-impl` workflow script (deployed to `~/.claude/workflows/`) drives intake → spec → implement → integration deterministically, and the main session's only jobs are relaying the three human gates and executing the merge ritual.
+Pick this skill when a batch of bd issues is well-scoped enough to run autonomously — the `session-workflow-impl` workflow script (deployed to `~/.claude/workflows/`) drives intake → spec → implement → integration deterministically, and the main session's only jobs are relaying the three human gates and executing the merge ritual.
 
-The script's gate payloads are AUTHORITATIVE for all per-stage argument mechanics: every payload carries `nextArgs` (the exact args object for the next invocation) and a `note` saying what the human adds. This skill deliberately does not restate field lists — read the payload, not this file.
+The script's gate payloads are AUTHORITATIVE for all per-stage argument mechanics: every payload carries `nextArgs` (the exact args object for the next invocation) and a `note` saying what the human adds — read the payload, not this file.
 
 ## Launching
 
