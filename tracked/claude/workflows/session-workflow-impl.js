@@ -1,7 +1,7 @@
 export const meta = {
   name: 'session-workflow-impl',
   description: 'Staged, gate-bounded orchestration of the full 7-phase session methodology over a batch of bd issues. One invocation runs ONE gate-bounded segment selected by args.stage (intake | spec | implement | phase7) and returns a gate payload with nextArgs for the re-invocation; human gates (brainstorm answers, spec approval, per-wave merges) happen in the session between invocations.',
-  whenToUse: 'Invoke via the session-workflow skill, which owns the gate protocol. Args object: { stage, beadIds, repoPath, intakeRound?, gate1Answers?, askedQuestions?, contextSummary?, waves?, overlapAdvisories?, overlapPredictorFailed?, openDepsOutsideSet?, archiveDir?, specFileName?, specPath?, specApproved?, carvePreview?, checklist?, verifyCommands?, waveCursor?, worktrees?, baseShas?, tipShas?, mergedBeads?, droppedBeads?, operatorGuidance?, runStats?, preWaveSha?, mainSha?, profile? }. stage/beadIds/repoPath are always required; each stage validates its own additional fields and refuses (structured error) rather than guessing. The intake stage runs ONE round of the converging question loop per invocation; the caller re-invokes with cumulative answers until converged. Every gate payload carries nextArgs — the exact args object for the next invocation.',
+  whenToUse: 'Invoke via the session-workflow skill, which owns the gate protocol. Args object: { stage, beadIds, repoPath, intakeRound?, gate1Answers?, askedQuestions?, contextSummary?, waves?, overlapAdvisories?, overlapPredictorFailed?, openDepsOutsideSet?, archiveDir?, specFileName?, specPath?, specApproved?, carvePreview?, checklist?, verifyCommands?, waveCursor?, worktrees?, baseShas?, tipShas?, mergedBeads?, droppedBeads?, operatorGuidance?, runStats?, preWaveSha?, mainSha?, deferredFindings?, priorFindingsFixed?, priorMergeOnlyFiles?, profile? }. stage/beadIds/repoPath are always required; each stage validates its own additional fields and refuses (structured error) rather than guessing. The intake stage runs ONE round of the converging question loop per invocation; the caller re-invokes with cumulative answers until converged. Every gate payload carries nextArgs — the exact args object for the next invocation.',
   phases: [
     { title: 'Validate', detail: 'Args contract + world-state probe; refuse on mismatch' },
     { title: 'Intake', detail: 'Per-bead contract readers, repo context, dep graph -> waves, overlap prediction, one exhaustive question round; converges across invocations' },
@@ -1606,7 +1606,7 @@ const runIntake = async (a) => {
   }
 }
 
-// ─── Stage: implement — carve, wave setup, per-bead pipeline (rebase lands in a follow-up) ───
+// ─── Stage: implement — rebase (waveCursor>1), carve, wave setup, per-bead pipeline ───
 
 // Rebase every carried (prior-wave, unmerged) worktree onto the new main, SERIALIZED.
 // Mechanical conflicts: the agent resolves and the full-range converge re-review
@@ -1723,7 +1723,12 @@ const implementBead = async (a, setup, checklist, forceSkipBuild = false) => {
     })
     if (!res) { state.evidence = "range resolver returned no result"; break }
     const parsed = parseNameStatus(res.nameStatus)
-    if (parsed.count === 0) { state.evidence = "empty committed range " + state.baseSha + "...HEAD — the build committed nothing to review"; break }
+    if (parsed.count === 0) {
+      state.evidence = "empty committed range " + state.baseSha + "...HEAD — " + (skipBuild
+        ? "no committed work ahead of the base (a rebase may have absorbed this bead's changes into main); account for it via mergedBeads/droppedBeads or rebuild"
+        : "the build committed nothing to review")
+      break
+    }
     const frozen = new Set(parsed.files.flatMap(f => f.oldPath ? [f.path, f.oldPath] : [f.path]))
     if (prevFrozen) {
       for (const p of frozen) if (!prevFrozen.has(p)) state.scopeGrowth.push(p)
@@ -2205,7 +2210,9 @@ const runPhase7 = async (a) => {
   // Union checklist across beads, deduped by id, capped — the combined fan's contract.
   const seenIds = new Set()
   const unionItems = []
-  for (const bid of [...a.beadIds].sort()) {
+  // Pool over MERGED beads only — dropped beads' code never merged, so their items would
+  // compete for capped slots and inflate the strict-adjudication burden for nothing.
+  for (const bid of mergedIds) {
     for (const it of ((a.checklist && a.checklist[bid]) || [])) {
       if (!seenIds.has(it.id)) { seenIds.add(it.id); unionItems.push(it) }
     }
@@ -2317,6 +2324,7 @@ const runPhase7 = async (a) => {
         label: "p7-review-plan:r" + state.rounds, phase: "Phase 7", schema: REVIEW_PLAN_SCHEMA,
       })
       if (!rp) {
+        log("phase7 r" + state.rounds + ": review planner returned no result — one free retry")
         rp = await agent(REVIEW_PLAN_PROMPT_B(changedBlock), {
           label: "p7-review-plan:r" + state.rounds + ":retry", phase: "Phase 7", schema: REVIEW_PLAN_SCHEMA,
         })
@@ -2436,7 +2444,11 @@ const runPhase7 = async (a) => {
     // Deferral triage (large-follow-up bar): file follow-ups, serialized; a filed finding
     // is excluded from future exit counts; a FAILED filing keeps the finding live.
     const reviewFindingKeys = new Set(gate.reviewFindings.map(f => qKey(f.detail)))
-    for (const [ci, cand] of (fix.deferralCandidates || []).entries()) {
+    const candidates = (fix.deferralCandidates || []).slice(0, 8) // bound the bd-create fan like every other fan
+    if ((fix.deferralCandidates || []).length > candidates.length) {
+      log("phase7 r" + state.rounds + ": deferral candidates capped to 8 — the surplus stays live this round")
+    }
+    for (const [ci, cand] of candidates.entries()) {
       if (!cand || typeof cand.detail !== "string" || !cand.detail.trim()) continue
       if (deferredKeys.has(qKey(cand.detail))) continue // already filed — never duplicate
       if (!reviewFindingKeys.has(qKey(cand.detail))) {
