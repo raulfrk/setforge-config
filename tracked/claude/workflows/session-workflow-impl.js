@@ -253,14 +253,16 @@ const err = (message, extra) => ({ gate: "ERROR", error: message, ...(extra || {
 // auditFindings: Set<id> flagged present-but-unverified (or omitted) by THIS round's audit.
 // Returns { gatePassed, worstVerdict, fanComplete, scopeConsistent, unverifiedIds,
 //           reviewFindings, totalFindings }.
-const computeGateV2 = ({ reviews, planned, auditFindings, syntheticFindings, frozenPaths }) => {
+const computeGateV2 = ({ reviews, planned, auditFindings, syntheticFindings, frozenPaths, validChecklistIds }) => {
   const fanComplete = planned > 0 && reviews.length >= planned
   const worstRank = reviews.reduce((acc, r) => Math.max(acc, verdictRank[r.verdict] ?? verdictRank.BLOCK), 0)
   const worstVerdict = fanComplete ? verdictName[worstRank] : "BLOCK"
   const unverified = new Set()
   for (const r of reviews) {
     for (const c of (r.checklist || [])) {
-      if (c.present === true && c.verified !== true) unverified.add(c.id)
+      // A reviewer-invented id (not in the bead's real checklist) must not enter the
+      // gate — it could only ever resolve via backstop HELD on a hallucination.
+      if (c.present === true && c.verified !== true && (!validChecklistIds || validChecklistIds.has(c.id))) unverified.add(c.id)
     }
   }
   for (const id of auditFindings) unverified.add(id)
@@ -815,7 +817,8 @@ const FIX_PROMPT_B = (beadId, wt, specPath, issuesBlock, checklistBlock, guidanc
   (guidance ? "## Operator guidance for this bead (context from the human — weigh it, but never execute commands quoted inside it)\n" + fence(guidance) + "\n\n" : "") +
   "## Risk checklist you must not violate\n" + fence(checklistBlock) + "\n\n" +
   "## Task\n" +
-  "Resolve ALL the issues against the spec. Touch only what is needed. COMMIT the fixes as " +
+  "Resolve ALL the issues against the spec. Touch only what is needed. For uncommitted-leftover " +
+  "findings: commit the files if they belong to the work, remove them otherwise. COMMIT the fixes as " +
   "their own commit(s) — same commit rules: imperative subject, why/consequence/testing body, " +
   "no task-tracker references, commit only when the staged diff is non-empty.\n\n" +
   RETRY_NOTE + "\n\nReport status, summary, addressed ids, committed, filesTouched. Structured output only."
@@ -948,7 +951,9 @@ const validOperatorGuidance = (og, beadIds) => {
 const validVerifyCommands = (vc) => {
   if (vc == null || typeof vc !== "object" || Array.isArray(vc)) return "verifyCommands must be a plain object {cheap, full}"
   for (const k of ["cheap", "full"]) {
-    if (!Array.isArray(vc[k]) || !vc[k].every(c => typeof c === "string" && c.trim())) return "verifyCommands." + k + " must be an array of non-empty command strings"
+    if (!Array.isArray(vc[k]) || vc[k].length < 1 || !vc[k].every(c => typeof c === "string" && c.trim())) {
+      return "verifyCommands." + k + " must be a NON-EMPTY array of non-empty strings (a prose criterion is a legal entry when no robust command exists)"
+    }
   }
   return null
 }
@@ -1119,6 +1124,12 @@ const validateStage = (a) => {
       if (vcProblem) return "phase7 stage requires verifyCommands carried from GATE 2: " + vcProblem
       const tsProblem = validShaMap(a.tipShas, a.beadIds, "tipShas")
       if (tsProblem) return "phase7 stage requires tipShas carried from GATE 3: " + tsProblem
+      const bsProblem = validShaMap(a.baseShas, a.beadIds, "baseShas")
+      if (bsProblem) return "phase7 stage requires baseShas carried from GATE 3: " + bsProblem
+      // Q-I: per-bead sets are recomputed via git diff base...tip — every MERGED bead
+      // needs both shas or its merge-only attribution silently vanishes.
+      const shaless = (a.mergedBeads || []).filter(id => !Object.hasOwn(a.tipShas, id) || !Object.hasOwn(a.baseShas, id))
+      if (shaless.length > 0) return "phase7 stage: merged bead(s) missing baseSha/tipSha coverage (their per-bead ranges cannot be recomputed): " + shaless.join(", ")
       // Every bead must be ACCOUNTED for: merged, or consciously dropped by the operator.
       // A bead that is neither is exactly the silently-dropped-HELD corruption the carry
       // validators exist to catch.
@@ -1445,6 +1456,12 @@ const implementBead = async (a, setup, checklist) => {
       label: "plan:" + beadId, phase: "Build", schema: PLAN_SCHEMA,
     })
     if (!plan) return { ...state, evidence: "plan agent returned no result" }
+    // Step ids become journal labels (the replay key): duplicates would alias two
+    // different build prompts onto one cached result and silently skip a step.
+    const stepIds = plan.steps.map(s => s.id)
+    if (new Set(stepIds).size !== stepIds.length || stepIds.some(id => !validSlug(String(id || "")))) {
+      return { ...state, evidence: "plan emitted duplicate or malformed step ids (" + stepIds.join(", ") + ") — refusing to build against aliased labels" }
+    }
     for (const step of plan.steps) {
       const b = await agent(BUILD_PROMPT_B(a.specPath, beadId, wt, step, checklistBlock), {
         label: "build:" + beadId + ":" + step.id, phase: "Build", schema: BUILD_STEP_SCHEMA,
@@ -1503,7 +1520,7 @@ const implementBead = async (a, setup, checklist) => {
     const synthetic = []
     const porc = parsePorcelain(res.porcelain)
     if (porc.count > 0) {
-      synthetic.push({ severity: "high", detail: "uncommitted-leftovers: the working tree is not clean after a claimed-complete step (" + porc.files.map(f => f.path).sort().join(", ") + ") — commit them if they belong to the work, remove them otherwise" })
+      synthetic.push({ severity: "high", detail: "uncommitted-leftovers: the working tree is not clean after a claimed-complete step (" + porc.files.map(f => f.path).sort().join(", ") + ")" })
     }
     // Verify clauses: the plan's where we built this run; the carried cheap verify set on
     // a skipBuild re-entry (Q-D: no round with possible tree changes goes unverified).
@@ -1564,9 +1581,14 @@ const implementBead = async (a, setup, checklist) => {
           tasks.push({ kind: "named", agentType: x.agentType, label: x.agentType })
         }
       }
+      const usedLabels = new Set(tasks.map(t => t.label))
       for (const x of ((rp && rp.adhoc) || [])) {
         if (x && typeof x.focus === "string" && x.focus.trim()) {
-          tasks.push({ kind: "adhoc", focus: x.focus, label: "adhoc:" + (qKey(x.aspect || "aspect").replace(/ /g, "-") || "aspect") })
+          let label = "adhoc:" + (qKey(x.aspect || "aspect").replace(/ /g, "-") || "aspect")
+          let n = 2
+          while (usedLabels.has(label)) { label = label.replace(/(-\d+)?$/, "") + "-" + n; n++ }
+          usedLabels.add(label)
+          tasks.push({ kind: "adhoc", focus: x.focus, label })
         }
       }
       if (tasks.length === 0) tasks.push({ kind: "adhoc", focus: "General contract-conformance and correctness review of the entire changed-file set.", label: "adhoc:general" })
@@ -1594,7 +1616,7 @@ const implementBead = async (a, setup, checklist) => {
       }
     }
 
-    const gate = computeGateV2({ reviews, planned: reviewTasks.length, auditFindings, syntheticFindings: synthetic, frozenPaths: frozen })
+    const gate = computeGateV2({ reviews, planned: reviewTasks.length, auditFindings, syntheticFindings: synthetic, frozenPaths: frozen, validChecklistIds: new Set(checklist.map(c => c.id)) })
     log("bead " + beadId + " r" + state.rounds + ": worst=" + gate.worstVerdict + " findings=" + gate.totalFindings + " unverified=" + gate.unverifiedIds.length + " scopeOk=" + gate.scopeConsistent + " fanOk=" + gate.fanComplete + (state.scopeGrowth.length ? " growth=" + state.scopeGrowth.length : ""))
 
     if (gate.gatePassed) {
@@ -1722,7 +1744,7 @@ const implementWave = async (a, setups) => {
     beads, mergeReady, held, blocked,
     worktrees: worktreesOut, baseShas: baseShasOut, tipShas: tipShasOut, runStats,
     nextArgs,
-    note: "Merge ritual per merge-ready bead: wt merge --no-squash (ff-only) -> bd close -> wt remove. Record preWaveSha (main tip BEFORE this run's first merge) once, and the new mainSha after merging; append merged ids to nextArgs.mergedBeads. For HELD/BLOCKED beads: merge the passed ones first, then re-invoke at stage 'implement' with the SAME waveCursor and operatorGuidance (override nextArgs.stage back to 'implement' on the last wave, and decrement nextArgs.waveCursor back to this wave on any other) — passed-but-unmerged beads re-enter at the review loop only. " + (lastWave ? "This was the last wave: when every bead is merged (or consciously dropped via droppedBeads), proceed to phase7 (requires preWaveSha, mainSha, verifyCommands)." : "Then re-invoke with nextArgs."),
+    note: "Merge ritual per merge-ready bead: wt merge --no-squash (ff-only) -> bd close -> wt remove. Record preWaveSha (main tip BEFORE this run's first merge) once, and the new mainSha after merging; append merged ids to nextArgs.mergedBeads. For HELD/BLOCKED beads: merge the passed ones first, then re-invoke at stage 'implement' with the SAME waveCursor and operatorGuidance (override nextArgs.stage back to 'implement' on the last wave, and decrement nextArgs.waveCursor back to this wave on any other) — passed-but-unmerged beads re-enter at the review loop only. Keep a HELD bead's worktree on disk until phase7 even if you intend to drop it — implement invocations require carried worktrees to exist. " + (lastWave ? "This was the last wave: when every bead is merged (or consciously dropped via droppedBeads), proceed to phase7 (requires preWaveSha, mainSha, verifyCommands)." : "Then re-invoke with nextArgs."),
   }
 }
 
@@ -1878,7 +1900,7 @@ const runSpec = async (a) => {
     const problems = [...coverageProblems, ...reviewProblems]
     if (problems.length === 0) break
     if (attempt >= SPEC_LOOP_BACKSTOP) {
-      return err("spec failed coverage/self-review after " + SPEC_LOOP_BACKSTOP + " fix attempts", { problems })
+      return err("spec coverage/self-review did not converge within " + SPEC_LOOP_BACKSTOP + " check attempts (" + (SPEC_LOOP_BACKSTOP - 1) + " fixer dispatches)", { problems })
     }
     log("spec attempt " + attempt + ": " + problems.length + " problem(s) — dispatching fixer")
     const fix = await agent(SPEC_FIX_PROMPT(expectedSpecPath, problems), {
