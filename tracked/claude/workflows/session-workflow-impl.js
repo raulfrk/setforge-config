@@ -927,6 +927,10 @@ const P7_RESOLVE_PROMPT = (repoPath, fromSha) =>
   "2. `git -C " + repoPath + " -c core.quotePath=false status --porcelain=v1 -uall` — return as porcelain.\n\n" +
   "Do NOT improvise any other range. Structured output only."
 
+// Deliberate two-endpoint `git diff A B` dialect here and in P7_RESOLVE: the recorded
+// shas are exact ancestors under the ritual's ff-only invariant, where A B and A...B are
+// output-identical; on a corrupted carry the two-tree form surfaces reverse-direction
+// noise loudly instead of merge-base-scoping it away.
 const BEAD_RANGE_PROMPT = (repoPath, beadId, base, tip) =>
   "## Per-Bead Range Echo: " + beadId + "\n\n" +
   "Run EXACTLY `git -C " + repoPath + " -c core.quotePath=false diff --name-status " + base + " " + tip + "` " +
@@ -2206,7 +2210,10 @@ const runPhase7 = async (a) => {
       if (!seenIds.has(it.id)) { seenIds.add(it.id); unionItems.push(it) }
     }
   }
-  const checklist = capChecklist(unionItems, CHECKLIST_CAP)
+  // The per-bead cap would starve strict coverage on a multi-bead union; scale with the
+  // batch, bounded (read volume still dominates token cost).
+  const unionCap = Math.min(CHECKLIST_CAP * Math.max(1, mergedIds.length), 60)
+  const checklist = capChecklist(unionItems, unionCap)
   if (unionItems.length > checklist.length) log("phase7: union checklist capped " + unionItems.length + " -> " + checklist.length + " (dropped lowest-severity items)")
   const checklistBlock = renderChecklist(checklist)
   const validIds = new Set(checklist.map(c => c.id))
@@ -2491,7 +2498,9 @@ const runPhase7 = async (a) => {
       mainSha: state.findingsFixed.length ? state.findingsFixed[state.findingsFixed.length - 1].commitSha : a.mainSha,
       deferredFindings: state.deferredBeads.map(d => ({ beadId: d.beadId, detail: d.detail, reason: d.reason })),
       priorFindingsFixed: state.findingsFixed,
-      priorMergeOnlyFiles: mergeOnlyFiles || [],
+      // null means "never computed" — OMIT it so the re-run's round 1 recomputes; carrying
+      // [] would read as "computed, genuinely empty" and silence attribution forever.
+      ...(mergeOnlyFiles === null ? {} : { priorMergeOnlyFiles: mergeOnlyFiles }),
     },
     note: converged
       ? "Phase 7 converged: combined fan clean and the full canonical gate passed. The batch is complete."
