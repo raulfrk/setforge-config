@@ -9,8 +9,6 @@ tracked_files:
   claude_md:
     src: claude/CLAUDE.md
     dst: ~/.claude/CLAUDE.md
-    preserve_user_sections: true
-
   claude_settings:
     src: claude/settings.json
     dst: ~/.claude/settings.json
@@ -102,8 +100,6 @@ tracked_files:
   claude_session_flow_skill:
     src: claude/skills/session-flow/SKILL.md
     dst: ~/.claude/skills/session-flow/SKILL.md
-    preserve_user_sections: true
-
   claude_handoff_skill:
     src: claude/skills/handoff/SKILL.md
     dst: ~/.claude/skills/handoff/SKILL.md
@@ -115,29 +111,32 @@ tracked_files:
   vscode_serv_settings:
     src: vscode/vm/settings.json
     dst: ~/.vscode-server/data/Machine/settings.json
-    preserve_user_keys:
-    - claudeCode.allowDangerouslySkipPermissions
-    - claudeCode.initialPermissionMode
-      # Top-level editor.fontSize is host-local (per-host display preference);
-      # whatever this VM's settings.json holds survives install.
-    - editor.fontSize
-      # Nested-path archetype (setforge-nen.19): `[python]`'s `editor.fontSize`
-      # is host-local while sibling formatter / actions stay tracked.
-    - "[python] > editor.fontSize"
-
+    spans:
+    - anchor: claudeCode.allowDangerouslySkipPermissions
+      kind: pinned
+      semantics: host-local
+    - anchor: claudeCode.initialPermissionMode
+      kind: pinned
+      semantics: host-local
+    - anchor: editor.fontSize
+      kind: pinned
+      semantics: host-local
+    - anchor: '[python] > editor.fontSize'
+      kind: pinned
+      semantics: host-local
+    disposition: forked
   vscode_workstation_settings:
     src: vscode/workstation/settings.json
     dst: "{{ vscode_user_dir }}/settings.json"
     template: true
-    preserve_user_keys:
-    - claudeCode.allowDangerouslySkipPermissions
-    - claudeCode.initialPermissionMode
-
-# ============================================================================
-# Claude marketplaces — registered via `claude plugin marketplace add`.
-# `claude-plugins-official` is Anthropic's default; listed here explicitly
-# so a clean install doesn't depend on Claude pre-registering it.
-# ============================================================================
+    spans:
+    - anchor: claudeCode.allowDangerouslySkipPermissions
+      kind: pinned
+      semantics: host-local
+    - anchor: claudeCode.initialPermissionMode
+      kind: pinned
+      semantics: host-local
+    disposition: forked
 marketplaces:
   claude-plugins-official:
     source: github
@@ -226,4 +225,5 @@ profiles:
       - redhat.vscode-yaml
       - streetsidesoftware.code-spell-checker
       - tamasfe.even-better-toml
-schema_version: '1.2'
+schema_version: '2.0'
+minimum_version: '2.0'
