@@ -334,7 +334,7 @@ const validateCommon = (a) => {
   }
   if (new Set(a.beadIds).size !== a.beadIds.length) return "args.beadIds contains duplicates"
   if (!absPathOk(a.repoPath) || !a.repoPath.startsWith(REPO_PREFIX)) return "args.repoPath must be an absolute, traversal-free, shell-safe path under " + REPO_PREFIX
-  if (a.profile != null && !Object.hasOwn(PROFILES, a.profile)) {
+  if (a.profile != null && (typeof a.profile !== "string" || !Object.hasOwn(PROFILES, a.profile))) {
     return "unknown args.profile " + JSON.stringify(a.profile) + " — refusing to guess (expected " + Object.keys(PROFILES).join(" | ") + ", or omit for full)"
   }
   return null
@@ -453,9 +453,10 @@ const validateStage = (a) => {
       if (a.mergedBeads != null) {
         const mbProblem = validMergedBeads(a.mergedBeads, a.beadIds)
         if (mbProblem) return "implement stage: " + mbProblem
+        if (a.waveCursor === 1 && a.mergedBeads.length > 0) return "implement stage: mergedBeads must be empty at waveCursor 1 — no merge gate has run yet (corrupted carry)"
       }
       if (a.waveCursor > 1) {
-        if (a.worktrees == null || typeof a.worktrees !== "object") return "implement stage with waveCursor > 1 requires args.worktrees (carried from prior payloads)"
+        if (a.worktrees == null || typeof a.worktrees !== "object" || Array.isArray(a.worktrees)) return "implement stage with waveCursor > 1 requires args.worktrees (a plain object carried from prior payloads)"
         if (a.baseShas == null || typeof a.baseShas !== "object") return "implement stage with waveCursor > 1 requires args.baseShas (per-bead branch points, carried from prior payloads)"
         if (Array.isArray(a.baseShas)) return "implement stage: args.baseShas must be a plain object keyed by bead id, not an array"
         const inSet = new Set(a.beadIds)
@@ -476,7 +477,7 @@ const validateStage = (a) => {
           if (!priorWaves.has(id)) return "implement stage: mergedBeads lists " + id + " which is not in any prior wave"
         }
         const mergedSet = new Set(a.mergedBeads)
-        const unaccounted = [...priorWaves].filter(id => !mergedSet.has(id) && (a.worktrees[id] == null || a.baseShas[id] == null)).sort()
+        const unaccounted = [...priorWaves].filter(id => !mergedSet.has(id) && (!Object.hasOwn(a.worktrees, id) || !Object.hasOwn(a.baseShas, id))).sort()
         if (unaccounted.length > 0) return "implement stage: prior-wave bead(s) neither merged nor carried with worktree+baseSha: " + unaccounted.join(", ")
       }
       return null
@@ -549,8 +550,10 @@ const runProbe = async (a) => {
   for (const id of a.beadIds) {
     const b = beadById.get(id)
     if (!b) { problems.push("probe did not report on bead: " + id); continue }
+    if (typeof b.exists !== "boolean") { problems.push("probe did not report existence for bead: " + id); continue }
     if (b.exists === false) { problems.push("bead not found: " + id); continue }
-    const status = String(b.status || "").toLowerCase()
+    if (typeof b.status !== "string" || !b.status.trim()) { problems.push("probe omitted the status for bead: " + id + " — the stage rule cannot be enforced"); continue }
+    const status = b.status.toLowerCase()
     if (merged.has(id) && !status.includes("closed")) {
       // Applies at implement waveCursor>1 AND phase7: a bead listed as merged but still
       // open means the GATE 3 ritual (wt merge -> bd close -> wt remove) did not complete.
@@ -676,6 +679,12 @@ const runIntake = async (a) => {
   // two generators coin the same id for different questions: suffix deterministic ordinals.
   const usedIds = new Set(askedQuestions.map(q => q.id))
   usedIds.add("extraNotes") // reserved key in gate1Answers — a question id colliding with it would make its answer vanish
+  // Agent-coined ids become gate1Answers keys caller-side: normalize to slug shape so a
+  // hostile/sloppy id (e.g. __proto__, free text) cannot corrupt the answers object.
+  const normalizeQId = (id) => {
+    const slug = String(id || "").toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[^a-z0-9]+/, "").slice(0, 64)
+    return SLUG_RE.test(slug) ? slug : "q"
+  }
   const uniqueId = (id) => {
     if (!usedIds.has(id)) { usedIds.add(id); return id }
     let n = 2
@@ -690,7 +699,7 @@ const runIntake = async (a) => {
       const k = qKey(q.question)
       if (!q.id || !q.question || seen.has(k)) continue
       seen.add(k)
-      fresh.push({ id: uniqueId(q.id), question: q.question, grounding: q.grounding || "", options: q.options || [] })
+      fresh.push({ id: uniqueId(normalizeQId(q.id)), question: q.question, grounding: q.grounding || "", options: q.options || [] })
     }
   }
   fresh.sort((x, y) => x.id.localeCompare(y.id))
@@ -713,7 +722,7 @@ const runIntake = async (a) => {
         const k = qKey(q.question)
         if (!q.id || !q.question || seen.has(k)) continue
         seen.add(k)
-        criticFresh.push({ id: uniqueId(q.id), question: q.question, grounding: q.grounding || "", options: q.options || [] })
+        criticFresh.push({ id: uniqueId(normalizeQId(q.id)), question: q.question, grounding: q.grounding || "", options: q.options || [] })
       }
       criticFresh.sort((x, y) => x.id.localeCompare(y.id))
       questions = criticFresh.slice(0, MAX_QUESTIONS_PER_ROUND)
