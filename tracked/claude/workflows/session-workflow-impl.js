@@ -625,8 +625,12 @@ const SPEC_WRITER_PROMPT = (a, answersBlock, checklistBlock, expectedSpecPath, w
   "## Required spec sections\n" +
   "1. Summary — what the batch builds and why, plain language, the alternative and the trade-off.\n" +
   "2. Decisions record — one row per decision above, verbatim intent.\n" +
-  "3. Per-bead design + acceptance drafts — independently runnable contracts; acceptance criteria " +
-  "must be CONCRETE COMMANDS that exit 0 (or equally binary checks), never abstract counts.\n" +
+  "3. Per-bead design + acceptance drafts — independently runnable contracts. Acceptance criteria " +
+  "must be BINARY: prefer SIMPLE, robust commands (file-existence checks, fixed-string greps, an " +
+  "existing runner invocation) over clever regex one-liners — a brittle command that can false-fail " +
+  "or false-pass is worse than none. Where no robust command exists (e.g. judgment-shaped criteria " +
+  "for docs or orchestration code), state the criterion as explicitly review-fan-judged " +
+  "(\"the review fan confirms X\") instead of inventing a fragile check. Never abstract counts.\n" +
   "4. Wave plan — verbatim.\n" +
   "5. Verification commands — split the repo's test commands into cheap (fast unit/lint, safe to run " +
   "every review round) and full (the expensive/canonical gate, run once per integration pass). " +
@@ -656,8 +660,12 @@ const SELF_REVIEW_PROMPT = (specPath) =>
   "## Spec Self-Reviewer\n\n" +
   "Read the spec at " + specPath + " with fresh eyes. Check: placeholders (TBD/TODO/vague " +
   "requirements), internal contradictions, ambiguous requirements readable two ways, and " +
-  "acceptance criteria that are not binary/command-shaped. Return clean=true only if none " +
-  "exist; list each problem otherwise. Structured output only."
+  "acceptance criteria that are neither binary checks nor explicitly review-fan-judged. For " +
+  "command-shaped criteria, sanity-check the command's logic against the real repo state — a " +
+  "command that would false-fail or false-pass against a conforming implementation is a problem; " +
+  "the FIX for a brittle command is usually to SIMPLIFY it or restate the criterion as " +
+  "review-fan-judged, not to make the command cleverer. Return clean=true only if no problems " +
+  "exist; list each otherwise. Structured output only."
 
 const CARVE_PROMPT = (repoPath, beadId, design, acceptance, findEpic) =>
   "## Contract Carver: " + beadId + "\n\n" +
