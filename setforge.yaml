@@ -108,6 +108,7 @@ tracked_files:
   claude_session_workflow_impl:
     src: claude/workflows/session-workflow-impl.js
     dst: ~/.claude/workflows/session-workflow-impl.js
+
   claude_handoff_skill:
     src: claude/skills/handoff/SKILL.md
     dst: ~/.claude/skills/handoff/SKILL.md
