@@ -904,7 +904,8 @@ const REBASE_PROMPT = (repoPath, wt, beadId) =>
   "operator has resolved them, `git -C " + wt + " add` the resolved files and " +
   "`git -C " + wt + " rebase --continue`, then proceed via steps 2-4 (the continue can " +
   "surface further conflicts — adjudicate each the same way).\n" +
-  "1. Otherwise run `git -C " + wt + " rebase main`.\n" +
+  "1. Otherwise run `git -C " + wt + " rebase main` (if branch `main` does not exist, use the " +
+  "repository's default branch wherever `main` appears in these steps).\n" +
   "2. MECHANICAL conflicts (textual overlap, one obvious correct merge of both intents): resolve " +
   "them faithfully, `git -C " + wt + " add` the files, `git -C " + wt + " rebase --continue`, and " +
   "repeat until the rebase completes. A follow-up full-range re-review validates your resolutions.\n" +
@@ -1308,7 +1309,11 @@ const validateStage = (a) => {
         if (!Array.isArray(a.deferredFindings)) return "phase7 stage: deferredFindings must be an array when present"
         for (const d of a.deferredFindings) {
           if (!d || !validSlug(String(d.beadId || "")) || typeof d.detail !== "string" || !d.detail.trim()) return "phase7 stage: deferredFindings entries must be {beadId, detail} (carried from a prior FINAL payload)"
+          if (d.reason != null && typeof d.reason !== "string") return "phase7 stage: deferredFindings reason must be a string when present"
         }
+      }
+      if (a.priorFindingsFixed != null && !(Array.isArray(a.priorFindingsFixed) && a.priorFindingsFixed.every(f => f && typeof f.summary === "string" && typeof f.commitSha === "string" && SHA_RE.test(f.commitSha)))) {
+        return "phase7 stage: priorFindingsFixed must be an array of {round, summary, commitSha} when present"
       }
       return null
     }
@@ -1613,7 +1618,7 @@ const rebaseWorktrees = async (a) => {
       label: "rebase:" + beadId, phase: "Rebase", schema: REBASE_SCHEMA,
     })
     const pinned = rb && rb.beadId === beadId && (
-      (rb.outcome === "semantic-conflict" ) ||
+      (rb.outcome === "semantic-conflict") ||
       (rb.outcome === "rebased" && typeof rb.newBaseSha === "string" && SHA_RE.test(rb.newBaseSha))
     )
     if (!pinned) {
@@ -1972,7 +1977,7 @@ const implementWave = async (a, setups, rebaseResults = [], rebasedMap = {}) => 
     rebased: rebasedMap, preWaveSha: a.preWaveSha ?? null,
     worktrees: worktreesOut, baseShas: baseShasOut, tipShas: tipShasOut, runStats,
     nextArgs,
-    note: "Merge ritual per merge-ready bead: wt merge --no-squash (ff-only) -> bd close -> wt remove. Record preWaveSha (main tip BEFORE this run's first merge) once, and the new mainSha after merging; append merged ids to nextArgs.mergedBeads. For HELD/BLOCKED beads: merge the passed ones first, then re-invoke at stage 'implement' with the SAME waveCursor and operatorGuidance (override nextArgs.stage back to 'implement' on the last wave, and decrement nextArgs.waveCursor back to this wave on any other) — passed-but-unmerged beads re-enter at the review loop only. Keep a HELD bead's worktree on disk until phase7 even if you intend to drop it — implement invocations require carried worktrees to exist. A BLOCKED bead's worktree is mid-rebase by design: resolve the markers (or leave them) before retrying — the rebase agent handles both states. " + (lastWave ? "This was the last wave: when every bead is merged (or consciously dropped via droppedBeads), proceed to phase7 (requires preWaveSha, mainSha, verifyCommands)." : "Then re-invoke with nextArgs."),
+    note: "Merge ritual per merge-ready bead: wt merge --no-squash (ff-only) -> bd close -> wt remove. preWaveSha was frozen automatically at wave 1 (override only if you know better); record the new mainSha after merging; append merged ids to nextArgs.mergedBeads. For HELD/BLOCKED beads: merge the passed ones first, then re-invoke at stage 'implement' with the SAME waveCursor and operatorGuidance (override nextArgs.stage back to 'implement' on the last wave, and decrement nextArgs.waveCursor back to this wave on any other) — passed-but-unmerged beads re-enter at the review loop only. Keep a HELD bead's worktree on disk until phase7 even if you intend to drop it — implement invocations require carried worktrees to exist. A BLOCKED bead's worktree is mid-rebase by design: resolve the markers (or leave them) before retrying — the rebase agent handles both states. " + (lastWave ? "This was the last wave: when every bead is merged (or consciously dropped via droppedBeads), proceed to phase7 (requires preWaveSha, mainSha, verifyCommands)." : "Then re-invoke with nextArgs."),
   }
 }
 
@@ -2217,7 +2222,7 @@ const runPhase7 = async (a) => {
   // Seed triage bookkeeping from a prior invocation's FINAL payload — re-invoking a HELD
   // phase 7 must never re-file follow-ups for findings already triaged (idempotent re-run).
   const seededDeferrals = (a.deferredFindings || []).map(d => ({ beadId: d.beadId, detail: d.detail, reason: d.reason || "(carried)" }))
-  const state = { rounds: 0, verdict: "HELD", evidence: "", findingsFixed: [], deferredBeads: [...seededDeferrals] }
+  const state = { rounds: 0, verdict: "HELD", evidence: "", findingsFixed: [...(a.priorFindingsFixed || [])], deferredBeads: [...seededDeferrals] }
   let mergeOnlyFiles = null
   let reviewTasks = null
   let knownTypes = new Set()
@@ -2420,7 +2425,9 @@ const runPhase7 = async (a) => {
       })
       if (filed && filed.created === true && validSlug(String(filed.beadId || ""))) {
         deferredKeys.add(qKey(cand.detail))
-        state.deferredBeads.push({ beadId: filed.beadId, detail: cand.detail.slice(0, 300), reason: cand.reason || "(unstated)" })
+        // FULL detail, trimmed: the cross-run dedup key is qKey(detail) — truncation here
+        // would silently break the re-run seeding this carry exists for.
+        state.deferredBeads.push({ beadId: filed.beadId, detail: cand.detail.trim(), reason: cand.reason || "(unstated)" })
       } else {
         log("phase7 r" + state.rounds + ": deferral filing failed — the finding stays live")
       }
@@ -2438,7 +2445,7 @@ const runPhase7 = async (a) => {
     "Merged beads: " + mergedIds.join(", ") + "\n" +
     "Dropped beads: " + ((a.droppedBeads || []).join(", ") || "(none)") + "\n" +
     "Merge-only files: " + (mergeOnlyFiles === null ? "(not computed — the run ended before round 1 resolved)" : (mergeOnlyFiles.join(", ") || "(none)")) + "\n\n" +
-    "Fixes applied on main:\n" + (state.findingsFixed.map(f => "- r" + f.round + " " + f.commitSha.slice(0, 9) + ": " + f.summary).join("\n") || "(none)") + "\n\n" +
+    "Fixes applied on main (cumulative across re-invocations):\n" + (state.findingsFixed.map(f => "- r" + f.round + " " + f.commitSha.slice(0, 9) + ": " + f.summary).join("\n") || "(none)") + "\n\n" +
     "Deferred follow-ups:\n" + (state.deferredBeads.map(d => "- " + d.beadId + " (" + d.reason + "): " + d.detail).join("\n") || "(none)") + "\n\n" +
     "Run stats: " + JSON.stringify(runStats)
   const report = await agent(REPORT_PROMPT(a.repoPath, reportPath, epicId, body), {
@@ -2457,12 +2464,19 @@ const runPhase7 = async (a) => {
     verdict: state.verdict, converged, rounds: state.rounds, evidence: state.evidence,
     findingsFixed: state.findingsFixed, deferredBeads: state.deferredBeads,
     mergeOnlyFiles: mergeOnlyFiles || [], report: reportStatus, runStats,
-    // A HELD phase 7 is re-invocable: nextArgs carries the triage bookkeeping so a re-run
-    // never re-files follow-ups for already-triaged findings.
-    nextArgs: converged ? undefined : { ...a, runStats, deferredFindings: state.deferredBeads.map(d => ({ beadId: d.beadId, detail: d.detail, reason: d.reason })) },
+    // A HELD phase 7 is re-invocable: nextArgs carries the triage bookkeeping (so a re-run
+    // never re-files follow-ups), the fix record (so the report stays cumulative), and the
+    // POST-FIX main tip (fix commits moved HEAD past the entry mainSha — carrying the stale
+    // value would make the probe refuse the very re-invocation this carry exists for).
+    nextArgs: converged ? undefined : {
+      ...a, runStats,
+      mainSha: state.findingsFixed.length ? state.findingsFixed[state.findingsFixed.length - 1].commitSha : a.mainSha,
+      deferredFindings: state.deferredBeads.map(d => ({ beadId: d.beadId, detail: d.detail, reason: d.reason })),
+      priorFindingsFixed: state.findingsFixed,
+    },
     note: converged
       ? "Phase 7 converged: combined fan clean and the full canonical gate passed. The batch is complete."
-      : "Phase 7 ended " + state.verdict + " — applied fixes remain on main (never auto-reverted); see evidence and the report for the unresolved set.",
+      : "Phase 7 ended " + state.verdict + " — applied fixes remain on main (never auto-reverted). nextArgs carries the post-fix mainSha; verify it matches the current main tip before re-invoking (an out-of-ritual commit would drift it).",
   }
 }
 
