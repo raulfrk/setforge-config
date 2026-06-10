@@ -37,6 +37,7 @@ const MAX_INTAKE_ROUNDS = 12 // runaway backstop for the human-gated question lo
 const MAX_QUESTIONS_PER_ROUND = 24
 const CHECKLIST_CAP = 20 // consumed by the per-bead pipeline (follow-up change), kept with the salvaged profile knobs
 const WORKTREE_BASE = "/home/raul/projects/worktrees/"
+const REPO_PREFIX = "/home/raul/" // repos this harness may operate on live under the home tree
 const SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/
 const SHA_RE = /^[0-9a-f]{7,40}$/
 
@@ -226,7 +227,7 @@ const PROBE_PROMPT = (repoPath, beadIds, expect) =>
   "2. For each bead id below, `bd show <id>` from " + repoPath + " — report its status and whether it exists:\n" +
   beadIds.map(b => "   - " + b).join("\n") + "\n" +
   (expect.worktrees.length
-    ? "3. For each expected worktree, check the directory exists (e.g. `ls -d <path>`) and report exists:\n" +
+    ? "3. For each expected worktree, check the directory exists (e.g. `ls -d <path>`) and report exists, echoing each path EXACTLY as listed here (no realpath resolution, no trailing slash):\n" +
       expect.worktrees.map(w => "   - beadId " + w.beadId + " at " + w.path).join("\n") + "\n"
     : "") +
   (expect.mainSha ? "\nExpected mainSha (verify it matches what you observe): " + expect.mainSha + "\n" : "") +
@@ -332,8 +333,8 @@ const validateCommon = (a) => {
     if (!validSlug(b) || !noShellMeta(b)) return "bead id fails slug/shell-safety validation: " + JSON.stringify(b)
   }
   if (new Set(a.beadIds).size !== a.beadIds.length) return "args.beadIds contains duplicates"
-  if (!absPathOk(a.repoPath)) return "args.repoPath must be an absolute, traversal-free, shell-safe path"
-  if (a.profile != null && !PROFILES[a.profile]) {
+  if (!absPathOk(a.repoPath) || !a.repoPath.startsWith(REPO_PREFIX)) return "args.repoPath must be an absolute, traversal-free, shell-safe path under " + REPO_PREFIX
+  if (a.profile != null && !Object.hasOwn(PROFILES, a.profile)) {
     return "unknown args.profile " + JSON.stringify(a.profile) + " — refusing to guess (expected " + Object.keys(PROFILES).join(" | ") + ", or omit for full)"
   }
   return null
@@ -427,6 +428,7 @@ const validateStage = (a) => {
         if (wavesProblem) return "intake round > 1: " + wavesProblem
         if (a.askedQuestions == null) return "intake round > 1 requires args.askedQuestions (cumulative; use nextArgs)"
         if (a.gate1Answers == null) return "intake round > 1 requires args.gate1Answers (cumulative answers object)"
+        if (a.overlapAdvisories == null || a.openDepsOutsideSet == null) return "intake round > 1 requires args.overlapAdvisories and args.openDepsOutsideSet carried from the round-1 payload (use nextArgs — a silently dropped carry degrades the convergence decision)"
       }
       return null
     }
@@ -455,11 +457,27 @@ const validateStage = (a) => {
       if (a.waveCursor > 1) {
         if (a.worktrees == null || typeof a.worktrees !== "object") return "implement stage with waveCursor > 1 requires args.worktrees (carried from prior payloads)"
         if (a.baseShas == null || typeof a.baseShas !== "object") return "implement stage with waveCursor > 1 requires args.baseShas (per-bead branch points, carried from prior payloads)"
+        if (Array.isArray(a.baseShas)) return "implement stage: args.baseShas must be a plain object keyed by bead id, not an array"
+        const inSet = new Set(a.beadIds)
         for (const [bid, sha] of Object.entries(a.baseShas)) {
-          if (!validSlug(bid) || !SHA_RE.test(String(sha || ""))) return "implement stage: args.baseShas carries a malformed entry: " + JSON.stringify({ [bid]: sha })
+          if (!validSlug(bid) || !inSet.has(bid) || !SHA_RE.test(String(sha || ""))) return "implement stage: args.baseShas carries a malformed or foreign entry: " + JSON.stringify({ [bid]: sha })
+        }
+        for (const bid of Object.keys(a.worktrees)) {
+          if (!inSet.has(bid)) return "implement stage: args.worktrees carries a foreign key (not in beadIds): " + JSON.stringify(bid)
         }
         if (!SHA_RE.test(a.mainSha || "")) return "implement stage with waveCursor > 1 requires args.mainSha (the main tip recorded at the last merge gate)"
         if (a.mergedBeads == null) return "implement stage with waveCursor > 1 requires args.mergedBeads (the GATE 3 ritual's outcome — without it, closed wave-1 beads read as stale state)"
+        // Carry COVERAGE, not just shape: mergedBeads must come from PRIOR waves only, and
+        // every prior-wave bead must be accounted for — merged, or carried with its
+        // worktree + branch point (a silently dropped HELD bead is exactly the
+        // args-mutation-not-merge corruption this validator exists to catch).
+        const priorWaves = new Set(a.waves.slice(0, a.waveCursor - 1).flat())
+        for (const id of a.mergedBeads) {
+          if (!priorWaves.has(id)) return "implement stage: mergedBeads lists " + id + " which is not in any prior wave"
+        }
+        const mergedSet = new Set(a.mergedBeads)
+        const unaccounted = [...priorWaves].filter(id => !mergedSet.has(id) && (a.worktrees[id] == null || a.baseShas[id] == null)).sort()
+        if (unaccounted.length > 0) return "implement stage: prior-wave bead(s) neither merged nor carried with worktree+baseSha: " + unaccounted.join(", ")
       }
       return null
     }
@@ -523,7 +541,8 @@ const runProbe = async (a) => {
     const got = wtById.get(w.beadId)
     if (!got || typeof got.exists !== "boolean") problems.push("probe did not report on expected worktree: " + w.beadId + " at " + w.path)
     else if (got.exists === false) problems.push("expected worktree missing: " + w.beadId + " at " + w.path)
-    else if (typeof got.path === "string" && got.path !== w.path) problems.push("probe checked the wrong path for " + w.beadId + ": " + got.path + " (expected " + w.path + ")")
+    else if (typeof got.path !== "string") problems.push("probe omitted the path echo for " + w.beadId + " — cannot confirm the right directory was checked")
+    else if (got.path !== w.path) problems.push("probe checked the wrong path for " + w.beadId + ": " + got.path + " (expected " + w.path + ")")
   }
   const beadById = new Map((probe.beads || []).map(b => [b.id, b]))
   if ((probe.beads || []).length !== beadById.size) problems.push("probe reported duplicate bead entries — conflicting facts")
@@ -602,7 +621,7 @@ const runIntake = async (a) => {
     overlapPredictorFailed = !overlap
     overlapAdvisories = ((overlap && overlap.pairs) || [])
       .map(p => ({ a: p.a, b: p.b, files: (p.files || []).slice().sort(), note: p.note || "" }))
-      .sort((x, y) => (x.a + " " + x.b).localeCompare(y.a + " " + y.b))
+      .sort((x, y) => x.a.localeCompare(y.a) || x.b.localeCompare(y.b))
 
     contextSummary =
       "## Batch\n" +
@@ -656,6 +675,7 @@ const runIntake = async (a) => {
   // Ids key the gate1Answers object, so they must be unique across the WHOLE run even when
   // two generators coin the same id for different questions: suffix deterministic ordinals.
   const usedIds = new Set(askedQuestions.map(q => q.id))
+  usedIds.add("extraNotes") // reserved key in gate1Answers — a question id colliding with it would make its answer vanish
   const uniqueId = (id) => {
     if (!usedIds.has(id)) { usedIds.add(id); return id }
     let n = 2
@@ -720,6 +740,7 @@ const runIntake = async (a) => {
     ? { ...carry, stage: "spec", intakeRound: undefined, gate1Answers: a.gate1Answers ?? {} }
     : carry
 
+  const backstopReached = !converged && round >= MAX_INTAKE_ROUNDS
   const stalled = !converged && questions.length === 0
   log("intake round " + round + ": " + (converged ? "CONVERGED" : stalled ? "STALLED (critic non-converged, no askable questions)" : questions.length + " question(s)" + (uncovered.length ? ", " + uncovered.length + " uncovered area(s)" : "")))
   return {
@@ -728,11 +749,14 @@ const runIntake = async (a) => {
     proposedWaves: waves, overlapAdvisories, openDepsOutsideSet, contextSummary,
     askedQuestions: askedCumulative,
     nextArgs,
+    backstopReached,
     note: converged
       ? "Brainstorm converged. Re-invoke with nextArgs (add archiveDir) to write the spec."
-      : stalled
-        ? "The critic did not converge but produced no askable questions. Review `uncovered` with the human, supply direction via gate1Answers.extraNotes, and re-invoke with nextArgs — do NOT re-invoke unchanged."
-        : "Present every question (end with a free-text 'anything else to add?'), merge answers into gate1Answers, re-invoke with nextArgs.",
+      : backstopReached
+        ? "MAX_INTAKE_ROUNDS reached without convergence — nextArgs will be REJECTED if re-invoked. Resolve the remaining ground with the human directly, then either proceed to spec by hand-building spec-stage args, or restart the intake with a sharper batch."
+        : stalled
+          ? "The critic did not converge but produced no askable questions. Review `uncovered` with the human, supply direction via gate1Answers.extraNotes, and re-invoke with nextArgs — do NOT re-invoke unchanged."
+          : "Present every question (end with a free-text 'anything else to add?'), merge answers into gate1Answers, re-invoke with nextArgs.",
   }
 }
 
@@ -820,7 +844,7 @@ const runPhase7 = async (a) => {
 // before reaching a stage body. Unknown non-null profiles are rejected by validateCommon,
 // so the fallback below only covers an OMITTED profile (documented default: full).
 const commonProblem = validateCommon(A)
-const PROFILE_NAME = (!commonProblem && PROFILES[A.profile]) ? A.profile : "full"
+const PROFILE_NAME = (!commonProblem && A.profile != null && Object.hasOwn(PROFILES, A.profile)) ? A.profile : "full"
 
 const main = async () => {
   if (commonProblem) return err(commonProblem, { expected: { stage: STAGES } })
