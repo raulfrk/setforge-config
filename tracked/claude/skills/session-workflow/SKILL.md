@@ -27,10 +27,11 @@ Workflow({ name: "session-workflow-impl", args: {
   stage: "implement", beadIds: [...], repoPath, archiveDir,
   specPath, waves: [[...], ...], checklist: [...],
   verifyCommands: {cheap: [...], full: [...]}, profile: "standard",
+  runStats: { epicId: "<epic-id>" },  // optional — enables the phase-7 epic bd-note
 } })
 ```
 
-`profile` (light/standard/full) sets the research-dispatch N above and the script's reviewer width (3/3/4 — near flat). **Risk never inflates width** — concurrency / security / data-format / irreversible changes add rigor conjuncts instead (adversarial fix verification, the `e2e-assert-present` checklist item). Until `light` has defect-escape data, route its candidates to `standard`.
+`profile` (light/standard/full) sets the research-dispatch N above and the script's reviewer width (3 per bead, 4 at phase 7). **Risk never inflates width** — concurrency / security / data-format / irreversible changes add rigor conjuncts instead (adversarial fix verification, the `e2e-assert-present` checklist item). Until `light` has defect-escape data, route its candidates to `standard`.
 
 The state file is the carry: every gate persists to `<archiveDir>/sw-state-<batch>.json` and returns a slim payload. Re-invoke with `next.{stage, stateFile, stateSha}` plus `beadIds` + `repoPath` plus ONLY the fresh fields the payload names — its `freshFields` derive from the script's own `REQUIRED_ARGS` table and are authoritative. Never re-paste carried state; never edit the state file (a deliberate edit means inspecting it and re-invoking with its new sha).
 
@@ -38,7 +39,7 @@ The state file is the carry: every gate persists to `<archiveDir>/sw-state-<batc
 
 ALWAYS pass `resumeFromRunId` of the previous invocation together with `scriptPath` from the first launch's tool result. Every world-reading agent's prompt and journal label carries a freshness token, so replay is safe — completed agents return cached results and `/workflows` accumulates completed stages across the whole stage lineage. Each stage (`implement`, `phase7`) starts its own lineage. Across sessions, hand off the last payload's `next` (`{stage, stateFile, stateSha}`) in the handoff bead — the script sha-verifies the state, re-validates everything it loads, and probes the world before acting.
 
-## GATE M — per-wave merges (the session executes)
+## GATE 3 — per-wave merges (the session executes)
 
 For each merge-ready bead, with the user's go: `wt merge --no-squash` (ff-only) → `bd close <id>` → `wt remove`. NO bookkeeping transcription: the next invocation DERIVES merged beads and `mainSha` from the world (closed status + tip ancestry). Squash/cherry-pick merges and foreign main advances come back as a `CONFIRM` payload — adjudicate via `mergeOverrides: {addMerged/dropMerged: [{id, reason}]}` and/or `confirmMainAdvance: true`. `staleWorktrees` entries are the SESSION's rebase duty (wt-reference sibling pattern); rebase them, then re-invoke the same `waveCursor` — the script detects the rebase and re-reviews in-run. For HELD beads: merge the passed ones first, then re-invoke at the SAME `waveCursor` with `operatorGuidance`; keep HELD worktrees on disk until phase 7. The mid-batch targeted verify (heavy tier) is SESSION-side at this gate — the script only ever runs the cheap tier.
 
