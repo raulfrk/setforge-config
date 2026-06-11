@@ -1791,9 +1791,11 @@ const implementWave = async (a, setups, reviewResults = [], staleWorktrees = [])
       passed: mergedInWave + mergeReady.length, held: held.length, stale: staleWorktrees.length,
     },
   }
+  // a fully-HELD wave holds the cursor — the documented same-cursor retry must find it unchanged
+  const advanceCursor = mergeReady.length > 0 || held.length === 0
   const carry = {
     ...a,
-    waveCursor: lastWave ? a.waveCursor : a.waveCursor + 1,
+    waveCursor: (lastWave || !advanceCursor) ? a.waveCursor : a.waveCursor + 1,
     worktrees: worktreesOut, baseShas: baseShasOut, tipShas: tipShasOut, runStats,
     mergedBeads: a.mergedBeads || [],
   }
@@ -1846,6 +1848,25 @@ const runImplement = async (a) => {
   }
   a = { ...a, mergedBeads: bk.merged, mainSha: bk.observedMain }
   delete a.__freshMergedBeads
+
+  // deps are a HARD serializer: a later wave never builds on an unmerged sibling (no cross-worktree stacking)
+  if (a.waveCursor > 1) {
+    const settled = new Set([...(a.mergedBeads || []), ...(a.droppedBeads || [])])
+    const unsettled = a.waves.slice(0, a.waveCursor - 1).flat().filter(id => !settled.has(id)).sort()
+    if (unsettled.length > 0) {
+      const persistedG = await persistState(a, "confirm-unsettled")
+      if (persistedG.failed) return persistedG.failed
+      return {
+        gate: "CONFIRM", stage: "implement",
+        ...(persistedG.saveFailed ? { stateSaveFailed: persistedG.saveFailed } : {}),
+        reason: "wave " + a.waveCursor + " dispatch requires every prior-wave bead merged or consciously dropped — unsettled prior-wave bead(s): " + unsettled.join(", "),
+        next: {
+          stage: "implement", stateFile: persistedG.stateFile, stateSha: persistedG.stateSha,
+          freshFields: freshFieldsFor("implement", ["mergeOverrides", "confirmMainAdvance", "droppedBeads"]),
+        },
+      }
+    }
+  }
 
   // Freeze the pre-merge main tip ONCE at wave 1, from the probe's observed facts — a
   // preWaveSha derived after any merge gate would silently truncate the phase-7 range
