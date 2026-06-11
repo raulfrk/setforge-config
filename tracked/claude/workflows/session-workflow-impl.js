@@ -448,6 +448,9 @@ const VERIFY_STEP_SCHEMA = {
   },
 }
 
+// identity rides the schema as a const — a paraphrased echo fails tool-layer validation and retries, instead of HELDing the bead
+const withStepId = (schema, id) => ({ ...schema, properties: { ...schema.properties, stepId: { const: id } } })
+
 const AUDIT_SCHEMA = {
   type: "object", required: ["items"],
   properties: {
@@ -1471,14 +1474,14 @@ const implementBead = async (a, setup, checklist, forceSkipBuild = false) => {
     }
     for (const step of plan.steps) {
       const b = await agent(BUILD_PROMPT_B(a.specPath, beadId, wt, step, checklistBlock), {
-        label: "build:" + beadId + ":" + step.id, phase: "Build", schema: BUILD_STEP_SCHEMA,
+        label: "build:" + beadId + ":" + step.id, phase: "Build", schema: withStepId(BUILD_STEP_SCHEMA, step.id),
       })
       if (!b || b.status === "blocked" || b.stepId !== step.id) {
         return { ...state, evidence: "build step " + step.id + " " + (!b ? "returned no result" : b.stepId !== step.id ? "echoed the wrong step id (" + b.stepId + ")" : "blocked: " + (b.notes || b.summary || "")) }
       }
       if (P.perStepVerify) {
         const v = await agent(VERIFY_PROMPT_B(beadId, wt, step), {
-          label: "verify:" + beadId + ":" + step.id + ":g" + gateTag, phase: "Build", schema: VERIFY_STEP_SCHEMA,
+          label: "verify:" + beadId + ":" + step.id + ":g" + gateTag, phase: "Build", schema: withStepId(VERIFY_STEP_SCHEMA, step.id),
         })
         if (!v) buildVerifyFindings.push({ severity: "high", detail: "step " + step.id + ": verifier returned no result — unverified" })
         else if (v.passed === false) buildVerifyFindings.push({ severity: "high", detail: "step " + step.id + " verify FAILED: " + (v.evidence || "") + " " + (v.failures || []).join("; ") })
