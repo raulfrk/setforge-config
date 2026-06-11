@@ -583,8 +583,8 @@ const RETRY_NOTE =
   "retry it up to 3 times with 200ms/400ms/800ms waits before reporting failure. " +
   "Never run `git fetch`, `git gc`, or `git maintenance`."
 
-const PROBE_PROMPT = (repoPath, beadIds, expect) =>
-  "## World-State Probe (read-only)\n\n" +
+const PROBE_PROMPT = (repoPath, beadIds, expect, probeToken) =>
+  "## World-State Probe (read-only) — segment " + probeToken + "\n\n" +
   "Verify the current world state matches what this staged run expects. Run ONLY read-only commands.\n\n" +
   "1. `git -C " + repoPath + " rev-parse HEAD` — report as mainSha.\n" +
   "2. For each bead id below, `bd show <id>` from " + repoPath + " — report its status and whether it exists:\n" +
@@ -1148,8 +1148,12 @@ const runProbe = async (a, opts = {}) => {
       .map(([beadId, p]) => ({ beadId, path: p }))
       .sort((x, y) => x.beadId.localeCompare(y.beadId)),
   }
-  const probe = await agent(PROBE_PROMPT(a.repoPath, a.beadIds, expect), {
-    label: "probe:world-state", phase: "Validate", schema: PROBE_SCHEMA, model: ECHO_MODEL,
+  // world-read: freshness token in label keeps journal replay safe (finding #3) — the
+  // carried sha + gate counter turn the cache key over, so two probes in one lineage
+  // never share a key.
+  const probeToken = (a.stateSha || "launch").slice(0, 12) + ":g" + (PRIOR_GATE_COUNTER + 1)
+  const probe = await agent(PROBE_PROMPT(a.repoPath, a.beadIds, expect, probeToken), {
+    label: "probe:world:" + probeToken, phase: "Validate", schema: PROBE_SCHEMA, model: ECHO_MODEL,
   })
   if (!probe) return { failed: err("world-state probe returned no result — refusing to proceed unverified") }
   const problems = [...(probe.problems || [])]
@@ -1309,9 +1313,10 @@ const deriveBookkeeping = async (a, probe) => {
   // every entry (the probe separately enforces that recorded-merged beads are closed).
   const settled = new Set((a.mergedBeads || []).filter(id => closedSet.has(id)))
   const candidates = a.beadIds.filter(id => !settled.has(id) && closedSet.has(id) && typeof tips[id] === "string" && SHA_RE.test(tips[id]))
+  // world-read: freshness token in label keeps journal replay safe (finding #3)
   const echoes = (await parallel(candidates.map(id => () =>
     agent(ANCESTRY_PROMPT(a.repoPath, id, tips[id], observedMain), {
-      label: "derive:anc:" + id, phase: "Validate", schema: ANCESTRY_SCHEMA, model: ECHO_MODEL,
+      label: "derive:anc:" + id + ":" + tips[id].slice(0, 8) + ":" + observedMain.slice(0, 8), phase: "Validate", schema: ANCESTRY_SCHEMA, model: ECHO_MODEL,
     })
   ))).filter(Boolean)
   const ancestry = {}
@@ -1359,8 +1364,9 @@ const classifyCarriedWorktrees = async (a, probedMainSha) => {
   let baseShas = { ...(a.baseShas || {}) }
   for (const beadId of carried) {
     const wt = a.worktrees[beadId]
+    // world-read: freshness token in label keeps journal replay safe (finding #3)
     const obs = await agent(MERGE_BASE_PROMPT(wt), {
-      label: "base-observe:" + beadId, phase: "Rebase", schema: TIP_SHA_SCHEMA, model: ECHO_MODEL,
+      label: "base-observe:" + beadId + ":" + probedMainSha.slice(0, 8), phase: "Rebase", schema: TIP_SHA_SCHEMA, model: ECHO_MODEL,
     })
     const observed = (obs && typeof obs.sha === "string") ? obs.sha.trim() : ""
     if (!SHA_RE.test(observed)) {
@@ -1631,8 +1637,9 @@ const implementBead = async (a, setup, checklist, forceSkipBuild = false) => {
   }
 
   if (state.gate === "PASS") {
+    // world-read: freshness token in label keeps journal replay safe (finding #3)
     const tip = await agent(TIP_SHA_PROMPT(wt), {
-      label: "tip:" + beadId, phase: "Review/Fix", schema: TIP_SHA_SCHEMA, model: ECHO_MODEL,
+      label: "tip:" + beadId + ":g" + (PRIOR_GATE_COUNTER + 1) + ":final", phase: "Review/Fix", schema: TIP_SHA_SCHEMA, model: ECHO_MODEL,
     })
     const sha = tip && typeof tip.sha === "string" ? tip.sha.trim() : ""
     if (SHA_RE.test(sha)) {
@@ -1667,8 +1674,9 @@ const implementWave = async (a, setups, reviewResults = [], staleWorktrees = [])
   for (const r of results.filter(x => x.gate !== "PASS")) {
     const noteText = "session-workflow outcome at cursor " + a.waveCursor + ": " + r.gate + " (" + r.verdict + ") after " + r.rounds + " round(s). " + r.evidence +
       (r.scopeGrowth.length ? " Scope growth: " + r.scopeGrowth.join(", ") : "")
+    // world-write keyed per segment: a HELD retry writes a fresh outcome note
     const noted = await agent(BD_NOTE_PROMPT(a.repoPath, r.beadId, noteText), {
-      label: "bd-note:" + r.beadId, phase: "Review/Fix", schema: BD_NOTE_SCHEMA,
+      label: "bd-note:" + r.beadId + ":g" + (PRIOR_GATE_COUNTER + 1), phase: "Review/Fix", schema: BD_NOTE_SCHEMA,
     })
     if (!noted || noted.noted !== true) {
       // The durable record failed — surface it in the payload rather than silently
@@ -1798,8 +1806,10 @@ const runImplement = async (a) => {
     const slug = beadId
     if (!validSlug(slug) || !noShellMeta(slug)) return err("bead id fails worktree-slug validation: " + JSON.stringify(beadId))
     const expectedPath = WORKTREE_BASE + slug
+    // world-write keyed per segment (idempotent agent): a cached cross-segment replay
+    // could otherwise claim a worktree that was since removed
     const setup = await agent(WT_SETUP_PROMPT(a.repoPath, beadId, slug), {
-      label: "wt-setup:" + beadId, phase: "Build", schema: WT_SETUP_SCHEMA,
+      label: "wt-setup:" + beadId + ":g" + (PRIOR_GATE_COUNTER + 1), phase: "Build", schema: WT_SETUP_SCHEMA,
     })
     // Pin the result to the loop's inputs: echoed id, path, and branch must be exactly the
     // dictated ones, the claim must have succeeded, and the carry maps are keyed by the
@@ -1887,9 +1897,10 @@ const runPhase7 = async (a) => {
 
   // Per-bead committed ranges, recomputed from shas (Q-I) — identity + ok pinned; a
   // failed diff is a structured error, never an empty scope.
+  // world-read: freshness token in label keeps journal replay safe (finding #3)
   const ranges = (await parallel(mergedIds.map(id => () =>
     agent(BEAD_RANGE_PROMPT(a.repoPath, id, a.baseShas[id], a.tipShas[id]), {
-      label: "p7-range:" + id, phase: "Phase 7", schema: RANGE_FILES_SCHEMA, model: ECHO_MODEL,
+      label: "range:" + id + ":" + a.baseShas[id].slice(0, 8) + ":" + a.tipShas[id].slice(0, 8), phase: "Phase 7", schema: RANGE_FILES_SCHEMA, model: ECHO_MODEL,
     })
   ))).filter(Boolean)
   const rangeById = new Map(ranges.map(r => [r.beadId, r]))
@@ -2166,8 +2177,9 @@ const runPhase7 = async (a) => {
     "Fixes applied on main (cumulative across re-invocations):\n" + (state.findingsFixed.map(f => "- r" + f.round + " " + f.commitSha.slice(0, 9) + ": " + f.summary).join("\n") || "(none)") + "\n\n" +
     "Deferred follow-ups:\n" + (state.deferredBeads.map(d => "- " + d.beadId + " (" + d.reason + "): " + d.detail).join("\n") || "(none)") + "\n\n" +
     "Run stats: " + JSON.stringify(runStats)
+  // world-write keyed per segment: a HELD retry must rewrite the cumulative report
   const report = await agent(REPORT_PROMPT(a.repoPath, reportPath, epicId, body), {
-    label: "p7-report", phase: "Phase 7", schema: REPORT_SCHEMA,
+    label: "p7-report:g" + (PRIOR_GATE_COUNTER + 1), phase: "Phase 7", schema: REPORT_SCHEMA,
   })
   const reportStatus = {
     fileWritten: !!(report && report.fileWritten === true && report.reportPath === reportPath),
