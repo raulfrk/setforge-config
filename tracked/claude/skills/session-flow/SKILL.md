@@ -157,10 +157,6 @@ Never use bare `EnterWorktree` (without `--path`) in a bg session — it creates
 4. Handoff bead stays open until the next session consumes it — the `pickup` skill closes it after the user picks what to resume, never before the gate.
 5. **Discovery at next session**: the next session invokes `pickup` (or `session-flow`, which checks pickup at step 2) → pickup scans `~/handoff`, path-matches → presents context → user picks → claim and begin. No hook fires this; resume is opt-in.
 
-## See also
-
-- `session-workflow` — the autonomous sibling: the same 7-phase methodology driven by the `session-workflow-impl` workflow script for well-scoped batches, pausing only at the human gates (spec approval in-session, then per-wave merges and the final full gate around an autonomous implement/review script). This skill stays the default; the user picks the sibling explicitly.
-
 ## Superpowers routing table
 
 | Phase | Skill to invoke | When |
