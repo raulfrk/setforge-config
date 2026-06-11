@@ -159,7 +159,7 @@ Never use bare `EnterWorktree` (without `--path`) in a bg session — it creates
 
 ## See also
 
-- `session-workflow` — the autonomous sibling: the same 7-phase methodology driven by the `session-workflow-impl` workflow script for well-scoped batches, pausing only at the human gates (brainstorm answers, spec approval, per-wave merges, the final full gate). This skill stays the default; the user picks the sibling explicitly.
+- `session-workflow` — the autonomous sibling: the same 7-phase methodology driven by the `session-workflow-impl` workflow script for well-scoped batches, pausing only at the human gates (spec approval in-session, then per-wave merges and the final full gate around an autonomous implement/review script). This skill stays the default; the user picks the sibling explicitly.
 
 ## Superpowers routing table
 
