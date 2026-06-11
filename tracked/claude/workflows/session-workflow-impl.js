@@ -1223,6 +1223,20 @@ phase("Validate")
 
 const A = normalizeArgs(args)
 
+// Single source of truth: what the operator must pass per invocation. The
+// validator enforces it and every gate payload's freshFields derives from it
+// (finding #1: hand-authored payload docs diverged from validation).
+const REQUIRED_ARGS = {
+  always: ["stage", "beadIds", "repoPath"],
+  implement: { launch: ["archiveDir", "specPath", "waves", "checklist", "verifyCommands"], resume: ["stateFile", "stateSha"] },
+  phase7:    { launch: ["archiveDir", "specPath", "verifyCommands"],                       resume: ["stateFile", "stateSha"] },
+}
+const freshFieldsFor = (stage, extras) => [
+  ...REQUIRED_ARGS.always,
+  ...REQUIRED_ARGS[stage].resume,
+  ...(extras || []),
+]
+
 const validateCommon = (a) => {
   if (a.__error) return a.__error
   if (!STAGES.includes(a.stage)) {
@@ -1255,6 +1269,10 @@ const validateSlimArgs = (a) => {
   } else if (a.stateSha != null) {
     return "args.stateSha is present without args.stateFile"
   }
+  // Presence per the REQUIRED_ARGS table (launch when no stateFile, resume otherwise);
+  // shape checks for the launch fields run in validateStage after the state merge.
+  const need = REQUIRED_ARGS[a.stage][a.stateFile != null ? "resume" : "launch"].filter(f => a[f] == null)
+  if (need.length > 0) return "args missing for a " + a.stage + " " + (a.stateFile != null ? "resume" : "launch") + ": " + need.join(", ")
   if (a.convergeMode != null && !CONVERGE_MODES.includes(a.convergeMode)) return "args.convergeMode must be one of " + CONVERGE_MODES.join("/")
   if (a.maxOperatorRounds != null && !(Number.isInteger(a.maxOperatorRounds) && a.maxOperatorRounds >= 1 && a.maxOperatorRounds <= 10)) return "args.maxOperatorRounds must be an integer 1..10"
   if (a.fullGateResult != null && !["pass", "fail"].includes(a.fullGateResult)) return "args.fullGateResult must be 'pass' or 'fail'"
@@ -1465,31 +1483,25 @@ const validateStage = (a) => {
       return null
     }
     case "implement": {
-      if (a.specApproved !== true) return "implement stage requires args.specApproved === true (the human spec gate)"
-      if (!absPathOk(a.specPath || "") || !a.specPath.startsWith(REPO_PREFIX)) return "implement stage requires args.specPath (the approved spec file, under " + REPO_PREFIX + ")"
+      if (!absPathOk(a.specPath || "") || !a.specPath.startsWith(REPO_PREFIX)) return "implement stage requires args.specPath (the session-approved spec file, under " + REPO_PREFIX + ")"
+      if (!absPathOk(a.archiveDir || "") || !a.archiveDir.startsWith(REPO_PREFIX)) return "implement stage requires args.archiveDir (absolute path under " + REPO_PREFIX + " — gate state persists there)"
+      if ((a.archiveDir + "/").startsWith(a.repoPath.replace(/\/+$/, "") + "/")) return "implement stage: archiveDir must live OUTSIDE repoPath — untracked run artifacts inside the repo dirty the porcelain checks"
       const wavesProblem = validWaves(a.waves, a.beadIds)
       if (wavesProblem) return "implement stage: " + wavesProblem
       if (!isInt(a.waveCursor) || a.waveCursor > a.waves.length) return "implement stage requires args.waveCursor in 1.." + (Array.isArray(a.waves) ? a.waves.length : "?")
       const ogProblem = validOperatorGuidance(a.operatorGuidance, a.beadIds)
       if (ogProblem) return "implement stage: " + ogProblem
       if (a.preWaveSha != null && !(typeof a.preWaveSha === "string" && SHA_RE.test(a.preWaveSha))) return "implement stage: preWaveSha must be a sha string when present"
-      if (a.verifyCommands != null) {
-        const vcProblem = validVerifyCommands(a.verifyCommands)
-        if (vcProblem) return "implement stage: " + vcProblem
-      }
+      const vcProblem = validVerifyCommands(a.verifyCommands)
+      if (vcProblem) return "implement stage: " + vcProblem
       const rsProblem = validRunStats(a.runStats)
       if (rsProblem) return "implement stage: " + rsProblem
       if (a.tipShas != null) {
         const tsProblem = validShaMap(a.tipShas, a.beadIds, "tipShas")
         if (tsProblem) return "implement stage: " + tsProblem
-        if (Object.keys(a.tipShas).length > 0 && a.verifyCommands == null) {
-          return "implement stage: tipShas carried (a passed bead will re-enter via skipBuild) but verifyCommands is absent — its re-verification would silently degrade to inspection-only"
-        }
       }
-      const cpProblem = validCarvePreview(a.carvePreview ?? [], a.beadIds)
-      if (cpProblem) return "implement stage requires the GATE 2 carvePreview carried in args: " + cpProblem
       const clProblem = validChecklistMap(a.checklist, a.beadIds)
-      if (clProblem) return "implement stage requires the GATE 2 per-bead checklist carried in args: " + clProblem
+      if (clProblem) return "implement stage requires the per-bead checklist (launch arg, extracted from the session-written spec): " + clProblem
       if (a.mergedBeads != null) {
         const mbProblem = validMergedBeads(a.mergedBeads, a.beadIds)
         if (mbProblem) return "implement stage: " + mbProblem
@@ -1501,8 +1513,6 @@ const validateStage = (a) => {
         }
       }
       if (a.waveCursor > 1) {
-        const vc2Problem = validVerifyCommands(a.verifyCommands)
-        if (vc2Problem) return "implement stage with waveCursor > 1 requires verifyCommands (the rebase re-review verifies with the cheap tier): " + vc2Problem
         if (a.worktrees == null || typeof a.worktrees !== "object" || Array.isArray(a.worktrees)) return "implement stage with waveCursor > 1 requires args.worktrees (a plain object carried from prior payloads)"
         if (a.baseShas == null || typeof a.baseShas !== "object") return "implement stage with waveCursor > 1 requires args.baseShas (per-bead branch points, carried from prior payloads)"
         if (Array.isArray(a.baseShas)) return "implement stage: args.baseShas must be a plain object keyed by bead id, not an array"
@@ -1553,11 +1563,10 @@ const validateStage = (a) => {
       const rsProblem = validRunStats(a.runStats)
       if (rsProblem) return "phase7 stage: " + rsProblem
       const clProblem = validChecklistMap(a.checklist, a.beadIds)
-      if (clProblem) return "phase7 stage requires the GATE 2 per-bead checklist carried in args: " + clProblem
+      if (clProblem) return "phase7 stage requires the per-bead checklist (carried in the state, or supplied at a fresh launch): " + clProblem
       if (!absPathOk(a.archiveDir || "") || !a.archiveDir.startsWith(REPO_PREFIX)) return "phase7 stage requires args.archiveDir (the final report is written there)"
       if ((a.archiveDir + "/").startsWith(a.repoPath.replace(/\/+$/, "") + "/")) return "phase7 stage: archiveDir must live OUTSIDE repoPath — the report file would dirty main's porcelain and self-block the HELD re-invocation"
-      if (typeof a.specFileName !== "string" || !SPECFILE_RE.test(a.specFileName)) return "phase7 stage requires args.specFileName (the report name derives from it)"
-      if (a.specPath != null && !(absPathOk(a.specPath) && a.specPath.startsWith(REPO_PREFIX))) return "phase7 stage: specPath must be an absolute path under " + REPO_PREFIX + " when present"
+      if (!absPathOk(a.specPath || "") || !a.specPath.startsWith(REPO_PREFIX)) return "phase7 stage requires args.specPath (absolute path under " + REPO_PREFIX + " — the report name derives from its basename)"
       if (a.deferredFindings != null) {
         if (!Array.isArray(a.deferredFindings)) return "phase7 stage: deferredFindings must be an array when present"
         for (const d of a.deferredFindings) {
@@ -2467,7 +2476,7 @@ const implementWave = async (a, setups, reviewResults = [], staleWorktrees = [])
     next: {
       stage: lastWave ? "phase7" : "implement",
       stateFile: persisted.stateFile, stateSha: persisted.stateSha,
-      freshFields: ["(after merging) just re-invoke — merged beads and mainSha are DERIVED by the probe", "operatorGuidance {beadId: text} (for HELD retries at the SAME waveCursor)", "droppedBeads (phase7 only, to consciously drop)", "convergeMode (optional)"],
+      freshFields: freshFieldsFor(lastWave ? "phase7" : "implement", ["operatorGuidance {beadId: text} (for HELD retries at the SAME waveCursor)", "droppedBeads (phase7 only, to consciously drop)"]),
     },
     note: "Merge ritual per merge-ready bead (the SESSION executes): wt merge --no-squash (ff-only) -> bd close -> wt remove. NO bookkeeping transcription — the next invocation derives merged beads and mainSha from the world; squash/cherry-pick merges come back as a CONFIRM payload. staleWorktrees entries need a SESSION rebase (see each action), then re-invoke the SAME waveCursor. For HELD beads: merge the passed ones first, then re-invoke at stage 'implement' with the SAME waveCursor and operatorGuidance; keep a HELD bead's worktree on disk until phase7 even if you intend to drop it. " + (lastWave ? "This was the last wave: when every bead is merged (or will be consciously dropped via droppedBeads), re-invoke at stage 'phase7'." : "Then re-invoke at stage 'implement' (waveCursor advances via the state file)."),
   }
@@ -2491,7 +2500,7 @@ const runImplement = async (a) => {
       mainAdvance: bk.mainAdvance ? { recorded: a.mainSha, observed: bk.observedMain, note: "main advanced with no newly derived merges — foreign commits? Confirm to re-anchor." } : null,
       next: {
         stage: a.stage, stateFile: persistedC.stateFile, stateSha: persistedC.stateSha,
-        freshFields: ["mergeOverrides {addMerged/dropMerged: [{id, reason}]} (adjudicates needsConfirm)", "confirmMainAdvance: true (re-anchors mainSha)"],
+        freshFields: freshFieldsFor(a.stage, ["mergeOverrides {addMerged/dropMerged: [{id, reason}]} (adjudicates needsConfirm)", "confirmMainAdvance: true (re-anchors mainSha)"]),
       },
       note: "Bookkeeping derivation needs the operator. Adjudicate each needsConfirm entry via mergeOverrides and/or confirm the main advance, then re-invoke the same stage.",
     }
@@ -2789,7 +2798,7 @@ const runPhase7 = async (a) => {
       mainAdvance: bk.mainAdvance ? { recorded: a.mainSha, observed: bk.observedMain, note: "main advanced with no newly derived merges — foreign commits? Confirm to re-anchor." } : null,
       next: {
         stage: "phase7", stateFile: persistedC.stateFile, stateSha: persistedC.stateSha,
-        freshFields: ["mergeOverrides {addMerged/dropMerged: [{id, reason}]}", "confirmMainAdvance: true", "droppedBeads (to consciously drop a bead)"],
+        freshFields: freshFieldsFor("phase7", ["mergeOverrides {addMerged/dropMerged: [{id, reason}]}", "confirmMainAdvance: true", "droppedBeads (to consciously drop a bead)"]),
       },
       note: "Bookkeeping derivation needs the operator before phase 7 can run. Adjudicate, then re-invoke.",
     }
@@ -3013,7 +3022,7 @@ const runPhase7 = async (a) => {
         fullCommands: a.verifyCommands.full,
         next: {
           stage: "phase7", stateFile: persistedP.stateFile, stateSha: persistedP.stateSha,
-          freshFields: ["fullGateResult: 'pass' | 'fail'", "fullGateDetail (the failure output, on fail)"],
+          freshFields: freshFieldsFor("phase7", ["fullGateResult: 'pass' | 'fail'", "fullGateDetail (the failure output, on fail)"]),
         },
         note: "The review fan is clean. Run the FULL canonical gate in the SESSION (background it — it may run long), against main at " + tipNow + " — do NOT let main move first. Then re-invoke with fullGateResult. pass => DONE; fail => the failures re-enter the loop as findings.",
       }
@@ -3144,7 +3153,7 @@ const runPhase7 = async (a) => {
     mergeOnlyFiles: mergeOnlyFiles || [], report: reportStatus,
     next: converged ? undefined : {
       stage: "phase7", stateFile: persistedF.stateFile, stateSha: persistedF.stateSha,
-      freshFields: ["operatorGuidance (steer the retry)", "droppedBeads (accept-and-account)", "convergeMode (optional)"],
+      freshFields: freshFieldsFor("phase7", ["operatorGuidance (steer the retry)", "droppedBeads (accept-and-account)"]),
     },
     note: converged
       ? "Phase 7 converged: combined fan clean and the full canonical gate passed. The batch is complete."
