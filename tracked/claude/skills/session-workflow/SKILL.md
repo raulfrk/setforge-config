@@ -18,14 +18,14 @@ The script's gate payloads are AUTHORITATIVE for per-stage mechanics: every payl
 3. **Consolidate IN-CONTEXT.** Dedupe the candidates, detect collisions between answers, attach a recommended default to every question. No consolidator agent.
 4. **ONE batched AskUserQuestion sitting** (chain calls if more than 4 questions), recommended defaults marked. Follow-ups happen conversationally — they cost seconds, not an invocation.
 5. **Write the spec immediately.** The spec is the convergence artifact; residual ambiguity goes in an explicit **assumption ledger** section, adjudicated once at approval. Approval runs via plan mode (the revdiff hook fires).
-6. **On approval, carve and plan waves.** Write per-bead `--design`/`--acceptance` (sequential bd writes), derive waves (bd deps HARD serializer, predicted file overlap ADVISORY), extract `checklist` (the spec's pitfall items, plus the synthetic `e2e-assert-present` entry for each risk-flagged bead) and `verifyCommands` `{cheap, full}` from the spec, and present the wave plan.
+6. **On approval, carve and plan waves.** Write per-bead `--design`/`--acceptance` (sequential bd writes), derive waves (bd deps HARD serializer, predicted file overlap ADVISORY), extract the per-bead `checklist` map (keyed by bead id: the spec's pitfall items, plus the synthetic `e2e-assert-present` entry for each risk-flagged bead) and `verifyCommands` `{cheap, full}` from the spec, and present the wave plan.
 
 ## Launching the script
 
 ```
 Workflow({ name: "session-workflow-impl", args: {
   stage: "implement", beadIds: [...], repoPath, archiveDir,
-  specPath, waves: [[...], ...], checklist: [...],
+  specPath, waves: [[...], ...], checklist: {"<bead-id>": [...]},
   verifyCommands: {cheap: [...], full: [...]}, profile: "standard",
   runStats: { epicId: "<epic-id>" },  // optional — enables the phase-7 epic bd-note
 } })
@@ -37,7 +37,7 @@ The state file is the carry: every gate persists to `<archiveDir>/sw-state-<batc
 
 ## Resume chaining
 
-ALWAYS pass `resumeFromRunId` of the previous invocation together with `scriptPath` from the first launch's tool result. Every world-reading agent's prompt and journal label carries a freshness token, so replay is safe — completed agents return cached results and `/workflows` accumulates completed stages across the whole stage lineage. Each stage (`implement`, `phase7`) starts its own lineage. Across sessions, hand off the last payload's `next` (`{stage, stateFile, stateSha}`) in the handoff bead — the script sha-verifies the state, re-validates everything it loads, and probes the world before acting.
+ALWAYS pass `resumeFromRunId` of the previous invocation together with `scriptPath` from the first launch's tool result — on EVERY re-invocation, including the `implement` → `phase7` transition, so the run lineage stays continuous. Every world-reading agent's prompt and journal label carries a freshness token, so replay is safe — completed agents return cached results and `/workflows` accumulates the whole run's progress. Across sessions, hand off the last payload's `next` (`{stage, stateFile, stateSha}`) in the handoff bead — the script sha-verifies the state, re-validates everything it loads, and probes the world before acting.
 
 ## GATE 3 — per-wave merges (the session executes)
 
@@ -45,7 +45,7 @@ For each merge-ready bead, with the user's go: `wt merge --no-squash` (ff-only) 
 
 ## FINAL — PENDING-FULL-GATE, then the report
 
-A clean combined fan pauses with the canonical full gate UNRUN: the SESSION runs it (background it — it may take ~an hour) against main at the pinned `gateMainSha`, without letting main move first, then re-invokes with `fullGateResult: "pass" | "fail"` (+ `fullGateDetail` on fail). Pass ⇒ `DONE` and the report. A FINAL `HELD` carries per-finding evidence; there is no in-script re-fan loop to steer — `operatorGuidance` feeds the single bounded escalation only.
+A clean combined fan pauses with the canonical full gate UNRUN: the SESSION runs it (background it — pre-commit + the ~42-min Docker e2e suite) against main at the pinned `gateMainSha`, without letting main move first, then re-invokes with `fullGateResult: "pass" | "fail"` (+ `fullGateDetail` on fail). Pass ⇒ `DONE` and the report. A FINAL `HELD` carries per-finding evidence; there is no in-script re-fan loop to steer — `operatorGuidance` feeds the single bounded escalation only.
 
 ## Failure shapes
 
@@ -63,3 +63,14 @@ Workflow subagents inherit the session's tool allowlist and prompt mid-run for a
 ## Relationship to session-flow
 
 Sibling. Phases 1–3 follow `session-flow` conventions (goal surfacing, revdiff, plan mode) with the research-dispatch assist; `session-flow` keeps session lifecycle (handoff/pickup, epic discovery) and stays the default. After FINAL the session returns to `session-flow` conventions (post-merge review of the engine-side gates, handoffs, self-improvement checkpoints).
+
+## Self-improvement
+
+While using this skill, stay alert for any *generic* way it could be better — clearer wording, a missing case, a smoother step, a recurring friction it should prevent. Not only failures; any worthwhile improvement, noticed anytime.
+
+- **Don't edit mid-task.** Capture the observation; keep working.
+- **At a completion checkpoint** (a finished unit of work before the next, or session end), pause and, if anything surfaced, propose it as a diff to THIS file via revdiff — one edit per idea, citing what prompted it.
+- **Generic only.** Global config used across every project; never bake in project-specific detail (paths, repo/profile names, bead IDs) unless this artifact is itself project-scoped.
+- **Never auto-apply.** Propose via revdiff; the user approves every edit. Never write it yourself.
+- **Off-limits — never propose edits to:** hard rails, the safety/environment sections, system paths, `setforge:user-section` marker lines or their `hash=`, and *this self-improvement protocol itself* (the mechanism may not rewrite its own leash).
+- **Substantive, not noise.** Rare and load-bearing; not cosmetic rewording; never re-propose a declined idea.
