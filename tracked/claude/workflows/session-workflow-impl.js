@@ -37,6 +37,13 @@ const CHUNK_WIDTH = 4 // concurrent per-bead pipelines per wave (git/bd writer c
 // same finding ids + re-audit) before HELD. These two constants are the hard bounds.
 const FIX_PASS_CAP = 2 // fix dispatches per bead per segment (1 + the single escalation)
 const AUDIT_CAP = 2 // fix-verify audits per bead per segment (1 + the single escalation)
+// Cap accounting (pitfall #20): every loop is bounded by a code constant, so the agent
+// budget per run lineage is closed-form. Worst case per bead: plan 1 + build 12 + verify
+// 12 + resolve 1 + reverify 1 + audit 2 + review-plan 2 + fan 3x2 + tips 3 + fix 2 +
+// fix-verify 4 = 46; x MAX_BEADS (16) = 736. Phase 7 adds ~40 (fan 4x2, fixes, audits,
+// deferral filings <= 16, report). Probe + ancestry + state writer (3 tries) across the
+// lineage's gates adds ~150. Hard ceiling ~930 — under the 1000 budget; a typical 2-4
+// bead batch stays well under 200.
 const WORKTREE_BASE = "/home/raul/projects/worktrees/"
 const REPO_PREFIX = "/home/raul/" // repos this harness may operate on live under the home tree
 const SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/
@@ -1795,6 +1802,12 @@ const implementWave = async (a, setups, reviewResults = [], staleWorktrees = [])
 }
 
 const runImplement = async (a) => {
+  // Carried-progress narration (spec §4.6): pure function of loaded state, no world
+  // reads — even a fresh run in the lineage displays prior segments' progress.
+  log("carried: waves " + a.waves.map((w, i) => "w" + (i + 1) + "[" + w.join(",") + "]").join(" ") +
+    "; merged: " + ((a.mergedBeads || []).join(",") || "(none)") +
+    "; cursor: wave " + a.waveCursor + "/" + a.waves.length +
+    (Object.keys(a.tipShas || {}).length ? "; passed-unmerged: " + Object.keys(a.tipShas).filter(id => !(a.mergedBeads || []).includes(id)).sort().join(",") : ""))
   const probed = await runProbe(a, { deferMergedRule: true })
   if (probed.failed) return probed.failed
 
@@ -1917,6 +1930,12 @@ const runImplement = async (a) => {
 }
 
 const runPhase7 = async (a) => {
+  // Carried-progress narration (spec §4.6): pure function of loaded state, no world reads.
+  log("carried: merged: " + ((a.mergedBeads || []).join(",") || "(derived at entry)") +
+    "; dropped: " + ((a.droppedBeads || []).join(",") || "(none)") +
+    "; prior fixes: " + (a.priorFindingsFixed || []).length +
+    "; deferred follow-ups: " + (a.deferredFindings || []).length +
+    (a.fullGateResult ? "; full gate: " + a.fullGateResult : ""))
   const probed = await runProbe(a, { deferMergedRule: true })
   if (probed.failed) return probed.failed
 
@@ -2005,18 +2024,15 @@ const runPhase7 = async (a) => {
   // Seed triage bookkeeping from a prior invocation's FINAL payload — re-invoking a HELD
   // phase 7 must never re-file follow-ups for findings already triaged (idempotent re-run).
   const seededDeferrals = (a.deferredFindings || []).map(d => ({ beadId: d.beadId, detail: d.detail, reason: d.reason || "(carried)" }))
-  const state = { rounds: 0, verdict: "HELD", evidence: "", findingsFixed: [...(a.priorFindingsFixed || [])], deferredBeads: [...seededDeferrals] }
-  // Merge-only attribution is a ROUND-1-OF-THE-FIRST-RUN fact: on a re-invocation the
-  // prior run's fix commits sit in the combined range but are not merge artifacts.
+  const state = { fixPasses: 0, verdict: "HELD", evidence: "", findingsFixed: [...(a.priorFindingsFixed || [])], deferredBeads: [...seededDeferrals] }
+  // Merge-only attribution is a FIRST-RESOLVE-OF-THE-FIRST-RUN fact: on a re-invocation
+  // the prior run's fix commits sit in the combined range but are not merge artifacts.
   let mergeOnlyFiles = a.priorMergeOnlyFiles != null ? [...a.priorMergeOnlyFiles] : null
-  let reviewTasks = null
-  let knownTypes = new Set()
-  const findingsSeenByFixer = new Set()
   const deferredKeys = new Set(seededDeferrals.map(d => qKey(d.detail)))
   const carriedFindings = []
   let converged = false
 
-  // v3: the FULL canonical gate runs SESSION-SIDE (it can exceed agent time limits — e.g.
+  // The FULL canonical gate runs SESSION-SIDE (it can exceed agent time limits — e.g.
   // a 42-minute e2e suite). A fullGateResult re-entry resolves the pending verdict here.
   if (a.fullGateResult === "pass") {
     converged = true
@@ -2027,22 +2043,27 @@ const runPhase7 = async (a) => {
     a = { ...a, gateMainSha: undefined }
   }
 
-  while (!converged) {
-    state.rounds++
+  // ── Bounded combined review (spec §2 shape, A4): planner -> ONE fan at P7_REVIEWERS ->
+  // fix on main (with deferral triage) -> fix-verify audit -> ONE escalation -> HELD.
+  // Hard bounds: FIX_PASS_CAP fix passes and AUDIT_CAP audits; no converge loop.
+  const gateTag = PRIOR_GATE_COUNTER + 1
+  let fanClean = false
+  pipeline: do {
+    if (converged) break pipeline
+    // world-read: freshness token in label keeps journal replay safe (finding #3)
     const res = await agent(P7_RESOLVE_PROMPT(a.repoPath, a.preWaveSha), {
-      label: "p7-resolve:r" + state.rounds, phase: "Phase 7", schema: RESOLVE_RANGE_SCHEMA, model: ECHO_MODEL,
+      label: "p7-resolve:g" + gateTag, phase: "Phase 7", schema: RESOLVE_RANGE_SCHEMA, model: ECHO_MODEL,
     })
-    if (!res) { state.evidence = "phase-7 range resolver returned no result"; break }
+    if (!res) { state.evidence = "phase-7 range resolver returned no result"; break pipeline }
     const parsed = parseNameStatus(res.nameStatus)
-    if (parsed.count === 0 && state.rounds === 1) {
+    if (parsed.count === 0) {
       // mergedBeads is non-empty (validated) yet the combined range is empty: the one
       // real cause is a wrong/post-merge preWaveSha — the truncation pitfall's signature.
       // Refuse loudly instead of writing a hollow HELD report.
       return err("combined range " + a.preWaveSha + "..HEAD is empty although beads merged — preWaveSha looks post-merge/corrupted; correct it (the first GATE 3 payload carried the frozen value) and re-invoke")
     }
-    if (parsed.count === 0) { state.evidence = "combined range " + a.preWaveSha + "..HEAD became empty mid-run — inconsistent world state"; break }
     const porc = parsePorcelain(res.porcelain)
-    if (state.rounds === 1 && porc.count > 0) {
+    if (porc.count > 0) {
       // Q-K: a dirty live checkout must hard-error BEFORE any fix agent commits to main.
       return err("repoPath working tree is not clean — phase 7 commits review fixes directly to main and refuses to interleave with uncommitted local edits", {
         porcelain: porc.files.map(f => f.path).sort(),
@@ -2050,7 +2071,7 @@ const runPhase7 = async (a) => {
     }
     const frozen = new Set(parsed.files.flatMap(f => f.oldPath ? [f.path, f.oldPath] : [f.path]))
     if (mergeOnlyFiles === null) {
-      // Merge-only attribution from ROUND 1 (later rounds' fix commits are not merge
+      // Merge-only attribution from the FIRST resolve (later fix commits are not merge
       // artifacts); in code, per spec.
       mergeOnlyFiles = [...frozen].filter(p => !unionBeadPaths.has(p)).sort()
     }
@@ -2060,24 +2081,24 @@ const runPhase7 = async (a) => {
       "Resolved combined post-merge range (orchestrator-authoritative — review ONLY these; [MERGE-ONLY] marks files in no per-bead range — scrutinize them hardest):\n" +
       parsed.files.map(f => "- " + renderPath(f.status) + " " + (f.oldPath ? renderPath(f.oldPath) + " -> " : "") + renderPath(f.path) + ((mergeOnlySet.has(f.path) || (f.oldPath && mergeOnlySet.has(f.oldPath))) ? " [MERGE-ONLY]" : "")).sort().join("\n") +
       "\n\nFetch per-file content via `git -C " + a.repoPath + " diff " + a.preWaveSha + " HEAD -- <path>`."
+    const scopeBlock =
+      "Every fix-touched path must be in this set (anything else is OUT OF SCOPE):\n" +
+      [...frozen].sort().map(p => "- " + renderPath(p)).join("\n")
 
-    const synthetic = [...carriedFindings.splice(0)]
-    if (state.rounds > 1 && porc.count > 0) {
-      synthetic.push({ severity: "high", detail: "uncommitted-leftovers: main's working tree is not clean after a fix round (" + porc.files.map(f => f.path).sort().join(", ") + ")" })
-    }
+    const synthetic = [...carriedFindings]
     const cheap = await agent(TREE_VERIFY_PROMPT(a.repoPath, "cheap", a.verifyCommands.cheap), {
-      label: "p7-verify:cheap:r" + state.rounds, phase: "Phase 7", schema: VERIFY_STEP_SCHEMA,
+      label: "p7-verify:cheap:g" + gateTag, phase: "Phase 7", schema: VERIFY_STEP_SCHEMA,
     })
-    if (!cheap) synthetic.push({ severity: "high", detail: "cheap verify tier returned no result — the round is unverified" })
+    if (!cheap) synthetic.push({ severity: "high", detail: "cheap verify tier returned no result — the combined range is unverified" })
     else if (cheap.passed === false) synthetic.push({ severity: "high", detail: "cheap verify FAILED: " + (cheap.evidence || "") + " " + (cheap.failures || []).join("; ") })
 
     let audit = await agent(AUDIT_PROMPT_B("combined", a.repoPath, changedBlock, checklistBlock), {
-      label: "p7-audit:r" + state.rounds, phase: "Phase 7", schema: AUDIT_SCHEMA,
+      label: "p7-audit:g" + gateTag, phase: "Phase 7", schema: AUDIT_SCHEMA,
     })
     if (!audit) {
-      log("phase7 r" + state.rounds + ": audit returned no result — one free retry")
+      log("phase7: audit returned no result — one free retry")
       audit = await agent(AUDIT_PROMPT_B("combined", a.repoPath, changedBlock, checklistBlock), {
-        label: "p7-audit:r" + state.rounds + ":retry", phase: "Phase 7", schema: AUDIT_SCHEMA,
+        label: "p7-audit:g" + gateTag + ":retry", phase: "Phase 7", schema: AUDIT_SCHEMA,
       })
     }
     const auditById = new Map(((audit && Array.isArray(audit.items)) ? audit.items : []).map(it => [it.id, it]))
@@ -2087,57 +2108,60 @@ const runPhase7 = async (a) => {
       if (!ai || (ai.present === true && ai.verified !== true)) auditFindings.add(c.id)
     }
 
-    const types = new Set([...frozen].map(p => { const m = p.match(/\.[A-Za-z0-9]+$/); return m ? m[0].toLowerCase() : "(noext)" }))
-    if (!reviewTasks || [...types].some(t => !knownTypes.has(t))) {
-      let rp = await agent(REVIEW_PLAN_PROMPT_B(changedBlock), {
-        label: "p7-review-plan:r" + state.rounds, phase: "Phase 7", schema: REVIEW_PLAN_SCHEMA,
+    // Review planner — ONCE (free retry kept); covering set wider than P7_REVIEWERS is
+    // HELD with the uncovered aspects NAMED, never silently sliced.
+    let rp = await agent(REVIEW_PLAN_PROMPT_B(changedBlock), {
+      label: "p7-review-plan:g" + gateTag, phase: "Phase 7", schema: REVIEW_PLAN_SCHEMA,
+    })
+    if (!rp) {
+      log("phase7: review planner returned no result — one free retry")
+      rp = await agent(REVIEW_PLAN_PROMPT_B(changedBlock), {
+        label: "p7-review-plan:g" + gateTag + ":retry", phase: "Phase 7", schema: REVIEW_PLAN_SCHEMA,
       })
-      if (!rp) {
-        log("phase7 r" + state.rounds + ": review planner returned no result — one free retry")
-        rp = await agent(REVIEW_PLAN_PROMPT_B(changedBlock), {
-          label: "p7-review-plan:r" + state.rounds + ":retry", phase: "Phase 7", schema: REVIEW_PLAN_SCHEMA,
-        })
-      }
-      if (!rp) { state.evidence = "phase-7 review planner returned no result after the free retry"; break }
-      const tasks = []
-      const usedTypes = new Set()
-      for (const x of ((rp && rp.assigned) || [])) {
-        if (REGISTERED_TYPES.has(x.agentType) && !usedTypes.has(x.agentType)) {
-          usedTypes.add(x.agentType)
-          tasks.push({ kind: "named", agentType: x.agentType, label: x.agentType })
-        }
-      }
-      const usedLabels = new Set(tasks.map(t => t.label))
-      for (const x of ((rp && rp.adhoc) || [])) {
-        if (x && typeof x.focus === "string" && x.focus.trim()) {
-          let label = "adhoc:" + (qKey(x.aspect || "aspect").replace(/ /g, "-") || "aspect")
-          let n = 2
-          while (usedLabels.has(label)) { label = label.replace(/(-\d+)?$/, "") + "-" + n; n++ }
-          usedLabels.add(label)
-          tasks.push({ kind: "adhoc", focus: x.focus, label })
-        }
-      }
-      if (tasks.length === 0) tasks.push({ kind: "adhoc", focus: "General integration-correctness review of the combined post-merge range.", label: "adhoc:general" })
-      reviewTasks = tasks.slice(0, P.maxReviewers)
-      knownTypes = new Set([...knownTypes, ...types])
     }
+    if (!rp) { state.evidence = "phase-7 review planner returned no result after the free retry"; break pipeline }
+    const tasks = []
+    const usedTypes = new Set()
+    for (const x of ((rp && rp.assigned) || [])) {
+      if (REGISTERED_TYPES.has(x.agentType) && !usedTypes.has(x.agentType)) {
+        usedTypes.add(x.agentType)
+        tasks.push({ kind: "named", agentType: x.agentType, label: x.agentType })
+      }
+    }
+    const usedLabels = new Set(tasks.map(t => t.label))
+    for (const x of ((rp && rp.adhoc) || [])) {
+      if (x && typeof x.focus === "string" && x.focus.trim()) {
+        let label = "adhoc:" + (qKey(x.aspect || "aspect").replace(/ /g, "-") || "aspect")
+        let n = 2
+        while (usedLabels.has(label)) { label = label.replace(/(-\d+)?$/, "") + "-" + n; n++ }
+        usedLabels.add(label)
+        tasks.push({ kind: "adhoc", focus: x.focus, label })
+      }
+    }
+    if (tasks.length === 0) tasks.push({ kind: "adhoc", focus: "General integration-correctness review of the combined post-merge range.", label: "adhoc:general" })
+    if (tasks.length > P7_REVIEWERS) {
+      state.evidence = "phase-7 review plan needs " + tasks.length + " reviewers but the width cap is P7_REVIEWERS=" + P7_REVIEWERS + " — uncovered aspects: " + tasks.slice(P7_REVIEWERS).map(t => t.label).join(", ") + " (aspects are never silently sliced)"
+      break pipeline
+    }
+    const reviewTasks = tasks
 
     const deferredBlock = state.deferredBeads.length
       ? state.deferredBeads.map(d => "- [" + d.beadId + "] " + d.detail).join("\n")
       : ""
+    // ONE fan at the phase-7 width (one free completeness retry; never re-fanned).
     const dispatchFan = (suffix) => parallel(reviewTasks.map(task => () =>
       agent(REVIEW_PROMPT_B(task, "combined", a.repoPath, changedBlock, checklistBlock, "", deferredBlock),
         task.kind === "named"
-          ? { agentType: task.agentType, label: "p7-review:r" + state.rounds + suffix + ":" + task.label, phase: "Phase 7", schema: REVIEW_VERDICT_SCHEMA }
-          : { label: "p7-review:r" + state.rounds + suffix + ":" + task.label, phase: "Phase 7", schema: REVIEW_VERDICT_SCHEMA })
+          ? { agentType: task.agentType, label: "p7-review:g" + gateTag + suffix + ":" + task.label, phase: "Phase 7", schema: REVIEW_VERDICT_SCHEMA }
+          : { label: "p7-review:g" + gateTag + suffix + ":" + task.label, phase: "Phase 7", schema: REVIEW_VERDICT_SCHEMA })
     ))
     let reviews = (await dispatchFan("")).filter(Boolean)
     if (reviews.length < reviewTasks.length) {
-      log("phase7 r" + state.rounds + ": fan incomplete (" + reviews.length + "/" + reviewTasks.length + ") — one free retry")
+      log("phase7: fan incomplete (" + reviews.length + "/" + reviewTasks.length + ") — one free retry")
       reviews = (await dispatchFan(":retry")).filter(Boolean)
       if (reviews.length < reviewTasks.length) {
         state.evidence = "phase-7 review fan incomplete even after the free retry (" + reviews.length + "/" + reviewTasks.length + ")"
-        break
+        break pipeline
       }
     }
 
@@ -2145,107 +2169,153 @@ const runPhase7 = async (a) => {
     // consciously filed as follow-ups, never silently dropped (Q-J/batch spec).
     const filteredReviews = reviews.map(r => ({ ...r, findings: (r.findings || []).filter(f => !deferredKeys.has(qKey(f.detail))) }))
     const gate = computeGateV2({ reviews: filteredReviews, planned: reviewTasks.length, auditFindings, syntheticFindings: synthetic, frozenPaths: frozen, validChecklistIds: validIds, strictChecklist: true })
-    log("phase7 r" + state.rounds + ": worst=" + gate.worstVerdict + " findings=" + gate.totalFindings + " unverified=" + gate.unverifiedIds.length + " scopeOk=" + gate.scopeConsistent)
+    log("phase7: worst=" + gate.worstVerdict + " findings=" + gate.totalFindings + " unverified=" + gate.unverifiedIds.length + " scopeOk=" + gate.scopeConsistent)
 
-    if (gate.gatePassed) {
-      // Clean round: the FULL canonical gate is the SESSION's duty (it can exceed agent
-      // time limits). Pin the tree the verdict will certify and pause at PENDING-FULL-GATE.
-      const tipNow = state.findingsFixed.length ? state.findingsFixed[state.findingsFixed.length - 1].commitSha : a.mainSha
-      const runStatsP = { ...(a.runStats || {}), phase7: { rounds: state.rounds, verdict: "PENDING-FULL-GATE", fixed: state.findingsFixed.length, deferred: state.deferredBeads.length, mergeOnly: (mergeOnlyFiles || []).length } }
-      const carryP = {
-        ...a, runStats: runStatsP, mainSha: tipNow, gateMainSha: tipNow,
-        deferredFindings: state.deferredBeads.map(d => ({ beadId: d.beadId, detail: d.detail, reason: d.reason })),
-        priorFindingsFixed: state.findingsFixed,
-        ...(mergeOnlyFiles === null ? {} : { priorMergeOnlyFiles: mergeOnlyFiles }),
-      }
-      const persistedP = await persistState(carryP, "pending-full-gate")
-      if (persistedP.failed) return persistedP.failed
-      return {
-        gate: "FINAL", stage: "phase7", verdict: "PENDING-FULL-GATE",
-        ...(persistedP.saveFailed ? { stateSaveFailed: persistedP.saveFailed } : {}),
-        gateMainSha: tipNow, rounds: state.rounds,
-        fullCommands: a.verifyCommands.full,
-        next: {
-          stage: "phase7", stateFile: persistedP.stateFile, stateSha: persistedP.stateSha,
-          freshFields: freshFieldsFor("phase7", ["fullGateResult: 'pass' | 'fail'", "fullGateDetail (the failure output, on fail)"]),
-        },
-        note: "The review fan is clean. Run the FULL canonical gate in the SESSION (background it — it may run long), against main at " + tipNow + " — do NOT let main move first. Then re-invoke with fullGateResult. pass => DONE; fail => the failures re-enter the loop as findings.",
-      }
-    }
-    if (state.rounds >= effectiveBackstop(a, P)) {
-      const detailLines = [
-        ...gate.reviewFindings.map(f => "(" + f.severity + ") " + f.detail),
-        ...synthetic.map(f => "(" + f.severity + ") " + f.detail),
-        ...gate.unverifiedIds.map(id => "(unverified) checklist item " + id),
-      ].join(" | ").slice(0, 2000)
-      state.verdict = "HELD"
-      state.evidence = "roundsBackstop (" + effectiveBackstop(a, P) + ") reached; applied fixes STAY on main (Q-K); unresolved: " + (detailLines || "(cause: " + (gate.scopeConsistent ? "unactionable non-PASS verdict" : "scope breach") + ")")
-      break
-    }
+    if (gate.gatePassed) { fanClean = true; break pipeline }
     if (gate.totalFindings === 0 && gate.unverifiedIds.length === 0) {
       state.evidence = !gate.scopeConsistent
         ? "reviewers cited files outside the combined range (scopeConsistent=false)"
         : state.deferredBeads.length
           ? "non-PASS verdict(s) with every live finding already triaged to follow-ups (" + state.deferredBeads.map(d => d.beadId).join(", ") + ") — reviewers were told to exclude them; verdict did not clear; hold for the operator"
           : "non-PASS verdict(s) carrying zero findings — unactionable adjudication"
-      break
+      break pipeline
     }
 
+    // Fix pipeline on main: ids are the audit contract; pass 2 IS the one escalation,
+    // re-fixing the surviving ids verbatim with NO new fan. Deferral triage (kept)
+    // resolves reviewer findings by filing follow-ups; filed ids leave the live set.
     const allFindings = [
       ...gate.reviewFindings,
       ...synthetic,
       ...gate.unverifiedIds.map(id => ({ severity: "high", detail: "checklist item present-but-unverified (or unreported at phase-7 strictness): " + id })),
     ]
-    const annotated = allFindings.map(f => ({ ...f, repeat: findingsSeenByFixer.has(qKey(f.detail)) }))
-    for (const f of allFindings) findingsSeenByFixer.add(qKey(f.detail))
-    const repeats = annotated.filter(f => f.repeat).length
-    const issuesBlock =
-      "Worst-of-fan verdict: " + gate.worstVerdict + "\n\n" +
-      "Findings:\n" + annotated.map(f => "- (" + f.severity + (f.repeat ? ", REPEAT — a previous fix did not resolve this" : "") + ") " + f.detail).join("\n") +
-      (repeats > 0 ? "\n\n(" + repeats + " of these repeat earlier rounds verbatim.)" : "")
-    const fix = await agent(P7_FIX_PROMPT(a.repoPath, a.specPath || "(spec path not carried)", issuesBlock, checklistBlock), {
-      label: "p7-fix:r" + state.rounds, phase: "Phase 7", schema: P7_FIX_SCHEMA,
-    })
-    if (!fix) { log("phase7 r" + state.rounds + ": fix agent returned no result — next round re-measures"); continue }
-    if (fix.status !== "blocked") {
-      const sha = typeof fix.commitSha === "string" ? fix.commitSha.trim() : ""
-      const prevSha = state.findingsFixed.length ? state.findingsFixed[state.findingsFixed.length - 1].commitSha : a.mainSha
-      const isNewCommit = SHA_RE.test(sha) && !(sha.startsWith(prevSha) || prevSha.startsWith(sha))
-      if (isNewCommit) {
-        state.findingsFixed.push({ round: state.rounds, summary: fix.summary, commitSha: sha, addressed: fix.addressed || [] })
-      } else {
-        // An all-triage round legitimately commits nothing — the echoed HEAD is the prior
-        // tip and must not be recorded as a fix.
-        log("phase7 r" + state.rounds + ": fixer reported " + fix.status + " with no NEW commit — nothing recorded; next round re-measures")
-      }
-    }
-    // Deferral triage (large-follow-up bar): file follow-ups, serialized; a filed finding
-    // is excluded from future exit counts; a FAILED filing keeps the finding live.
     const reviewFindingKeys = new Set(gate.reviewFindings.map(f => qKey(f.detail)))
-    const candidates = (fix.deferralCandidates || []).slice(0, 8) // bound the bd-create fan like every other fan
-    if ((fix.deferralCandidates || []).length > candidates.length) {
-      log("phase7 r" + state.rounds + ": deferral candidates capped to 8 — the surplus stays live this round")
-    }
-    for (const [ci, cand] of candidates.entries()) {
-      if (!cand || typeof cand.detail !== "string" || !cand.detail.trim()) continue
-      if (deferredKeys.has(qKey(cand.detail))) continue // already filed — never duplicate
-      if (!reviewFindingKeys.has(qKey(cand.detail))) {
-        // Synthetic (verify/porcelain) and checklist findings regenerate every round and
-        // cannot be neutralized by filing — a follow-up here would imply false resolution.
-        log("phase7 r" + state.rounds + ": deferral candidate is not a reviewer finding (synthetic/checklist) — non-deferrable, stays live")
-        continue
-      }
-      const filed = await agent(DEFER_PROMPT(a.repoPath, cand.detail, cand.reason || "(unstated)"), {
-        label: "p7-defer:r" + state.rounds + ":" + (ci + 1), phase: "Phase 7", schema: DEFER_SCHEMA,
+    let live = allFindings.map((f, i) => ({ id: "p7f" + (i + 1), severity: f.severity, detail: f.detail }))
+    const verifyClauses = a.verifyCommands.cheap.map(c => "- " + c)
+    let conjunctNote = ""
+    let lastEvidence = ""
+    for (let pass = 1; pass <= FIX_PASS_CAP && pass <= AUDIT_CAP && !fanClean; pass++) {
+      state.fixPasses = pass
+      const issuesBlock =
+        "Worst-of-fan verdict: " + gate.worstVerdict + "\n\n" +
+        "Findings (resolve or triage EVERY one; the ids are the audit contract):\n" +
+        live.map(f => "- [" + f.id + "] (" + f.severity + (pass > 1 ? ", REPEAT — the previous fix did not resolve this" : "") + ") " + f.detail).join("\n") +
+        (conjunctNote ? "\n\n" + conjunctNote : "")
+      // Pre-fix tip pins the diff the audit must read in full.
+      // world-read: freshness token in label keeps journal replay safe (finding #3)
+      const pre = await agent(TIP_SHA_PROMPT(a.repoPath), {
+        label: "tip:combined:g" + gateTag + ":p" + pass, phase: "Phase 7", schema: TIP_SHA_SCHEMA, model: ECHO_MODEL,
       })
-      if (filed && filed.created === true && validSlug(String(filed.beadId || ""))) {
-        deferredKeys.add(qKey(cand.detail))
-        // FULL detail, trimmed: the cross-run dedup key is qKey(detail) — truncation here
-        // would silently break the re-run seeding this carry exists for.
-        state.deferredBeads.push({ beadId: filed.beadId, detail: cand.detail.trim(), reason: cand.reason || "(unstated)" })
+      const preFixSha = pre && typeof pre.sha === "string" ? pre.sha.trim() : ""
+      if (!SHA_RE.test(preFixSha)) { lastEvidence = "pre-fix tip echo failed — cannot pin the fix diff for the audit"; break }
+      const fix = await agent(P7_FIX_PROMPT(a.repoPath, a.specPath, issuesBlock, checklistBlock), {
+        label: "p7-fix:g" + gateTag + ":p" + pass, phase: "Phase 7", schema: P7_FIX_SCHEMA,
+      })
+      if (!fix) {
+        log("phase7 fix pass " + pass + ": fixer returned no result — the audit measures the unchanged tree")
       } else {
-        log("phase7 r" + state.rounds + ": deferral filing failed — the finding stays live")
+        if (fix.status !== "blocked") {
+          const sha = typeof fix.commitSha === "string" ? fix.commitSha.trim() : ""
+          const prevSha = state.findingsFixed.length ? state.findingsFixed[state.findingsFixed.length - 1].commitSha : a.mainSha
+          const isNewCommit = SHA_RE.test(sha) && !(sha.startsWith(prevSha) || prevSha.startsWith(sha))
+          if (isNewCommit) {
+            state.findingsFixed.push({ round: pass, summary: fix.summary, commitSha: sha, addressed: fix.addressed || [] })
+          } else {
+            // An all-triage pass legitimately commits nothing — the echoed HEAD is the
+            // prior tip and must not be recorded as a fix.
+            log("phase7 fix pass " + pass + ": fixer reported " + fix.status + " with no NEW commit — nothing recorded")
+          }
+        }
+        // Deferral triage (large-follow-up bar): file follow-ups, serialized; a filed
+        // finding is excluded from the live set; a FAILED filing keeps the finding live.
+        const candidates = (fix.deferralCandidates || []).slice(0, 8) // bound the bd-create fan like every other fan
+        if ((fix.deferralCandidates || []).length > candidates.length) {
+          log("phase7 fix pass " + pass + ": deferral candidates capped to 8 — the surplus stays live")
+        }
+        for (const [ci, cand] of candidates.entries()) {
+          if (!cand || typeof cand.detail !== "string" || !cand.detail.trim()) continue
+          if (deferredKeys.has(qKey(cand.detail))) continue // already filed — never duplicate
+          if (!reviewFindingKeys.has(qKey(cand.detail))) {
+            // Synthetic (verify/porcelain) and checklist findings cannot be neutralized
+            // by filing — a follow-up here would imply false resolution.
+            log("phase7 fix pass " + pass + ": deferral candidate is not a reviewer finding (synthetic/checklist) — non-deferrable, stays live")
+            continue
+          }
+          const filed = await agent(DEFER_PROMPT(a.repoPath, cand.detail, cand.reason || "(unstated)"), {
+            label: "p7-defer:g" + gateTag + ":p" + pass + ":" + (ci + 1), phase: "Phase 7", schema: DEFER_SCHEMA,
+          })
+          if (filed && filed.created === true && validSlug(String(filed.beadId || ""))) {
+            deferredKeys.add(qKey(cand.detail))
+            // FULL detail, trimmed: the cross-run dedup key is qKey(detail) — truncation
+            // here would silently break the re-run seeding this carry exists for.
+            state.deferredBeads.push({ beadId: filed.beadId, detail: cand.detail.trim(), reason: cand.reason || "(unstated)" })
+          } else {
+            log("phase7 fix pass " + pass + ": deferral filing failed — the finding stays live")
+          }
+        }
+        live = live.filter(f => !deferredKeys.has(qKey(f.detail)))
       }
+      // ONE fix-verify audit per pass (+ one free infra retry); null => all-unaddressed.
+      const findingsBlock = live.map(f => "[" + f.id + "] (" + f.severity + ") " + f.detail).join("\n") || "(every finding was triaged to a follow-up — verify only the conjuncts)"
+      const fvPrompt = FIX_VERIFY_PROMPT("combined", a.repoPath, preFixSha, findingsBlock, checklistBlock, scopeBlock, verifyClauses, P.rigor)
+      let fv = await agent(fvPrompt, {
+        label: "fix-verify:combined:g" + gateTag + ":p" + pass, phase: "Phase 7", schema: FIX_VERIFY_SCHEMA,
+      })
+      if (!fv) {
+        log("phase7 fix pass " + pass + ": fix-verify returned no result — one free retry")
+        fv = await agent(fvPrompt, {
+          label: "fix-verify:combined:g" + gateTag + ":p" + pass + ":retry", phase: "Phase 7", schema: FIX_VERIFY_SCHEMA,
+        })
+      }
+      const itemsById = new Map(((fv && Array.isArray(fv.items)) ? fv.items : []).map(it => [it.id, it]))
+      const unaddressed = live.filter(f => {
+        const it = itemsById.get(f.id)
+        return !(it && it.addressed === true && typeof it.evidence === "string" && it.evidence.trim())
+      })
+      const conjunctFails = !fv
+        ? ["fix-verify audit returned no result (after the free retry) — every finding counts unaddressed"]
+        : [
+            ...(fv.verifyPassed === true ? [] : ["verify failed post-fix"]),
+            ...(fv.porcelainClean === true ? [] : ["main's working tree not clean post-fix"]),
+            ...(fv.scopeClean === true ? [] : ["fixes touched out-of-scope paths"]),
+          ]
+      if (unaddressed.length === 0 && conjunctFails.length === 0) { fanClean = true; break }
+      lastEvidence =
+        (unaddressed.length ? "unaddressed after pass " + pass + ": " + unaddressed.map(f => "[" + f.id + "] " + f.detail).join(" | ") : "") +
+        (conjunctFails.length ? (unaddressed.length ? "; " : "") + conjunctFails.join("; ") + ((fv && fv.problem) ? " (" + fv.problem + ")" : "") : "")
+      if (unaddressed.length > 0) live = unaddressed
+      conjunctNote = conjunctFails.length ? "Additionally resolve these post-fix verification failures: " + conjunctFails.join("; ") : ""
+    }
+    if (!fanClean) {
+      state.verdict = "HELD"
+      state.evidence = ("bounded review exhausted (FIX_PASS_CAP=" + FIX_PASS_CAP + ", AUDIT_CAP=" + AUDIT_CAP + "); applied fixes STAY on main (Q-K); " + (lastEvidence || "unresolved")).slice(0, 2000)
+    }
+  } while (false)
+
+  if (fanClean) {
+    // Clean fan (directly or after the bounded fixes): the FULL canonical gate is the
+    // SESSION's duty (it can exceed agent time limits). Pin the tree the verdict will
+    // certify and pause at PENDING-FULL-GATE.
+    const tipNow = state.findingsFixed.length ? state.findingsFixed[state.findingsFixed.length - 1].commitSha : a.mainSha
+    const runStatsP = { ...(a.runStats || {}), phase7: { fixPasses: state.fixPasses, verdict: "PENDING-FULL-GATE", fixed: state.findingsFixed.length, deferred: state.deferredBeads.length, mergeOnly: (mergeOnlyFiles || []).length } }
+    const carryP = {
+      ...a, runStats: runStatsP, mainSha: tipNow, gateMainSha: tipNow,
+      deferredFindings: state.deferredBeads.map(d => ({ beadId: d.beadId, detail: d.detail, reason: d.reason })),
+      priorFindingsFixed: state.findingsFixed,
+      ...(mergeOnlyFiles === null ? {} : { priorMergeOnlyFiles: mergeOnlyFiles }),
+    }
+    const persistedP = await persistState(carryP, "pending-full-gate")
+    if (persistedP.failed) return persistedP.failed
+    return {
+      gate: "FINAL", stage: "phase7", verdict: "PENDING-FULL-GATE",
+      ...(persistedP.saveFailed ? { stateSaveFailed: persistedP.saveFailed } : {}),
+      gateMainSha: tipNow, fixPasses: state.fixPasses,
+      fullCommands: a.verifyCommands.full,
+      next: {
+        stage: "phase7", stateFile: persistedP.stateFile, stateSha: persistedP.stateSha,
+        freshFields: freshFieldsFor("phase7", ["fullGateResult: 'pass' | 'fail'", "fullGateDetail (the failure output, on fail)"]),
+      },
+      note: "The review fan is clean. Run the FULL canonical gate in the SESSION (background it — it may run long), against main at " + tipNow + " — do NOT let main move first. Then re-invoke with fullGateResult. pass => DONE; fail => the failures re-enter as findings.",
     }
   }
 
@@ -2253,15 +2323,15 @@ const runPhase7 = async (a) => {
   const specBase = a.specPath.slice(a.specPath.lastIndexOf("/") + 1).replace(/\.md$/, "")
   const reportPath = a.archiveDir.replace(/\/+$/, "") + "/" + specBase + "-report.md"
   const epicId = (a.runStats && typeof a.runStats.epicId === "string" && validSlug(a.runStats.epicId)) ? a.runStats.epicId : null
-  const runStats = { ...(a.runStats || {}), phase7: { rounds: state.rounds, verdict: state.verdict, fixed: state.findingsFixed.length, deferred: state.deferredBeads.length, mergeOnly: (mergeOnlyFiles || []).length } }
+  const runStats = { ...(a.runStats || {}), phase7: { fixPasses: state.fixPasses, verdict: state.verdict, fixed: state.findingsFixed.length, deferred: state.deferredBeads.length, mergeOnly: (mergeOnlyFiles || []).length } }
   const body =
     "# session-workflow run report\n\n" +
-    "Verdict: " + state.verdict + " after " + state.rounds + " phase-7 round(s)\n" +
+    "Verdict: " + state.verdict + " after " + state.fixPasses + " phase-7 fix pass(es)\n" +
     "Evidence: " + state.evidence + "\n\n" +
     "Merged beads: " + mergedIds.join(", ") + "\n" +
     "Dropped beads: " + ((a.droppedBeads || []).join(", ") || "(none)") + "\n" +
     "Merge-only files: " + (mergeOnlyFiles === null ? "(not computed — the run ended before round 1 resolved)" : (mergeOnlyFiles.join(", ") || "(none)")) + "\n\n" +
-    "Fixes applied on main (cumulative across re-invocations):\n" + (state.findingsFixed.map(f => "- r" + f.round + " " + f.commitSha.slice(0, 9) + ": " + f.summary).join("\n") || "(none)") + "\n\n" +
+    "Fixes applied on main (cumulative across re-invocations):\n" + (state.findingsFixed.map(f => "- p" + (f.round ?? "?") + " " + f.commitSha.slice(0, 9) + ": " + f.summary).join("\n") || "(none)") + "\n\n" +
     "Deferred follow-ups:\n" + (state.deferredBeads.map(d => "- " + d.beadId + " (" + d.reason + "): " + d.detail).join("\n") || "(none)") + "\n\n" +
     "Run stats: " + JSON.stringify(runStats)
   // world-write keyed per segment: a HELD retry must rewrite the cumulative report
@@ -2295,7 +2365,7 @@ const runPhase7 = async (a) => {
   return {
     gate: "FINAL", stage: "phase7",
     ...(persistedF.saveFailed ? { stateSaveFailed: persistedF.saveFailed } : {}),
-    verdict: state.verdict, converged, rounds: state.rounds, evidence: state.evidence,
+    verdict: state.verdict, converged, fixPasses: state.fixPasses, evidence: state.evidence,
     findingsFixed: state.findingsFixed, deferredBeads: state.deferredBeads,
     mergeOnlyFiles: mergeOnlyFiles || [], report: reportStatus,
     next: converged ? undefined : {
