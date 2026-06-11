@@ -2413,6 +2413,10 @@ const main = async () => {
   }
   PROFILE_NAME = (M.profile != null && Object.hasOwn(PROFILES, M.profile)) ? M.profile : "full"
   P = PROFILES[PROFILE_NAME]
+  // Launch-only default: a fresh implement run provably starts at wave 1. On a RESUME the
+  // state file carries waveCursor; its absence there is refused by the validator below,
+  // never defaulted (a `?? 1` on a resumed cursor would silently rewind merged waves).
+  if (M.stage === "implement" && A.stateFile == null && M.waveCursor == null) M = { ...M, waveCursor: 1 }
   const stageProblem = validateStage(M)
   if (stageProblem) return err(stageProblem, { stage: M.stage })
   if (M.stage === "implement") return await runImplement(M)
