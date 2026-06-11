@@ -1,34 +1,33 @@
 ---
 name: session-workflow
-description: Autonomous batch implementation via the session-workflow-impl workflow — the full 7-phase methodology driven by a deterministic script, pausing only at three human gate kinds (brainstorm answers, spec approval, per-wave merges). Sibling of session-flow, which stays the default; invoke THIS skill only when the user explicitly picks it for a well-scoped batch of bd issues, supplying the bead IDs.
+description: Autonomous batch implementation via the session-workflow-impl workflow — the full 7-phase methodology driven by a deterministic script, pausing only at the human gates (brainstorm answers, spec approval, per-wave merges, the final full gate). Sibling of session-flow, which stays the default; invoke THIS skill only when the user explicitly picks it for a well-scoped batch of bd issues, supplying the bead IDs.
 ---
 
 # Session Workflow
 
-Pick this skill when a batch of bd issues is well-scoped enough to run autonomously — the `session-workflow-impl` workflow script (deployed to `~/.claude/workflows/`) drives intake → spec → implement → integration deterministically, and the main session's only jobs are relaying the three human gates and executing the merge ritual.
+Pick this skill when a batch of bd issues is well-scoped enough to run autonomously — the `session-workflow-impl` workflow script (deployed to `~/.claude/workflows/`) drives intake → spec → implement → integration deterministically, and the main session's only jobs are relaying the human gates, the merge ritual, and the session-side duties below.
 
-The script's gate payloads are AUTHORITATIVE for all per-stage argument mechanics: every payload carries `nextArgs` (the exact args object for the next invocation) and a `note` saying what the human adds — read the payload, not this file.
+The script's gate payloads are AUTHORITATIVE for per-stage mechanics: every payload carries `next` (`{stage, stateFile, stateSha, freshFields}`) and a `note` saying what the human adds — read the payload, not this file.
 
 ## Launching
 
-Invoke the workflow by name with the opening args:
-
 ```
 Workflow({ name: "session-workflow-impl", args: {
-  stage: "intake", beadIds: [...], repoPath: "<project root>", profile: "standard",
+  stage: "intake", beadIds: [...], repoPath: "<project root>",
+  archiveDir: "<spec/state/report home, OUTSIDE repoPath>", profile: "standard",
 } })
 ```
 
-`archiveDir` (spec/report destination, OUTSIDE repoPath) and `specFileName` join at the spec gate, exactly as the converged GATE 1 note instructs.
+`archiveDir` is required at launch — gate state persists there from round 1. `specFileName` joins at the converged GATE 1, exactly as its note instructs. Optional at any invocation: `convergeMode: "thorough" | "fast" | "freeze"` (fast = consolidate aggressively, surface blocking questions only; freeze = stop asking, derive the rest, halve the review backstops) and `maxOperatorRounds` (default 3).
 
 ## The gate loop
 
-One rule above all: **merge, never replace**. Re-invoke with the payload's `nextArgs` object WHOLE, adding only what its `note` names. Hand-pruning carried fields is the corruption class the script's validators exist to refuse.
+One rule above all: **the state file is the carry**. Every gate persists its full state to `<archiveDir>/sw-state-<batch>.json` and returns a slim payload; re-invoke with `next.stage` + `next.stateFile` + `next.stateSha` plus ONLY the fresh human input the payload's `note` names. Never re-paste carried state; never edit the state file (a deliberate edit means inspecting it and re-invoking with its new sha). One run per batch — the state file is keyed by the bead set.
 
-- **GATE 1 — brainstorm (loops to convergence).** Present every question from the payload to the user (AskUserQuestion; chain calls when more than four), ALWAYS ending the batch with a free-text "do you have anything else to add?". Merge the answers (and any additions) into `gate1Answers`, re-invoke with `nextArgs`. Repeat until the payload says `converged: true`.
-- **GATE 2 — spec approval.** Present the spec file to the user via revdiff / plan mode. On approval set `specApproved: true` in `nextArgs` and re-invoke; on edits, fold the user's direction into `gate1Answers.extraNotes` and re-run the spec stage so the artifact regenerates.
-- **GATE 3 — per-wave merges (the main session executes; the merge verbs are not agent-runnable without a prompt).** For each merge-ready bead, with the user's go: `wt merge --no-squash` (ff-only) → `bd close <id>` → `wt remove`. Append merged ids to `nextArgs.mergedBeads` and record the new `mainSha` (the payload froze `preWaveSha` automatically at wave 1). For HELD/BLOCKED beads: merge the passed ones first, then re-invoke at stage `implement` with the SAME `waveCursor` and a fenced `operatorGuidance` entry per bead, crafted from the bd note's unresolved-finding details. A BLOCKED bead's worktree is mid-rebase BY DESIGN — resolve the markers (or leave them) before retrying; keep every HELD bead's worktree on disk until phase 7.
-- **FINAL — the run report.** `DONE` means the combined fan converged and the full canonical gate passed. `HELD` is re-invocable with its own `nextArgs` (triage bookkeeping, fix record, and the post-fix main tip all carried) — verify `mainSha` still matches the live tip first.
+- **GATE 1 — brainstorm (≤3 operator rounds by default).** Only BLOCKING questions arrive — semantically deduped by a consolidator; REFINEMENT questions are auto-answered by a delegate citing the posture distilled from your answers (its ledger rides every payload). Present the questions (AskUserQuestion; end with a free-text "anything else to add?"), re-invoke with the new `gate1Answers` only. Answer `"DEFER"` on an expands-contract question to push it to a GATE 2 follow-up proposal. Past the round cap, leftover blocking questions become explicit spec assumptions.
+- **GATE 2 — spec approval.** Review the spec file via revdiff / plan mode, plus three payload sections: `assumptions` (cap leftovers + freeze derivations), `delegateLedger` (now ratified — object by re-invoking at stage `spec` with `delegateRatifications: {id: "reopen"}`), and `followUpProposals` (file approved ones with bd YOURSELF — the script never files). On approval re-invoke with `specApproved: true`; on edits, re-invoke at stage `spec` with direction in `gate1Answers.extraNotes`.
+- **GATE 3 — per-wave merges (the session executes).** For each merge-ready bead, with the user's go: `wt merge --no-squash` (ff-only) → `bd close <id>` → `wt remove`. NO bookkeeping transcription: the next invocation DERIVES merged beads and `mainSha` from the world (closed status + tip ancestry). Squash/cherry-pick merges and foreign main advances come back as a `CONFIRM` payload — adjudicate via `mergeOverrides: {addMerged/dropMerged: [{id, reason}]}` and/or `confirmMainAdvance: true`. `staleWorktrees` entries are the SESSION's rebase duty (wt-reference sibling pattern); rebase them, then re-invoke the same `waveCursor` — the script detects the rebase and re-reviews in-run. For HELD beads: merge the passed ones first, then re-invoke at the SAME `waveCursor` with `operatorGuidance`; keep HELD worktrees on disk until phase 7.
+- **FINAL — `PENDING-FULL-GATE`, then the report.** A clean combined fan pauses with the canonical full gate UNRUN: the SESSION runs it (background it — it may take ~an hour) against main at the pinned `gateMainSha`, without letting main move first, then re-invokes with `fullGateResult: "pass" | "fail"` (+ `fullGateDetail` on fail). Pass ⇒ `DONE`; fail ⇒ findings re-enter the loop. `HELD` is re-invocable via its `next` (triage bookkeeping and the fix record carried).
 
 ## Routing
 
@@ -38,7 +37,7 @@ One rule above all: **merge, never replace**. Re-invoke with the payload's `next
 | `standard` | 3 | 3 | 6 |
 | `full` | all 5 | 8 | 10 |
 
-The backstop is NOT the review exit — every profile's loops run converge-until-clean (a zero-finding full-fan round exits); the backstop only catches runaway loops as HELD. Pick by batch size and risk; **risk is a hard veto**: any concurrency / security / data-format / irreversible change forces `full`, whatever the size. Until `light` has defect-escape data on real batches, route its candidates to `standard`. Every generative and judging agent runs on the session model; only verbatim-echo agents down-tier.
+The backstop is NOT the review exit — every profile's loops run converge-until-clean (a zero-finding full-fan round exits); the backstop only catches runaway loops as HELD (`freeze` halves it, floor 2). Pick by batch size and risk; **risk is a hard veto**: any concurrency / security / data-format / irreversible change forces `full`, whatever the size. Until `light` has defect-escape data on real batches, route its candidates to `standard`. Every generative and judging agent runs on the session model; only verbatim-echo agents down-tier.
 
 ## Permission prep (before the first run)
 
@@ -47,8 +46,8 @@ Workflow subagents inherit the session's tool allowlist and prompt mid-run for a
 ## Re-entry and recovery
 
 - **Within a session**, a crashed or stopped invocation resumes with `Workflow({scriptPath, resumeFromRunId})` — completed agents return cached results. The journal is same-session only.
-- **Across sessions**, hand off `{stage, intakeRound/waveCursor, args}` (the last payload's `nextArgs`) in the handoff bead. Stages re-run from their start — side effects are idempotent by contract — and the script's world-state probe refuses stale carries rather than acting on them.
-- **Route the three failure shapes differently.** A structured `error` payload names a fixable args/world problem: fix it and re-invoke. `BLOCKED` needs human adjudication (a real semantic collision) before any re-invoke. `HELD` is a report, never an auto-continue: read the evidence, steer with `operatorGuidance`, or accept and account the bead via `droppedBeads` at phase 7. Never blanket-retry an unchanged invocation.
+- **Across sessions**, hand off `{stage, stateFile, stateSha}` (the last payload's `next`) in the handoff bead. Stages re-run from their start — side effects are idempotent by contract — and the script sha-verifies the state, re-validates everything it loads, and probes the world before acting (stale carries are refused, not absorbed).
+- **Route the failure shapes differently.** A structured `error` payload names a fixable args/world problem: fix it and re-invoke. `CONFIRM` needs your adjudication (merge derivation or main advance) — answer its `freshFields`. `HELD` is a report, never an auto-continue: read the evidence, steer with `operatorGuidance`, or account the bead via `droppedBeads` at phase 7. Never blanket-retry an unchanged invocation.
 
 ## Relationship to session-flow
 
