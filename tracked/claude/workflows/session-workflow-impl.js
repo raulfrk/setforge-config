@@ -8,6 +8,7 @@ export const meta = {
     { title: 'Build', detail: 'Serialized worktree + claim setup; per-bead plan -> build (commits) -> verify' },
     { title: 'Review/Fix', detail: 'Bounded per-bead review: planner -> one fan -> fix -> fix-verify audit -> one escalation -> HELD' },
     { title: 'Phase 7', detail: 'Combined post-merge fan against merged HEAD (same bounded shape), inline fixes on main' },
+    { title: 'Gate', detail: 'state persistence at gate boundaries' },
   ],
 }
 
@@ -260,8 +261,8 @@ const renderChecklist = (items) => items.length
     ).join("\n")
   : "(no checklist items)"
 
-// Parse `git status --porcelain=v1 -uall -c core.quotePath=false` (cleanliness check in
-// the converge loop: non-empty porcelain after a claimed-complete step is a finding).
+// Parse `git status --porcelain=v1 -uall -c core.quotePath=false` (cleanliness check
+// after a claimed-complete step: non-empty porcelain is a finding).
 const parsePorcelain = (stdout) => {
   const lines = String(stdout || "").split("\n").filter(l => l.length > 0)
   const files = lines.map(line => {
@@ -278,7 +279,7 @@ const parsePorcelain = (stdout) => {
 
 const err = (message, extra) => ({ gate: "ERROR", error: message, ...(extra || {}) })
 
-// ─── Pure: the converge-loop gate (v2) ───
+// ─── Pure: the bounded-review gate (v2) ───
 // The exit condition is the FULL conjunction — every weakening of it in the v1 trial
 // produced a false PASS. Verify failures and porcelain leftovers arrive as
 // syntheticFindings, so the zero-findings conjunct covers them.
@@ -904,6 +905,7 @@ const A = normalizeArgs(args)
 const REQUIRED_ARGS = {
   always: ["stage", "beadIds", "repoPath"],
   implement: { launch: ["archiveDir", "specPath", "waves", "checklist", "verifyCommands"], resume: ["stateFile", "stateSha"] },
+  // phase7 launch is theoretical — validation downstream requires carried state, so phase7 is in practice resume-only
   phase7:    { launch: ["archiveDir", "specPath", "verifyCommands"],                       resume: ["stateFile", "stateSha"] },
 }
 const freshFieldsFor = (stage, extras) => [
@@ -1116,7 +1118,7 @@ const validateStage = (a) => {
         if (mbProblem) return "phase7 stage: " + mbProblem
       }
       const vcProblem = validVerifyCommands(a.verifyCommands)
-      if (vcProblem) return "phase7 stage requires verifyCommands carried from GATE 2: " + vcProblem
+      if (vcProblem) return "phase7 stage requires verifyCommands carried in the state file (or supplied at a fresh phase7 launch): " + vcProblem
       const tsProblem = validShaMap(a.tipShas, a.beadIds, "tipShas")
       if (tsProblem) return "phase7 stage requires tipShas carried from GATE 3: " + tsProblem
       const bsProblem = validShaMap(a.baseShas, a.beadIds, "baseShas")
@@ -1154,7 +1156,7 @@ const validateStage = (a) => {
   }
 }
 
-// ─── World-state probe (every stage, intake included) ───
+// ─── World-state probe (every stage) ───
 
 // Stage-appropriate bead-status rule, enforced in CODE on the probe's verbatim facts:
 // no UNMERGED bead may be closed before phase7; MERGED beads (closed by the GATE 3 merge
@@ -1390,13 +1392,13 @@ const deriveBookkeeping = async (a, probe) => {
   return { merged: d.merged, needsConfirm: d.needsConfirm, mainAdvance, observedMain }
 }
 
-// ─── Stage: implement — staleness (waveCursor>1), carve, wave setup, per-bead pipeline ───
+// ─── Stage: implement — staleness (waveCursor>1), wave setup, per-bead pipeline ───
 
 // v3: the in-script rebase path is REMOVED — git surgery is the SESSION's duty. For each
 // carried (prior-wave, unmerged) worktree the observed merge-base classifies it:
 //   stale   -> listed at GATE 3 for the session to rebase (wt sibling pattern), idle here;
 //   rebased -> the session already rebased it: re-pin baseSha to the observed merge-base
-//              and run the full-range converge re-review in-run (skipBuild path);
+//              and run the full-range bounded re-review in-run (skipBuild path);
 //   current -> idle carry (nothing moved).
 // Returns { failed } | { reviewResults, staleWorktrees, a } with a's baseShas re-pinned.
 const classifyCarriedWorktrees = async (a, probedMainSha) => {
@@ -1431,7 +1433,8 @@ const classifyCarriedWorktrees = async (a, probedMainSha) => {
   return { reviewResults, staleWorktrees, a: { ...a, baseShas } }
 }
 
-// One bead's plan -> build (commits) -> verify -> converge-until-clean review loop.
+// One bead's plan -> build (commits) -> verify -> bounded review (one fan -> fix ->
+// fix-verify, one escalation, then HELD).
 // Returns a per-bead result object — NEVER throws state into shared scope; mixed wave
 // results are aggregated by the caller without collapsing.
 const implementBead = async (a, setup, checklist, forceSkipBuild = false) => {
@@ -1444,6 +1447,11 @@ const implementBead = async (a, setup, checklist, forceSkipBuild = false) => {
   // rebase path forces the same review-only re-entry for HELD beads (no tipSha).
   const skipBuild = forceSkipBuild || Object.hasOwn(a.tipShas || {}, beadId)
   const state = { beadId, gate: "HELD", verdict: "BLOCK", fixPasses: 0, baseSha: setup.baseSha, tipSha: null, evidence: "" }
+  // Gate-derived freshness token (finding #3): keys every world-reading label in this
+  // pipeline so a same-cursor re-entry re-runs verifiers instead of replaying stale
+  // pre-fix journal results. plan:/build: labels stay untokened ON PURPOSE — their
+  // intra-lineage caching is the resume mechanism (the builder contract is idempotent).
+  const gateTag = PRIOR_GATE_COUNTER + 1
 
   let plan = null
   const buildVerifyFindings = []
@@ -1467,7 +1475,7 @@ const implementBead = async (a, setup, checklist, forceSkipBuild = false) => {
       }
       if (P.perStepVerify) {
         const v = await agent(VERIFY_PROMPT_B(beadId, wt, step), {
-          label: "verify:" + beadId + ":" + step.id, phase: "Build", schema: VERIFY_STEP_SCHEMA,
+          label: "verify:" + beadId + ":" + step.id + ":g" + gateTag, phase: "Build", schema: VERIFY_STEP_SCHEMA,
         })
         if (!v) buildVerifyFindings.push({ severity: "high", detail: "step " + step.id + ": verifier returned no result — unverified" })
         else if (v.passed === false) buildVerifyFindings.push({ severity: "high", detail: "step " + step.id + " verify FAILED: " + (v.evidence || "") + " " + (v.failures || []).join("; ") })
@@ -1475,7 +1483,7 @@ const implementBead = async (a, setup, checklist, forceSkipBuild = false) => {
     }
     if (!P.perStepVerify) {
       const v = await agent(VERIFY_UNIT_PROMPT_B(beadId, wt, plan), {
-        label: "verify:" + beadId + ":unit", phase: "Build", schema: VERIFY_STEP_SCHEMA,
+        label: "verify:" + beadId + ":unit:g" + gateTag, phase: "Build", schema: VERIFY_STEP_SCHEMA,
       })
       if (!v) buildVerifyFindings.push({ severity: "high", detail: "unit verifier returned no result — unverified" })
       else if (v.passed === false) buildVerifyFindings.push({ severity: "high", detail: "unit verify FAILED: " + (v.evidence || "") + " " + (v.failures || []).join("; ") })
@@ -1486,7 +1494,6 @@ const implementBead = async (a, setup, checklist, forceSkipBuild = false) => {
   // ONE escalation (re-fix the same finding ids verbatim + re-audit), then HELD. Hard
   // bounds: FIX_PASS_CAP fix dispatches and AUDIT_CAP audits per bead per segment;
   // infra-null free retries do not consume the escalation.
-  const gateTag = PRIOR_GATE_COUNTER + 1
 
   // world-read: freshness token in label keeps journal replay safe (finding #3)
   const res = await agent(RESOLVE_RANGE_PROMPT(wt, state.baseSha), {
@@ -1518,7 +1525,7 @@ const implementBead = async (a, setup, checklist, forceSkipBuild = false) => {
     [...frozen].sort().map(p => "- " + renderPath(p)).join("\n")
 
   // Synthetic findings: porcelain leftovers + verify results — they enter the SAME
-  // zero-findings conjunct as reviewer findings (Q-D/Q-G).
+  // zero-findings conjunct as reviewer findings (spec §2).
   const synthetic = []
   const porc = parsePorcelain(res.porcelain)
   if (porc.count > 0) {
@@ -1609,11 +1616,11 @@ const implementBead = async (a, setup, checklist, forceSkipBuild = false) => {
   let reviews = (await dispatchFan("")).filter(Boolean)
   if (reviews.length < reviewTasks.length) {
     // ONE free retry: a transient agent failure is not a code problem, no fix ran, the
-    // tree did not change — re-dispatch the fan without consuming any bound (Q-E).
+    // tree did not change — re-dispatch the fan without consuming any bound (spec §2).
     log("bead " + beadId + ": fan incomplete (" + reviews.length + "/" + reviewTasks.length + ") — one free retry")
     reviews = (await dispatchFan(":retry")).filter(Boolean)
     if (reviews.length < reviewTasks.length) {
-      // Still incomplete => HELD now (Q-E): fixing on partial evidence is an
+      // Still incomplete => HELD now: fixing on partial evidence is an
       // infrastructure failure, not a code problem.
       return { ...state, evidence: "review fan incomplete even after the free retry (" + reviews.length + "/" + reviewTasks.length + ") — transient infrastructure failure; retry the cursor" }
     }
@@ -1741,7 +1748,7 @@ const implementWave = async (a, setups, reviewResults = [], staleWorktrees = [])
   }
   results.sort((x, y) => x.beadId.localeCompare(y.beadId))
 
-  // Durable outcomes for non-PASS beads (Q-H), serialized — bd is a single-writer store.
+  // Durable outcomes for non-PASS beads, serialized — bd is a single-writer store.
   for (const r of results.filter(x => x.gate !== "PASS")) {
     const noteText = "session-workflow outcome at cursor " + a.waveCursor + ": " + r.gate + " (" + r.verdict + ") after " + r.fixPasses + " fix pass(es). " + r.evidence
     // world-write keyed per segment: a HELD retry writes a fresh outcome note
@@ -1840,15 +1847,29 @@ const runImplement = async (a) => {
   if (a.waveCursor === 1 && a.preWaveSha == null) {
     if ((a.mergedBeads || []).length > 0) {
       // Merges already happened but the preWaveSha carry is gone: freezing NOW would
-      // capture a post-merge tip and silently truncate the phase-7 range. Refuse.
-      return err("preWaveSha was dropped from the carry after merges already happened — re-invoke with the originally frozen preWaveSha (see the first GATE 3 payload)")
+      // capture a post-merge tip and silently truncate the phase-7 range. Pause.
+      return {
+        gate: "CONFIRM", stage: "implement",
+        error: "preWaveSha was dropped from the carry after merges already happened — supply the originally frozen preWaveSha (the first GATE 3 payload carried it; if that payload is gone, the value may need to be recovered from a state snapshot in " + a.archiveDir + ")",
+        next: {
+          stage: "implement", stateFile: a.stateFile ?? null, stateSha: a.stateSha ?? null,
+          freshFields: freshFieldsFor("implement", ["preWaveSha (the originally frozen pre-merge main tip)"]),
+        },
+      }
     }
     if (probed.probe && typeof probed.probe.mainSha === "string" && SHA_RE.test(probed.probe.mainSha)) {
       a = { ...a, preWaveSha: probed.probe.mainSha }
     } else {
       // Proceeding without the frozen pre-merge tip makes the phase-7 range unrecoverable
-      // once merges happen (the GATE 3 note even asserts the freeze succeeded). Refuse.
-      return err("the probe reported no valid mainSha at wave 1 — preWaveSha cannot be frozen; supply preWaveSha explicitly (current pre-merge main tip) and re-invoke")
+      // once merges happen (the GATE 3 note even asserts the freeze succeeded). Pause.
+      return {
+        gate: "CONFIRM", stage: "implement",
+        error: "the probe reported no valid mainSha at wave 1 — preWaveSha cannot be frozen; supply preWaveSha explicitly (the current pre-merge main tip; no merges have happened, so `git rev-parse main` is the value)",
+        next: {
+          stage: "implement", stateFile: a.stateFile ?? null, stateSha: a.stateSha ?? null,
+          freshFields: freshFieldsFor("implement", ["preWaveSha (the current pre-merge main tip)"]),
+        },
+      }
     }
   }
 
@@ -1948,7 +1969,15 @@ const runPhase7 = async (a) => {
     const pin = a.gateMainSha
     const samePin = bk.observedMain === pin || bk.observedMain.startsWith(pin) || pin.startsWith(bk.observedMain)
     if (!samePin) {
-      return err("main moved past gateMainSha (" + pin + " -> " + bk.observedMain + ") while the full gate ran — the verdict certifies a stale tree; re-run the full canonical gate against the current tip and re-invoke with the result", { gateMainSha: pin, observedMain: bk.observedMain })
+      return {
+        gate: "CONFIRM", stage: "phase7",
+        error: "main moved past gateMainSha (" + pin + " -> " + bk.observedMain + ") while the full gate ran — the verdict certifies a stale tree; re-run the full canonical gate against the current tip, then re-invoke with the result",
+        gateMainSha: pin, observedMain: bk.observedMain,
+        next: {
+          stage: "phase7", stateFile: a.stateFile ?? null, stateSha: a.stateSha ?? null,
+          freshFields: freshFieldsFor("phase7", ["fullGateResult: 'pass' | 'fail'", "fullGateDetail (the failure output, on fail)", "confirmMainAdvance: true (if foreign commits moved main)"]),
+        },
+      }
     }
   } else if (bk.needsConfirm.length > 0 || (bk.mainAdvance && a.confirmMainAdvance !== true)) {
     const persistedC = await persistState({ ...a, mergedBeads: bk.merged }, "confirm")
@@ -2001,7 +2030,7 @@ const runPhase7 = async (a) => {
   const checklistBlock = renderChecklist(checklist)
   const validIds = new Set(checklist.map(c => c.id))
 
-  // Per-bead committed ranges, recomputed from shas (Q-I) — identity + ok pinned; a
+  // Per-bead committed ranges, recomputed from shas — identity + ok pinned; a
   // failed diff is a structured error, never an empty scope.
   // world-read: freshness token in label keeps journal replay safe (finding #3)
   const ranges = (await parallel(mergedIds.map(id => () =>
@@ -2045,7 +2074,7 @@ const runPhase7 = async (a) => {
 
   // ── Bounded combined review (spec §2 shape, A4): planner -> ONE fan at P7_REVIEWERS ->
   // fix on main (with deferral triage) -> fix-verify audit -> ONE escalation -> HELD.
-  // Hard bounds: FIX_PASS_CAP fix passes and AUDIT_CAP audits; no converge loop.
+  // Hard bounds: FIX_PASS_CAP fix passes and AUDIT_CAP audits.
   const gateTag = PRIOR_GATE_COUNTER + 1
   let fanClean = false
   pipeline: do {
@@ -2059,12 +2088,19 @@ const runPhase7 = async (a) => {
     if (parsed.count === 0) {
       // mergedBeads is non-empty (validated) yet the combined range is empty: the one
       // real cause is a wrong/post-merge preWaveSha — the truncation pitfall's signature.
-      // Refuse loudly instead of writing a hollow HELD report.
-      return err("combined range " + a.preWaveSha + "..HEAD is empty although beads merged — preWaveSha looks post-merge/corrupted; correct it (the first GATE 3 payload carried the frozen value) and re-invoke")
+      // Pause loudly instead of writing a hollow HELD report.
+      return {
+        gate: "CONFIRM", stage: "phase7",
+        error: "combined range " + a.preWaveSha + "..HEAD is empty although beads merged — preWaveSha looks post-merge/corrupted; supply the originally frozen value (the first GATE 3 payload carried it; early state snapshots in " + a.archiveDir + " also record it)",
+        next: {
+          stage: "phase7", stateFile: a.stateFile ?? null, stateSha: a.stateSha ?? null,
+          freshFields: freshFieldsFor("phase7", ["preWaveSha (the originally frozen pre-merge main tip)"]),
+        },
+      }
     }
     const porc = parsePorcelain(res.porcelain)
     if (porc.count > 0) {
-      // Q-K: a dirty live checkout must hard-error BEFORE any fix agent commits to main.
+      // A dirty live checkout must hard-error BEFORE any fix agent commits to main.
       return err("repoPath working tree is not clean — phase 7 commits review fixes directly to main and refuses to interleave with uncommitted local edits", {
         porcelain: porc.files.map(f => f.path).sort(),
       })
@@ -2166,7 +2202,7 @@ const runPhase7 = async (a) => {
     }
 
     // Deferred (triaged-to-bead) findings are resolved for exit purposes — they were
-    // consciously filed as follow-ups, never silently dropped (Q-J/batch spec).
+    // consciously filed as follow-ups, never silently dropped.
     const filteredReviews = reviews.map(r => ({ ...r, findings: (r.findings || []).filter(f => !deferredKeys.has(qKey(f.detail))) }))
     const gate = computeGateV2({ reviews: filteredReviews, planned: reviewTasks.length, auditFindings, syntheticFindings: synthetic, frozenPaths: frozen, validChecklistIds: validIds, strictChecklist: true })
     log("phase7: worst=" + gate.worstVerdict + " findings=" + gate.totalFindings + " unverified=" + gate.unverifiedIds.length + " scopeOk=" + gate.scopeConsistent)
@@ -2288,7 +2324,7 @@ const runPhase7 = async (a) => {
     }
     if (!fanClean) {
       state.verdict = "HELD"
-      state.evidence = ("bounded review exhausted (FIX_PASS_CAP=" + FIX_PASS_CAP + ", AUDIT_CAP=" + AUDIT_CAP + "); applied fixes STAY on main (Q-K); " + (lastEvidence || "unresolved")).slice(0, 2000)
+      state.evidence = ("bounded review exhausted (FIX_PASS_CAP=" + FIX_PASS_CAP + ", AUDIT_CAP=" + AUDIT_CAP + "); applied fixes STAY on main; " + (lastEvidence || "unresolved")).slice(0, 2000)
     }
   } while (false)
 
@@ -2319,7 +2355,7 @@ const runPhase7 = async (a) => {
     }
   }
 
-  // Final report (Q-N): composed in code, persisted by an agent to archiveDir + epic note.
+  // Final report: composed in code, persisted by an agent to archiveDir + epic note.
   const specBase = a.specPath.slice(a.specPath.lastIndexOf("/") + 1).replace(/\.md$/, "")
   const reportPath = a.archiveDir.replace(/\/+$/, "") + "/" + specBase + "-report.md"
   const epicId = (a.runStats && typeof a.runStats.epicId === "string" && validSlug(a.runStats.epicId)) ? a.runStats.epicId : null
