@@ -261,7 +261,7 @@ const renderChecklist = (items) => items.length
     ).join("\n")
   : "(no checklist items)"
 
-// Parse `git status --porcelain=v1 -uall -c core.quotePath=false` (cleanliness check
+// Parse `git -c core.quotePath=false status --porcelain=v1 -uall` (cleanliness check
 // after a claimed-complete step: non-empty porcelain is a finding).
 const parsePorcelain = (stdout) => {
   const lines = String(stdout || "").split("\n").filter(l => l.length > 0)
@@ -1861,7 +1861,7 @@ const runImplement = async (a) => {
       a = { ...a, preWaveSha: probed.probe.mainSha }
     } else {
       // Proceeding without the frozen pre-merge tip makes the phase-7 range unrecoverable
-      // once merges happen (the GATE 3 note even asserts the freeze succeeded). Pause.
+      // once merges happen (the GATE 3 payload even carries the frozen value). Pause.
       return {
         gate: "CONFIRM", stage: "implement",
         error: "the probe reported no valid mainSha at wave 1 — preWaveSha cannot be frozen; supply preWaveSha explicitly (the current pre-merge main tip; no merges have happened, so `git rev-parse main` is the value)",
