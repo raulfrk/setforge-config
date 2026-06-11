@@ -1,27 +1,23 @@
 export const meta = {
   name: 'session-workflow-impl',
-  description: 'Staged, gate-bounded orchestration of the full 7-phase session methodology over a batch of bd issues. One invocation runs ONE gate-bounded segment selected by args.stage (intake | spec | implement | phase7) and returns a gate payload plus a state file; human gates (brainstorm answers, spec approval, per-wave merges, the final full gate) happen in the session between invocations.',
-  whenToUse: 'Invoke via the session-workflow skill, which owns the gate protocol. Launch args: { stage: "intake", beadIds, repoPath, archiveDir, profile?, convergeMode? }. Every gate persists its carry to <archiveDir>/sw-state-<batch>.json and returns next: {stage, stateFile, stateSha, freshFields}; re-invoke with exactly those three plus ONLY the fresh human input the payload names (gate1Answers, specFileName, specApproved, operatorGuidance, mergeOverrides, confirmMainAdvance, droppedBeads, fullGateResult/fullGateDetail, delegateRatifications, convergeMode, maxOperatorRounds). Merged beads and mainSha are DERIVED from the world at implement/phase7 entry (ambiguity pauses at a CONFIRM payload); session duties: rebasing stale worktrees listed at GATE 3 and running the full canonical gate at PENDING-FULL-GATE. Each stage validates everything it loads and refuses (structured error) rather than guessing.',
+  description: 'Batch implementation engine for the session methodology: per-wave build plus BOUNDED review (planner -> one fan -> fix -> fix-verify audit -> one escalation -> HELD), then an integrated post-merge review of the same bounded shape. One invocation runs ONE gate-bounded segment selected by args.stage (implement | phase7) and returns a gate payload plus a state file; phases 1-3 (brainstorm, spec, carve) happen IN-SESSION before launch, and human gates (per-wave merges, the final full gate) happen in the session between invocations.',
+  whenToUse: 'Invoke via the session-workflow skill, which owns the gate protocol. Launch args: { stage: "implement", beadIds, repoPath, archiveDir, specPath, waves, checklist, verifyCommands, profile? }. Every gate persists its carry to <archiveDir>/sw-state-<batch>.json and returns next: {stage, stateFile, stateSha, freshFields}; re-invoke with stage + beadIds + repoPath + stateFile + stateSha plus ONLY the fresh human input the payload names (operatorGuidance, mergeOverrides, confirmMainAdvance, droppedBeads, fullGateResult/fullGateDetail), and ALWAYS pass resumeFromRunId of the prior invocation so the run lineage continues (journal cache stays valid, /workflows shows completed stages cumulatively). Merged beads and mainSha are DERIVED from the world at stage entry (ambiguity pauses at a CONFIRM payload); session duties: rebasing stale worktrees listed at GATE 3 and running the full canonical gate at PENDING-FULL-GATE. Each stage validates everything it loads and refuses (structured error) rather than guessing.',
   phases: [
     { title: 'Validate', detail: 'Args contract + world-state probe; refuse on mismatch' },
-    { title: 'Intake', detail: 'Per-bead contract readers, repo context, dep graph -> waves, overlap prediction, one exhaustive question round; converges across invocations' },
-    { title: 'Research', detail: 'Reactive pitfall research over the combined scope (spec stage)' },
-    { title: 'Spec', detail: 'Spec writing + decision-coverage + self-review (spec stage)' },
-    { title: 'Carve', detail: 'Per-bead design/acceptance contracts; serialized worktree + claim setup' },
-    { title: 'Rebase', detail: 'Rebase carried-over worktrees onto new main; re-verify + full-range re-review' },
-    { title: 'Build', detail: 'Per-bead plan -> build (commits) -> verify' },
-    { title: 'Review/Fix', detail: 'Converge-until-clean review fan + inline fixes per bead' },
-    { title: 'Phase 7', detail: 'Combined post-merge fan against merged HEAD, converge-until-clean' },
+    { title: 'Rebase', detail: 'Classify carried worktrees; re-review session-rebased ones in-run; list stale ones for the session' },
+    { title: 'Build', detail: 'Serialized worktree + claim setup; per-bead plan -> build (commits) -> verify' },
+    { title: 'Review/Fix', detail: 'Bounded per-bead review: planner -> one fan -> fix -> fix-verify audit -> one escalation -> HELD' },
+    { title: 'Phase 7', detail: 'Combined post-merge fan against merged HEAD (same bounded shape), inline fixes on main' },
   ],
 }
 
-// session-workflow-impl v2 — staged orchestration, functionally complete.
-// Stages: intake (converging question loop, one round per invocation), spec (pitfall
-// research -> writer -> coverage/self-review -> GATE 2), implement (carve, serialized
-// wave setup, per-bead pipeline with the converge-until-clean review loop -> GATE 3;
-// waveCursor > 1 first rebases carried worktrees with semantic-conflict adjudication),
-// and phase7 (combined post-merge fan with merge-only attribution, tiered verification,
-// inline fixes on main, deferral triage, and the dual-persisted final report -> FINAL).
+// session-workflow-impl v4 — the batch-shaped half of the methodology only.
+// Stages: implement (serialized wave setup, per-bead build pipeline, bounded review ->
+// GATE 3; waveCursor > 1 first classifies carried worktrees and pre-verifies the new
+// base) and phase7 (combined post-merge fan with merge-only attribution, inline fixes
+// on main, deferral triage, and the dual-persisted final report -> FINAL). Brainstorm,
+// spec, and carve are SESSION-NATIVE (the session-workflow skill owns them); the spec
+// file, wave plan, per-bead checklist, and verify commands arrive as launch args.
 //
 // Orchestrator constraints honored throughout: no fs/shell here (agents do all local I/O);
 // no Date.now()/Math.random()/argless new Date(); phase() only in sequential control flow
@@ -32,13 +28,15 @@ export const meta = {
 // advisory notes, file lists) is fenced as data, never spliced into imperative prompt
 // sections.
 
-const STAGES = ["intake", "spec", "implement", "phase7"]
+const STAGES = ["implement", "phase7"]
 const MAX_BEADS = 16
-const MAX_INTAKE_ROUNDS = 12 // runaway backstop for the human-gated question loop
-const MAX_QUESTIONS_PER_ROUND = 24
 const CHECKLIST_CAP = 20 // per-bead cap on the merged risk checklist (read-volume dominates token cost)
 const CHUNK_WIDTH = 4 // concurrent per-bead pipelines per wave (git/bd writer contention bound)
-const SPEC_LOOP_BACKSTOP = 5 // coverage/self-review fix attempts on the written spec (dry runs converged in 2-4)
+// Bounded-review contract (spec §2): per bead (and once at phase7) the review is
+// planner -> ONE fan -> fix -> fix-verify audit, with EXACTLY ONE escalation (re-fix the
+// same finding ids + re-audit) before HELD. These two constants are the hard bounds.
+const FIX_PASS_CAP = 2 // fix dispatches per bead per segment (1 + the single escalation)
+const AUDIT_CAP = 2 // fix-verify audits per bead per segment (1 + the single escalation)
 const WORKTREE_BASE = "/home/raul/projects/worktrees/"
 const REPO_PREFIX = "/home/raul/" // repos this harness may operate on live under the home tree
 const SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/
@@ -51,32 +49,19 @@ const ECHO_MODEL = "haiku"
 // State-file carry (v3): gate state persists to <archiveDir>/sw-state-<batch>.json via
 // agents; re-invocations pass {stage, stateFile, stateSha, <fresh human input>} only.
 const STATE_BASENAME_RE = /^sw-state-[a-z0-9._+-]{1,160}\.json$/
-const STATE_SIZE_CAP = 262144 // bytes; state carries ids/shas/cursors/answers, never diffs or file dumps
+const STATE_VERSION = 4 // loadState refuses any other value — no silent defaults from old-format state
+const STATE_SIZE_CAP = 262144 // bytes; state carries ids/shas/cursors, never diffs or file dumps
 const SHA256_RE = /^[0-9a-f]{64}$/
-const MAX_OPERATOR_ROUNDS = 3 // gate-1 rounds that PRESENT blocking questions; arg-overridable
-const CONVERGE_MODES = ["thorough", "fast", "freeze"]
-// freeze halves the review-loop runaway backstop (never below 2): the operator has
-// explicitly traded depth for speed; the converge-until-clean exit is unchanged.
-const effectiveBackstop = (a, profile) => a.convergeMode === "freeze" ? Math.max(2, Math.ceil(profile.roundsBackstop / 2)) : profile.roundsBackstop
 
-// Cost profiles. Gate-bearing semantics never weaken across profiles; the knobs are
-// research breadth, fan width, and the runaway backstop. roundsBackstop is NOT the review
-// exit condition: review loops run converge-until-clean (a zero-issue full-fan round
-// exits); the backstop only catches runaway loops => HELD.
+// Cost profiles (spec §3): risk buys RIGOR, never breadth — width is near-flat; the
+// rigor flag adds adversarial fix-refutation and the e2e-assert conjunct to the
+// fix-verify audit. Gate-bearing semantics never weaken across profiles.
 const PROFILES = {
-  full:     { dims: ["concurrency", "error-model", "security", "resource-leak", "api-misuse"], maxReviewers: 8, roundsBackstop: 10, perStepVerify: true },
-  standard: { dims: ["error-model", "api-misuse", "security"], maxReviewers: 3, roundsBackstop: 6,  perStepVerify: true },
-  light:    { dims: ["error-model", "api-misuse"], maxReviewers: 1, roundsBackstop: 4,  perStepVerify: false },
+  full:     { maxReviewers: 3, rigor: true,  perStepVerify: true },
+  standard: { maxReviewers: 3, rigor: false, perStepVerify: true },
+  light:    { maxReviewers: 3, rigor: false, perStepVerify: false },
 }
-
-// Risk dimensions for the spec-stage pitfall research (carried from the v1 trial).
-const RISK_DIMENSIONS = [
-  { key: "concurrency", label: "concurrency/async", focus: "race conditions, unhandled rejections, floating promises, unbounded parallelism, missing timeout propagation" },
-  { key: "error-model", label: "error model", focus: "swallowed errors, silent failures, missing re-throw, partial-result loss on fail-fast, error-path coverage" },
-  { key: "security", label: "security/injection", focus: "command/template injection, untrusted input flowing into exec/eval, unvalidated config or agent output" },
-  { key: "resource-leak", label: "resource leak", focus: "unreleased handles/listeners, uncleared timers, missing cleanup in finally, unbounded caches/loops" },
-  { key: "api-misuse", label: "API misuse", focus: "wrong primitive choice, contract mismatches, type/shape assumptions, out-of-order result mapping" },
-]
+const P7_REVIEWERS = 4 // phase-7 combined-fan width (the one place width grows)
 
 // Host-local specialist reviewers (agentType) the review planner maps changed files onto;
 // ad-hoc reviewers are synthesized for anything the registry does not cover.
@@ -144,7 +129,7 @@ const validSlug = (s) => typeof s === "string" && SLUG_RE.test(s)
 // Orchestrator has no fs: string-level containment only (whitelist — excludes shell
 // metacharacters, globs, and whitespace wholesale). The world-state probe agent
 // realpath-verifies the same paths before any stage acts on them.
-const PATH_RE = /^\/[A-Za-z0-9._/-]+$/
+const PATH_RE = /^\/[A-Za-z0-9._+/-]+$/ // `+` admitted: batchSlug joins bead ids with it (finding #2)
 const absPathOk = (p) => typeof p === "string" && PATH_RE.test(p) && !p.includes("..")
 // Reject shell metacharacters in any value an agent is told to interpolate into a command
 // line (slugs, ids). Space is allowed nowhere we generate, so exclude it too.
