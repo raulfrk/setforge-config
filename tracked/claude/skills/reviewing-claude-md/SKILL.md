@@ -74,19 +74,19 @@ After all 5 agents return, produce a single report:
 # CLAUDE.md review fan report (BASE_SHA..HEAD_SHA)
 
 ## claude-md-spec-reviewer (red)
-<sub-report verbatim>
+<sub-report verbatim — or verdict line only if PASS>
 
 ## claude-md-form-reviewer (blue)
-<sub-report verbatim>
+<sub-report verbatim — or verdict line only if PASS>
 
 ## claude-md-substance-reviewer (green)
-<sub-report verbatim>
+<sub-report verbatim — or verdict line only if PASS>
 
 ## claude-md-specifics-reviewer (purple)
-<sub-report verbatim>
+<sub-report verbatim — or verdict line only if PASS>
 
 ## claude-md-prose-reviewer (yellow)
-<sub-report verbatim>
+<sub-report verbatim — or verdict line only if PASS>
 
 ## Overall
 - claude-md-spec: <verdict>

@@ -77,7 +77,7 @@ After the agent returns, produce a single report:
 # Markdown prose review report (BASE_SHA..HEAD_SHA)
 
 ## markdown-prose-reviewer (yellow)
-<sub-report verbatim>
+<sub-report verbatim — or verdict line only if PASS>
 
 ## Overall
 - markdown-prose: <verdict>

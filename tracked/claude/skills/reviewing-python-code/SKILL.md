@@ -71,16 +71,16 @@ After all 4 agents return, produce a single report:
 # Python review fan report (BASE_SHA..HEAD_SHA)
 
 ## python-spec-reviewer (red)
-<sub-report verbatim>
+<sub-report verbatim — or verdict line only if PASS>
 
 ## python-substance-reviewer (green)
-<sub-report verbatim>
+<sub-report verbatim — or verdict line only if PASS>
 
 ## python-specifics-reviewer (purple)
-<sub-report verbatim>
+<sub-report verbatim — or verdict line only if PASS>
 
 ## python-prose-reviewer (yellow)
-<sub-report verbatim>
+<sub-report verbatim — or verdict line only if PASS>
 
 ## Overall
 - python-spec: <verdict>

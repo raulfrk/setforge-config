@@ -90,13 +90,13 @@ After all 3 agents return, produce a single report:
 # Rust review fan report (BASE_SHA..HEAD_SHA)
 
 ## rust-spec-reviewer (red)
-<sub-report verbatim>
+<sub-report verbatim — or verdict line only if PASS>
 
 ## rust-substance-reviewer (green)
-<sub-report verbatim>
+<sub-report verbatim — or verdict line only if PASS>
 
 ## rust-specifics-reviewer (purple)
-<sub-report verbatim>
+<sub-report verbatim — or verdict line only if PASS>
 
 ## Overall
 - rust-spec: <verdict>
