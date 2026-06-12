@@ -40,20 +40,24 @@ Invoke `superpowers:brainstorming`. Explore intent, requirements, constraints wi
 
 ### Phase 2 — Spec via plan mode
 
-`EnterPlanMode`. Open the plan with a short plain-language **summary section** (what the change is and why, written for a reader who hasn't seen the spec — plain alternative + the headline trade-off), then write the spec VERBATIM into the plan body below it — no summarizing or reflowing the spec ITSELF. User reviews via revdiff (plan-review hook fires automatically). For a multi-bead session this is ONE combined spec covering all beads.
+`EnterPlanMode`. Open the plan with the PART-0 decision layer from the
+"Presentation contract" section below (decision ledger + pictures + cut
+line); it REPLACES the older plain-language summary section. Then write
+the spec VERBATIM into the plan body below the cut line — no summarizing
+or reflowing the spec ITSELF. User reviews via revdiff (plan-review hook fires automatically). For a multi-bead session this is ONE combined spec covering all beads.
 
 On approval:
 - **Carve** the combined spec into each selected bead's own `--design` / `--acceptance`. Each bead keeps an independent, self-runnable contract (a carved bead's acceptance must not depend on a sibling being merged first unless a real bd dep exists). The bd issue is the durable contract; the spec file is a historical snapshot.
 
 When writing the spec, include a "Bugs and code smells to avoid" section listing implementation pitfalls specific to the domain — populated from the Phase 1 pitfall-research checklists where available. Phase 5 review checks against these.
 
-When revising a spec after review, open with a "Changes in this revision" section listing what changed and why — so the reviewer can focus on deltas without rereading the entire document.
+When revising a spec after review, place a "Changes in this revision" section directly under the PART-0 layer, listing what changed and why — so the reviewer can focus on deltas without rereading the entire document.
 
 Before requesting approval, run a **decision-coverage check**: walk every Phase-1 `AskUserQuestion` answer and confirm each is reflected in the spec — and survives into the carved `--design` / `--acceptance`. A decision the user explicitly made that silently fails to land in the spec won't get built; without this check, review (or the user) becomes the last line of defense instead of the spec.
 
 ### Phase 3 — Plan
 
-Invoke `superpowers:writing-plans`. Implementation plan as a normal response (NOT plan mode). Walk implementation against actual code; verify symbol names exist; catch typos before code is written. MANDATORY before Phase 4 regardless of change size. For a multi-bead session, write **one plan per carved bead** (cross-bead ordering/overlap lives in the wave plan, Phase 4).
+Invoke `superpowers:writing-plans`. Implementation plan as a normal response (NOT plan mode). The plan opens with the Presentation contract's PART-0 layer — a ledger of what is being approved NOW (verified surprises, new deps, execution mechanics), pictures, and the cut line. Walk implementation against actual code; verify symbol names exist; catch typos before code is written. MANDATORY before Phase 4 regardless of change size. For a multi-bead session, write **one plan per carved bead** (cross-bead ordering/overlap lives in the wave plan, Phase 4).
 
 ### Phase 4 — Implement
 
@@ -63,12 +67,13 @@ Invoke `superpowers:executing-plans`. TDD where the contract isn't obvious (`sup
 
 **Multiple beads** → the parallel pipeline:
 
-1. **Wave plan.** Auto-derive parallel waves and present for approval (the user can override):
+1. **Wave plan.** Auto-derive parallel waves and present for approval (the user can override) as a wave DIAGRAM (one box per worktree, arrows per dependency) plus a mechanics ledger per the Presentation contract — not prose paragraphs:
    - **bd dependencies = HARD serializer** — a bead cannot start before its blocker.
    - **predicted file overlap = ADVISORY** — flag it ("beads X, Y both touch `foo.py` — conflict likely") but still run them in parallel; conflicts are resolved at merge.
 2. **Per-bead execution unit** — assess per bead-set and state the choice: either (a) each worktree runs its own Phase 4–6 autonomously (subagent implements → per-bead review fan → fixes, arriving merge-ready), or (b) worktrees code in parallel and review is centralized. Pick by how independent the beads are.
 3. **Mechanism** — parallelism runs via **in-session subagents** (Task/Agent dispatch from the orchestrator), NOT separate agent-view agents. One worktree per bead (`wt switch --create` each before dispatch; see wt-reference's parallel-dispatch pattern).
 4. **Autonomy** — balance per bead-set; present the level with the wave plan. Default for an approved wave: run to merge-ready and report at real gates (semantic merge conflicts, the pre-merge review handoff, blocking failures).
+5. **Gate + blast-radius discipline** — every gate command quotes its real exit code (`cmd; echo EXIT=$?`, or `set -o pipefail` before any pipeline); dispatched agents must quote explicit exit codes — a bare `cmd | tail` pipeline status is not evidence. A cross-cutting change (output-stream move, rename, flag or user-visible text change) additionally requires `rg` of the moved token/symbol across the WHOLE test tree — including e2e files the bead's own gates never execute — before reporting merge-ready (complements Phase 7's post-merge pass; does not replace it).
 
 ### Phase 5 — Review fan
 
@@ -79,6 +84,8 @@ Use the custom multi-aspect review fans, picked by artifact type:
 - `reviewing-rust-code` — Rust source / Cargo manifests / toolchain + lint configs / Rust CI (3 aspect agents: spec, substance, specifics; runs clippy + fmt once and feeds the output to the agents).
 
 Mixed-artifact changes invoke every applicable fan in parallel; review each artifact type's diff separately.
+
+Fan outcomes and mid-wave status updates are presented verdict-table-first (one line per bead or aspect, findings below) per the Presentation contract.
 
 The fan is **goal-wrapped** (iterate-to-clean). Before dispatching it:
 1. **Surface a copy-paste `/goal` review condition** that drives the fan to convergence — e.g. *"the reviewing-* fan reports no Important+ findings on this diff (each finding fixed or triaged to a follow-up bead), or stop after N turns"* — regardless of session type (`/goal` works in interactive, agent-view, and remote sessions). If a finding is too large to fix in-session and the user **defers** it to a follow-up bead, the named diff can no longer be made clean and the goal will not auto-clear — tell the user to `/goal clear` (the legitimate "scope changed" exception to the usual don't-suggest-clear rule).
@@ -92,9 +99,9 @@ Additionally, when running non-interactively (no one is there to paste), also ru
 
 Fix ALL findings inline (CRITICAL, IMPORTANT, and MINOR) unless the fix is large or clearly out-of-scope — in that case, file a new bd with dep link. Review-fix commits stay SEPARATE — never squash into the implementation commit.
 
-**Before each bead merges, always ask: "review this with revdiff?"** (revdiff is available on all hosts). In **learning mode** (see below), run the annotated-diff protocol instead of a plain ask.
+**Before each bead merges, always ask: "review this with revdiff?"** (revdiff is available on all hosts). Under an APPROVED wave plan the offers may be batched per sub-wave instead of per bead. In **learning mode** (see below), run the annotated-diff protocol instead of a plain ask.
 
-**Merge** per the host's configured policy (see "Merge policy" below). On conflicts: resolve and continue the merge, reporting what you resolved afterward; pause and ask ONLY when a resolution is semantically load-bearing (two real behaviors collide and the wrong pick changes intent).
+**Merge** per the host's configured policy (see "Merge policy" below). For multi-bead waves the merge gate runs per bead, SERIALLY at the orchestrator: rebase the worktree onto the target, run the full unit suite plus the bead's expensive integration subset (expensive subsets never run inside parallel implementers — shared daemons/hosts saturate), then merge and `bd close`. On conflicts: resolve and continue the merge, reporting what you resolved afterward; pause and ask ONLY when a resolution is semantically load-bearing (two real behaviors collide and the wrong pick changes intent).
 
 ### Phase 7 — Post-merge review
 
@@ -102,7 +109,7 @@ Re-invoke the same goal-wrapped fan against merged HEAD on the target branch —
 
 ## Multi-bead pipeline (summary)
 
-Select beads (multi-select / IDs) → ONE combined brainstorm → ONE spec (plan mode) → carve into per-bead `--design`/`--acceptance` → per-bead `writing-plans` → auto wave plan (deps HARD, overlap ADVISORY; user-approved) → parallel implement via in-session subagents → per-bead revdiff + per-bead review fan before each merge → policy merge (resolve+report conflicts, escalate semantic) → ONE combined goal-wrapped fan post-integration → `bd close` each + `wt remove`.
+Select beads → ONE combined brainstorm → ONE spec (plan mode) → carve per-bead contracts → per-bead plans → wave plan (deps HARD, overlap ADVISORY; user-approved) → parallel implement → per-bead fan + serial merge gate (revdiff offers may batch per sub-wave) → ONE combined fan post-integration → `bd close` each.
 
 ## Learning mode
 
@@ -171,6 +178,41 @@ Never use bare `EnterWorktree` (without `--path`) in a bg session — it creates
 | 7 | Same as Phase 5 | Against merged HEAD |
 
 Also: `superpowers:test-driven-development` (when test IS the spec), `superpowers:subagent-driven-development` (in-session parallel sub-tasks), `superpowers:receiving-code-review` (processing review feedback).
+
+## Presentation contract (decision-first artifacts)
+
+Applies to: Phase-2 specs, Phase-3 per-bead plans, Phase-4 wave plans, the
+pickup skill's resume summaries, Phase-5/7 fan reports, and multi-step
+status updates. Every such artifact opens with a PART-0 decision layer:
+
+1. **Header** — one sentence: what + why.
+2. **Decision ledger** — numbered table, one line per decision or state the
+   reader must ratify.
+3. **Picture** — at least one ASCII before/after mockup or flow diagram
+   WHENEVER the change alters CLI output, a prompt, a file the user reads,
+   or a flow's order.
+4. **Cut line** — a literal "Decide here" stop marker (template below):
+   everything requiring ratification sits above it.
+5. **Budget** — PART 0 fits one screen (~40 lines). The FULL verbatim body
+   (spec text, per-bead plans, findings) sits below the cut line and is
+   never replaced by the summary.
+
+Template emitted into artifacts (the glyphs live ONLY in emitted
+artifacts — this skill's own prose stays emoji-free):
+
+```
+# ⚡ PART 0 — THE 2-MINUTE VERSION
+<one sentence: what + why>
+| # | Decision |          <- numbered ledger, one line each
+<ASCII mockup / diagram>  <- required iff a user-facing surface changes
+## 🛑 Decide here          <- cut line
+---
+# PART 1 — FULL DETAIL    <- verbatim body, never summarized away
+```
+
+Precedence: the Phase 1 / Phase 5 `/goal` surface-then-END-TURN rules take
+precedence over any presentation boundary — this contract changes how
+artifacts LOOK, never when turns end.
 
 ## Self-improvement
 
