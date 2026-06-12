@@ -79,6 +79,11 @@ Return structured findings + DoD checklist + verdict line.
 
 ## Consolidation
 
+Compress the consolidated report: keep the verdict table (one line per
+aspect) and reproduce every CONCERNS or BLOCK finding verbatim; include an
+aspect's full sub-report verbatim ONLY when its verdict is not PASS — PASS
+aspects compress to their verdict line plus a one-line DoD state.
+
 After all 3 agents return, produce a single report:
 
 ```
@@ -112,7 +117,7 @@ Overall verdict: <worst-of-three — BLOCK > CONCERNS > PASS>
 - [ ] Ran the clippy + fmt machine pre-pass once (or recorded `(unavailable: ...)` with a reason).
 - [ ] All 3 reviewer dispatches issued in a single message (true parallel), each carrying `clippy_fmt_output`.
 - [ ] All 3 agents returned a `Verdict: ...` line.
-- [ ] Consolidated report produced with all 3 sub-reports verbatim.
+- [ ] Consolidated report produced — every non-PASS sub-report verbatim; PASS aspects compressed to verdict + DoD state.
 - [ ] Worst-of-three overall verdict computed and stated explicitly.
 
 ## Self-improvement

@@ -60,6 +60,11 @@ Return structured findings + DoD checklist + verdict line.
 
 ## Consolidation
 
+Compress the consolidated report: keep the verdict table (one line per
+aspect) and reproduce every CONCERNS or BLOCK finding verbatim; include an
+aspect's full sub-report verbatim ONLY when its verdict is not PASS — PASS
+aspects compress to their verdict line plus a one-line DoD state.
+
 After all 4 agents return, produce a single report:
 
 ```
@@ -96,7 +101,7 @@ Overall verdict: <worst-of-four — BLOCK > CONCERNS > PASS>
 
 - [ ] All 4 reviewer dispatches issued in a single message (true parallel).
 - [ ] All 4 agents returned a `Verdict: ...` line.
-- [ ] Consolidated report produced with all 4 sub-reports verbatim.
+- [ ] Consolidated report produced — every non-PASS sub-report verbatim; PASS aspects compressed to verdict + DoD state.
 - [ ] Worst-of-four overall verdict computed and stated explicitly.
 
 ## Self-improvement

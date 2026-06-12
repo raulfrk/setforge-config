@@ -66,6 +66,11 @@ Return structured findings + DoD checklist + verdict line.
 
 ## Consolidation
 
+Compress the consolidated report: keep the verdict table (one line per
+aspect) and reproduce every CONCERNS or BLOCK finding verbatim; include an
+aspect's full sub-report verbatim ONLY when its verdict is not PASS — PASS
+aspects compress to their verdict line plus a one-line DoD state.
+
 After the agent returns, produce a single report:
 
 ```
@@ -90,7 +95,7 @@ Overall verdict: <verdict>
 
 - [ ] Single dispatch issued via a single message.
 - [ ] Agent returned a `Verdict: ...` line.
-- [ ] Consolidated report produced with the sub-report verbatim.
+- [ ] Consolidated report produced — every non-PASS sub-report verbatim; PASS aspects compressed to verdict + DoD state.
 - [ ] Verdict stated explicitly.
 
 ## Self-improvement
