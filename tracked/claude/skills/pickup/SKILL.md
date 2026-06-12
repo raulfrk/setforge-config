@@ -22,7 +22,7 @@ The `~/handoff` repo is a SEPARATE beads database from any project. Operate on i
 
 2. **Read each matched handoff fully.** `cd ~/handoff && bd show <handoff-id>` — read `--description` (project dir, exact sub-project path, active worktree + branch, epic ID, why the session ended, the original paused bd), `--design` (active decisions/context), `--acceptance` (next-step actions), `--notes` (open questions, research).
 
-3. **Present context.** Summarize for each matched handoff: last session state, active decisions, what was in-progress, and the suggested next steps. For each handoff's project, `cd <project-dir>` and run `bd show <epic-id>` + `bd ready` to surface that project's current ready queue.
+3. **Present context.** Present each matched handoff per the session-flow skill's "Presentation contract (decision-first artifacts)": a numbered state ledger (last session state, active decisions, what was in-progress, suggested next steps), a queue/wave diagram when the handoff pre-pins one, and a "Decide here" cut line leading into step 4's gate. For each handoff's project, `cd <project-dir>` and run `bd show <epic-id>` + `bd ready` to surface that project's current ready queue.
 
 4. **Interactive gate** (`AskUserQuestion`). Present the ready beads as options; the handoff's suggested task(s) appear first, marked `(Recommended)`. Other ready beads are additional options. The user picks which to work on — one, several (→ feeds the multi-bead flow), or a different direction via "Other". NEVER auto-claim; the user always chooses.
 
