@@ -12,7 +12,7 @@ This skill orchestrates a 1-agent scan that enforces the "Beads stay truly invis
 - **Phase 5** (review fan) after Phase 4 (Implement) completes and before Phase 6 (Address findings + merge), per the 7-phase flow in the `session-flow` skill. Always — not gated on artifact type.
 - **Phase 7** (post-merge cross-cutting review) against the merged HEAD on the target branch.
 
-Artifacts in scope: code, tests, comments, docstrings, shipped docs (README, CHANGELOG, docs/, COMPATIBILITY.md), commit messages, and PR descriptions.
+Artifacts in scope: code, tests, comments, docstrings, shipped docs (README, CHANGELOG, docs/, COMPATIBILITY.md), commit messages, and PR descriptions. (The CLAUDE.md rule's literal list is code / comments / docstrings / commit messages / PR descriptions; this skill intentionally extends it to shipped docs, which also reach users.)
 
 Exempt (the private orchestration layer legitimately references bd): `**/CLAUDE.md`, `**/.claude/skills/**`, `**/.claude/agents/**`, `tracked/claude/**`, fixtures mirroring that layer, and the leak-detector's own files. The agent enforces these exemptions itself.
 
