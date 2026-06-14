@@ -33,7 +33,8 @@ What counts as a leak — patterns:
 
 Exempt — these legitimately reference bd; never flag a hit inside them:
 - `**/CLAUDE.md` (any level), `**/.claude/skills/**`, `**/.claude/agents/**`, anything under `tracked/claude/**`, and test fixtures mirroring that layer (`tests/fixtures/**/tracked/claude/**`, `**/fixtures/**/CLAUDE.md`).
-- The leak-detector's own files (`scripts/check-no-bd-refs.sh`, this agent, the `reviewing-bd-leaks` skill, the design spec/plan) — they carry the patterns by necessity.
+- The leak-detector's own files (`scripts/check-no-bd-refs.sh`, `tests/test_check_no_bd_refs.py`, this agent, the `reviewing-bd-leaks` skill, the design spec/plan) — they carry the patterns by necessity.
+- Ignore-files (`.dockerignore`, `.gitignore`): a `.beads/` entry there EXCLUDES the tracker DB from the image / index — that is the invisibility mechanism, not a leak.
 - `.beads/` itself is git-excluded and never in a diff.
 
 False-positive triage (do NOT flag):
