@@ -18,7 +18,7 @@ Artifacts in scope:
 - `.pre-commit-config.yaml`.
 - `.github/workflows/*.yml`.
 
-For mixed-artifact PRs, invoke every applicable skill in parallel via separate Skill invocations: `reviewing-claude-md` when the diff also touches `.md` files under `tracked/claude/`, and `reviewing-markdown` when it touches generic `.md` files outside `tracked/claude/` (READMEs, project-level CLAUDE.md, docs/, CHANGELOG.md, ADRs).
+For mixed-artifact PRs, invoke every applicable skill in parallel via separate Skill invocations: `reviewing-claude-md` when the diff also touches `.md` files under `tracked/claude/`, and `reviewing-markdown` when it touches generic `.md` files outside `tracked/claude/` (READMEs, project-level CLAUDE.md, docs/, CHANGELOG.md, ADRs). Regardless of artifact mix, `reviewing-bd-leaks` ALSO runs in parallel (task-tracker-leak scan over all file types) — leak-checking is not this fan's job.
 
 ## Dispatch inputs
 

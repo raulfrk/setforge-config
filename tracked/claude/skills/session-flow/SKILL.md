@@ -82,8 +82,9 @@ Use the custom multi-aspect review fans, picked by artifact type:
 - `reviewing-claude-md` — docs / skills / agents under `tracked/claude/` (5 aspect agents).
 - `reviewing-markdown` — generic `.md` outside `tracked/claude/` (1 prose agent).
 - `reviewing-rust-code` — Rust source / Cargo manifests / toolchain + lint configs / Rust CI (3 aspect agents: spec, substance, specifics; runs clippy + fmt once and feeds the output to the agents).
+- `reviewing-bd-leaks` — ALWAYS, regardless of artifact type (1 agent: bd-leak-reviewer). Scans the whole diff + commit messages + PR body for leaked Beads / bd task-tracker references in shipping artifacts. Invoke it in parallel with whichever artifact fans apply; the artifact fans do not scan for tracker leaks themselves.
 
-Mixed-artifact changes invoke every applicable fan in parallel; review each artifact type's diff separately.
+Mixed-artifact changes invoke every applicable fan in parallel; review each artifact type's diff separately. `reviewing-bd-leaks` runs in every case.
 
 Fan outcomes and mid-wave status updates are presented verdict-table-first (one line per bead or aspect, findings below) per the Presentation contract.
 

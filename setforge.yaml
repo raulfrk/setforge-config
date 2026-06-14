@@ -85,6 +85,10 @@ tracked_files:
     src: claude/skills/reviewing-rust-code/SKILL.md
     dst: ~/.claude/skills/reviewing-rust-code/SKILL.md
 
+  claude_skill_reviewing_bd_leaks:
+    src: claude/skills/reviewing-bd-leaks/SKILL.md
+    dst: ~/.claude/skills/reviewing-bd-leaks/SKILL.md
+
   claude_agent_rust_spec_reviewer:
     src: claude/agents/rust-spec-reviewer.md
     dst: ~/.claude/agents/rust-spec-reviewer.md
@@ -96,6 +100,10 @@ tracked_files:
   claude_agent_rust_specifics_reviewer:
     src: claude/agents/rust-specifics-reviewer.md
     dst: ~/.claude/agents/rust-specifics-reviewer.md
+
+  claude_agent_bd_leak_reviewer:
+    src: claude/agents/bd-leak-reviewer.md
+    dst: ~/.claude/agents/bd-leak-reviewer.md
 
   claude_session_flow_skill:
     src: claude/skills/session-flow/SKILL.md
@@ -188,6 +196,7 @@ profiles:
     - claude_skill_reviewing_claude_md
     - claude_skill_reviewing_markdown
     - claude_skill_reviewing_rust_code
+    - claude_skill_reviewing_bd_leaks
     - claude_agent_python_spec_reviewer
     - claude_agent_python_substance_reviewer
     - claude_agent_python_specifics_reviewer
@@ -202,6 +211,7 @@ profiles:
     - claude_agent_rust_spec_reviewer
     - claude_agent_rust_substance_reviewer
     - claude_agent_rust_specifics_reviewer
+    - claude_agent_bd_leak_reviewer
     - vscode_serv_settings
     - vscode_workstation_settings
     # ─── Plugins (marketplace-sourced; offline via local-clone) ───

@@ -17,7 +17,7 @@ Artifacts in scope:
 - `docs/**/*.md`, `CHANGELOG.md`, ADRs.
 - Any other `.md` file outside `tracked/claude/`.
 
-For mixed-artifact PRs (Python + generic .md, or tracked/claude/ .md + generic .md), invoke `reviewing-markdown` alongside `reviewing-python-code` and/or `reviewing-claude-md` via separate Skill invocations.
+For mixed-artifact PRs (Python + generic .md, or tracked/claude/ .md + generic .md), invoke `reviewing-markdown` alongside `reviewing-python-code` and/or `reviewing-claude-md` via separate Skill invocations. Regardless of artifact mix, `reviewing-bd-leaks` ALSO runs in parallel (task-tracker-leak scan over all file types) — leak-checking is not this fan's job.
 
 ## Dispatch inputs
 
