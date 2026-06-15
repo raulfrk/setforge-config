@@ -28,7 +28,7 @@ If no `.md` files OUTSIDE `tracked/claude/` appear in `changed_files`, return: `
 
 Your aspects to check (the imperative-voice convention enforced across the CLAUDE.md `## Communication` section is the source of truth; fetched exemplars are advisory):
 
-1. **Factual correctness vs. underlying code / context** — every claim about commands, flags, file paths, or behavior must match the referenced artifact. False claims (e.g. README references a `--foo` flag the CLI doesn't define) are CRITICAL.
+1. **Factual correctness vs. underlying code / context** — every claim about commands, flags, file paths, or behavior must match the referenced artifact. False claims (e.g. README references a `--foo` flag the CLI doesn't define) are CRITICAL. When a terminal/TUI mockup cites a renderer (or documents an interactive prompt's options), open that renderer and diff the shown option labels AND their count one-by-one against the source — a plausible-but-fabricated option set is the likely defect, and a citation/path-existence check alone will not catch it. CRITICAL.
 2. **Verbosity / bloat** — per CLAUDE.md tone rules, flag meandering paragraphs, restated context, multi-clause hedging, or anything that buries the lead. IMPORTANT.
 3. **Clarity** — unclear, ambiguous, jargon-heavy, or hedging wording a careful reader would stumble on. IMPORTANT.
 
@@ -45,6 +45,7 @@ Definition of done:
 
 - [ ] Read each changed `.md` file outside `tracked/claude/` end-to-end.
 - [ ] For every claim about commands / flags / paths / behavior, opened the referenced code or config and verified.
+- [ ] For each terminal/TUI mockup that cites a renderer, diffed its option labels + count against the cited source.
 - [ ] Flagged verbosity against CLAUDE.md tone rules.
 - [ ] Flagged clarity / hedging / jargon issues.
 - [ ] If `research_online: true`, fetched at least one genre exemplar; otherwise noted skip.

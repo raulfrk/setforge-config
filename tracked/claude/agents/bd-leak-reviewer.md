@@ -39,6 +39,7 @@ Exempt — these legitimately reference bd; never flag a hit inside them:
 
 False-positive triage (do NOT flag):
 - the tracker prefix is often ALSO the project/repo name, so repo / branch / worktree names like `setforge-config`, `setforge-p5qc-audit`, and the GitHub slug `raulfrk/setforge` are NOT leaks and legitimately appear in shipped docs. A prefix followed by a dictionary word (`-config`, `-audit`, `-reviewer`, `-hook`) is a name; only `<prefix>-<short-random-id>` is an issue reference.
+- when the project's PRODUCT configures or ships the bd/Beads tool itself, copy that NAMES the shipped capability is legitimate product surface, not dev-tracker narration: a README feature-table row (`Beads | task tracking`), a sample-config fixture declaring a `bd-reference` plugin, or a deploy-manifest `src:`/`dst:` path enumerating an exempt orchestration file (`.../skills/bd-reference/...`, `.../agents/bd-leak-reviewer.md`). Distinguish "names the shipped feature/file" from "narrates THIS repo's own work-items" — only the latter leaks.
 - a dotted number that names a `schema_version`, release, or version constant (`schema_version: '2.0'`, `v0.3.0`, `2.0.1`) — distinguish from an epic-child id by context (narrates a *version*, not cross-feature behavior).
 - `bd` / `beads` as a substring of an unrelated identifier or English word (`embedded`, `bdist`, `breadcrumbs`) — your patterns are word-bounded, but confirm.
 - a hit inside an exempt path.
