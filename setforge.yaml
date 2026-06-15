@@ -2,8 +2,7 @@ version: 1
 
 # ============================================================================
 # Tracked files. Profiles below pick subsets via `tracked_files:` lists. `src` is
-# resolved relative to `tracked/`; `dst` may use Jinja2 templating when
-# `template: true` (only `{{ vscode_user_dir }}` is exposed today).
+# resolved relative to `tracked/`; `dst` is the deploy path on the host.
 # ============================================================================
 tracked_files:
   claude_md:
@@ -16,10 +15,6 @@ tracked_files:
   claude_bd_skill:
     src: claude/skills/bd-reference/SKILL.md
     dst: ~/.claude/skills/bd-reference/SKILL.md
-
-  claude_challenge_skill:
-    src: claude/skills/challenge/SKILL.md
-    dst: ~/.claude/skills/challenge/SKILL.md
 
   claude_wt_skill:
     src: claude/skills/wt-reference/SKILL.md
@@ -117,35 +112,6 @@ tracked_files:
     src: claude/skills/pickup/SKILL.md
     dst: ~/.claude/skills/pickup/SKILL.md
 
-  vscode_serv_settings:
-    src: vscode/vm/settings.json
-    dst: ~/.vscode-server/data/Machine/settings.json
-    spans:
-    - anchor: claudeCode.allowDangerouslySkipPermissions
-      kind: pinned
-      semantics: host-local
-    - anchor: claudeCode.initialPermissionMode
-      kind: pinned
-      semantics: host-local
-    - anchor: editor.fontSize
-      kind: pinned
-      semantics: host-local
-    - anchor: '[python] > editor.fontSize'
-      kind: pinned
-      semantics: host-local
-    disposition: forked
-  vscode_workstation_settings:
-    src: vscode/workstation/settings.json
-    dst: "{{ vscode_user_dir }}/settings.json"
-    template: true
-    spans:
-    - anchor: claudeCode.allowDangerouslySkipPermissions
-      kind: pinned
-      semantics: host-local
-    - anchor: claudeCode.initialPermissionMode
-      kind: pinned
-      semantics: host-local
-    disposition: forked
 marketplaces:
   claude-plugins-official:
     source: github
@@ -191,7 +157,6 @@ profiles:
     - claude_pickup_skill
     - claude_bd_skill
     - claude_wt_skill
-    - claude_challenge_skill
     - claude_skill_reviewing_python_code
     - claude_skill_reviewing_claude_md
     - claude_skill_reviewing_markdown
@@ -212,29 +177,11 @@ profiles:
     - claude_agent_rust_substance_reviewer
     - claude_agent_rust_specifics_reviewer
     - claude_agent_bd_leak_reviewer
-    - vscode_serv_settings
-    - vscode_workstation_settings
     # ─── Plugins (marketplace-sourced; offline via local-clone) ───
     claude_plugins:
     - superpowers
     - wiki
     - revdiff
     - revdiff-planning
-    # ─── VS Code extensions ───
-    extensions:
-      include:
-      - anthropic.claude-code
-      - charliermarsh.ruff
-      - esbenp.prettier-vscode
-      - github.copilot-chat
-      - gruntfuggly.todo-tree
-      - mhutchie.git-graph
-      - ms-python.debugpy
-      - ms-python.python
-      - ms-python.vscode-pylance
-      - ms-python.vscode-python-envs
-      - redhat.vscode-yaml
-      - streetsidesoftware.code-spell-checker
-      - tamasfe.even-better-toml
 schema_version: '2.0'
 minimum_version: '2.0'
