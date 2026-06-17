@@ -40,11 +40,15 @@ Invoke `superpowers:brainstorming`. Explore intent, requirements, constraints wi
 
 ### Phase 2 — Spec via plan mode
 
+When the brainstorm design converges, the FIRST action of Phase 2 is
+`EnterPlanMode` — BEFORE drafting any spec text; the verbatim spec is written
+into the plan file, never a standalone temp file.
+
 `EnterPlanMode`. Open the plan with the PART-0 decision layer from the
 "Presentation contract" section below (decision ledger + pictures + cut
 line); it REPLACES the older plain-language summary section. Then write
 the spec VERBATIM into the plan body below the cut line — no summarizing
-or reflowing the spec ITSELF. User reviews via revdiff (plan-review hook fires automatically). For a multi-bead session this is ONE combined spec covering all beads.
+or reflowing the spec ITSELF. User reviews via revdiff (plan-review hook fires automatically) — do NOT open revdiff on a spec file MANUALLY: the spec lives in the plan file and revdiff is reached via the plan-review hook on `ExitPlanMode`. If you used manual revdiff for design exploration during the Phase-1 brainstorm, transition to plan mode the moment the design converges; manual-revdiff-on-a-spec is the tell that you skipped `EnterPlanMode`. For a multi-bead session this is ONE combined spec covering all beads.
 
 On approval:
 - **Carve** the combined spec into each selected bead's own `--design` / `--acceptance`. Each bead keeps an independent, self-runnable contract (a carved bead's acceptance must not depend on a sibling being merged first unless a real bd dep exists). The bd issue is the durable contract; the spec file is a historical snapshot.
