@@ -36,6 +36,13 @@ Invoke `superpowers:brainstorming`. Explore intent, requirements, constraints wi
 3. Give a one-line recommendation on whether the task is complex enough to warrant the goal.
 4. **END THE TURN.** Do NOT proceed to clarifying questions, and do NOT call `EnterPlanMode`, until the user has set or declined the goal. `/goal` is user-typed in an interactive TUI — you cannot invoke it; you surface the sentence, then stop so the user can paste it. Surfacing it mid-turn and continuing in the same turn defeats the evaluator (it engages only between turns).
 
+**Brainstorm technique for complex / open-ended designs (brain-dump → elicit → mockup).** When scope is large or the user is still figuring requirements out, do NOT open with a question barrage — it converges prematurely and reads as an interrogation. Instead:
+1. **Brain-dump first.** Invite the user to dump freely — vision, components, constraints, non-goals — in their own order, before any structured questions. Offer a light scaffold, but let them lead.
+2. **Actively elicit per component.** As each component surfaces, prod for the missing detail before moving on — what & why, interface/shape (config / API / CLI), behavior on the key paths, edge cases, interactions, non-goals. Do NOT let a component pass at one sentence. Once eliciting, the `AskUserQuestion`-exhaustive rule still applies — batch grounded questions, just don't revert to an opening barrage.
+3. **Mock up for alignment.** Show concrete "here's what it would look like" artifacts (mockups, CLI/API/UX sketches, diagrams) and iterate them with the user in **manual revdiff** — sanctioned design exploration, distinct from the Phase-2 spec (which lives in the plan file, reached via the plan-review hook). Abstract agreement is NOT alignment — the mockup confirms you built the same picture.
+
+**Track component state throughout** (`SETTLED` / `LEANING` / `OPEN`) so the open set is the visible work-list and shrinks each pass.
+
 **Pitfall research (before the spec).** At the end of brainstorm — before writing the Phase 2 spec — dispatch the `pitfall-researcher` agent (via the Agent tool) for each load-bearing risk dimension the work touches (concurrency, security, error-model, resource-leak, API-misuse, etc.). Its per-dimension smell/bug checklists populate the spec's "Bugs and code smells to avoid" section, which Phase 5 review then checks against. For a multi-bead session, run it once over the combined scope; dispatch multiple dimensions in parallel.
 
 ### Phase 2 — Spec via plan mode
