@@ -30,7 +30,7 @@ There is no size-based "light tier": a one-line change runs the same seven phase
 
 Invoke `superpowers:brainstorming`. Explore intent, requirements, constraints with the user. **Never assume the user's decisions — ask via AskUserQuestion for every uncertainty.** Co-author the design — surface trade-offs, ask exhaustively, ground every option in concrete context. Produces or sharpens the bd issue(s). For a multi-bead session, this is ONE combined brainstorm covering all selected beads.
 
-**Brainstorm goal (premature-convergence guard) — surface `/goal`, then END THE TURN.** For complex or multi-bead brainstorms, this is the FIRST thing you do — before grounding or any clarifying question:
+**Brainstorm goal (premature-convergence guard) — surface `/goal`, then END THE TURN.** For complex or multi-bead brainstorms, surface it once and END THE TURN so the evaluator engages. **When you surface it depends on the method:** a question-led brainstorm surfaces it FIRST (before grounding or any clarifying question); the **brain-dump-first technique** (below) surfaces it at the **clarifying-questions / convergence boundary** — *after* the brain-dump, discussion, and mockups — because surfacing it at brainstorm-start forces premature convergence (you build a strawman before the user has dumped). When you do surface it:
 1. Present the copy-paste `/goal` sentence the user can paste — e.g. *"every design ambiguity across the selected beads is resolved and no open questions remain, or stop when I say stop"* (the evaluator forces another turn whenever the design is declared done while ambiguity remains).
 2. Present the plain-brainstorm alternative.
 3. Give a one-line recommendation on whether the task is complex enough to warrant the goal.
@@ -40,6 +40,7 @@ Invoke `superpowers:brainstorming`. Explore intent, requirements, constraints wi
 1. **Brain-dump first.** Invite the user to dump freely — vision, components, constraints, non-goals — in their own order, before any structured questions. Offer a light scaffold, but let them lead.
 2. **Actively elicit per component.** As each component surfaces, prod for the missing detail before moving on — what & why, interface/shape (config / API / CLI), behavior on the key paths, edge cases, interactions, non-goals. Do NOT let a component pass at one sentence. Once eliciting, the `AskUserQuestion`-exhaustive rule still applies — batch grounded questions, just don't revert to an opening barrage.
 3. **Mock up for alignment.** Show concrete "here's what it would look like" artifacts (mockups, CLI/API/UX sketches, diagrams) and iterate them with the user in **manual revdiff** — sanctioned design exploration, distinct from the Phase-2 spec (which lives in the plan file, reached via the plan-review hook). Abstract agreement is NOT alignment — the mockup confirms you built the same picture.
+4. **Then surface `/goal`** (per *Brainstorm goal* above). The brain-dump-first method intentionally **delays the goal to here** — the clarifying-questions / convergence boundary — so it guards against declaring-done-with-ambiguity without pre-empting the dump. Surfacing it at brainstorm-start would force a strawman before the user has led.
 
 **Track component state throughout** (`SETTLED` / `LEANING` / `OPEN`) so the open set is the visible work-list and shrinks each pass.
 
