@@ -112,6 +112,10 @@ tracked_files:
     src: claude/skills/pickup/SKILL.md
     dst: ~/.claude/skills/pickup/SKILL.md
 
+  claude_web_mockup_skill:
+    src: claude/skills/web-mockup/SKILL.md
+    dst: ~/.claude/skills/web-mockup/SKILL.md
+
   # Canary degradation-probe shell snippet. Sourced (not owned) by the
   # host's ~/.zshrc + ~/.bashrc, so setforge never touches those rc files.
   claude_canary_snippet:
@@ -162,6 +166,7 @@ profiles:
     - claude_session_flow_skill
     - claude_handoff_skill
     - claude_pickup_skill
+    - claude_web_mockup_skill
     - claude_bd_skill
     - claude_wt_skill
     - claude_skill_reviewing_python_code
