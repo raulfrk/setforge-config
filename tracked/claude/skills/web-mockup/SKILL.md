@@ -46,6 +46,12 @@ Prefer **revdiff** for code diffs and plain prose review; prefer **web-mockup** 
 - **Self-contained**: inline `<style>`, no external assets (the VM has no internet/browser).
 - **Graphical over prose**: diagrams, cards, flows, colour swatches, funnels, timelines — minimise text.
 - **No tables** (hard to scan) — use cards / definition rows / flow boxes instead.
+- **Mobile-friendly (required)** — the user reviews on phone/iPad too. Include
+  `<meta name="viewport" content="width=device-width, initial-scale=1">`; make every multi-column grid
+  and side-by-side layout **collapse to one column under ~760px** (`@media(max-width:760px){…}`); avoid
+  fixed pixel widths that force horizontal scroll; keep any interactive control ≥40px tall; use `16px`
+  inputs to stop iOS focus-zoom. A sticky sidebar nav must become a top/static bar on narrow screens. The
+  injected annotation widget is already touch-sized.
 - **Number sections** so the user can reference them.
 - Each annotatable section ends with exactly: `<div class="annobar" data-section="N · Short Title"></div>`
   (unique `data-section` per section; the server wires a 💬 button + saved-note list onto each).
@@ -107,16 +113,17 @@ HOST = _choose_host()
 RUNTIME = """
 <style>
 .annobar{margin-top:14px;padding-top:12px;border-top:1px dashed #3b4261}
-.annobar button.add{background:#24283b;color:#7aa2f7;border:1px solid #3b4261;border-radius:7px;padding:5px 11px;cursor:pointer;font:13px sans-serif}
+.annobar button.add{background:#24283b;color:#7aa2f7;border:1px solid #3b4261;border-radius:8px;padding:9px 14px;cursor:pointer;font:14px sans-serif;min-height:40px}
 .annobar button.add:hover{background:#7aa2f7;color:#16161e}
 .annobox{display:none;margin-top:10px}
-.annobox textarea{width:100%;min-height:64px;background:#16161e;color:#c0caf5;border:1px solid #3b4261;border-radius:8px;padding:9px;font:13px sans-serif}
-.annobox .b{margin-top:7px;display:flex;gap:8px}
-.annobox button{background:#7aa2f7;color:#16161e;border:0;border-radius:7px;padding:6px 14px;cursor:pointer;font-weight:600}
+.annobox textarea{width:100%;min-height:72px;background:#16161e;color:#c0caf5;border:1px solid #3b4261;border-radius:8px;padding:11px;font:16px sans-serif}
+.annobox .b{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
+.annobox button{background:#7aa2f7;color:#16161e;border:0;border-radius:8px;padding:10px 18px;cursor:pointer;font:14px sans-serif;font-weight:600;min-height:40px}
 .annobox button.cancel{background:#24283b;color:#9aa5ce}
-.anno{background:#1c2333;border:1px solid #3b4261;border-left:3px solid #e0af68;border-radius:7px;padding:8px 11px;font:13px sans-serif;color:#c0caf5;margin-top:6px}
+.anno{background:#1c2333;border:1px solid #3b4261;border-left:3px solid #e0af68;border-radius:7px;padding:9px 12px;font:14px sans-serif;color:#c0caf5;margin-top:6px}
 .anno .meta{color:#565f89;font-size:11px;margin-top:3px}
-#wm-counter{position:fixed;bottom:18px;right:18px;background:#7aa2f7;color:#16161e;font-weight:700;border-radius:999px;padding:9px 16px;box-shadow:0 4px 16px #0008;font:13px sans-serif;z-index:9999}
+#wm-counter{position:fixed;bottom:14px;right:14px;background:#7aa2f7;color:#16161e;font-weight:700;border-radius:999px;padding:9px 15px;box-shadow:0 4px 16px #0008;font:13px sans-serif;z-index:9999}
+@media(max-width:600px){#wm-counter{bottom:10px;right:10px;padding:8px 12px;font-size:12px}}
 </style>
 <div id="wm-counter">0 annotations</div>
 <script>
@@ -241,5 +248,8 @@ if __name__ == "__main__":
 - **Detached run.** Always `setsid nohup … &` so the server outlives the turn. Health-check with
   `curl -s -o /dev/null -w '%{http_code}' http://<ip>:<port>/`.
 - **One page per server** (per port). To review several artifacts at once, run on different ports.
+- **Touch / mobile caveat.** The annotation widget is touch-friendly. Native HTML5 drag-and-drop does
+  **not** work on touch (iPad/phone) — if a page needs reordering, add tap controls (▲/▼ buttons) as a
+  touch fallback, or tell the user that drag-drop needs a desktop browser.
 - **Self-improvement.** If this skill ever needs more (multi-page, auth, export annotations to a file),
   capture the observation and propose a diff at a checkpoint — never expand it mid-task.
