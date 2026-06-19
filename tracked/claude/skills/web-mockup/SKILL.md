@@ -50,8 +50,11 @@ Prefer **revdiff** for code diffs and plain prose review; prefer **web-mockup** 
   `<meta name="viewport" content="width=device-width, initial-scale=1">`; make every multi-column grid
   and side-by-side layout **collapse to one column under ~760px** (`@media(max-width:760px){…}`); avoid
   fixed pixel widths that force horizontal scroll; keep any interactive control ≥40px tall; use `16px`
-  inputs to stop iOS focus-zoom. A sticky sidebar nav must become a top/static bar on narrow screens. The
-  injected annotation widget is already touch-sized.
+  inputs to stop iOS focus-zoom. A sticky sidebar nav must become a top/static bar (or horizontal scroll
+  strip) on narrow screens; add `body{overflow-x:hidden}` as a guard. The injected annotation widget is
+  already touch-sized. **Put ALL `@media` rules at the END of the stylesheet** (after the base rules) —
+  media queries don't raise specificity, so an `@media` rule placed *before* a same-selector base rule
+  silently loses the cascade and won't apply. This is the #1 reason a "responsive" page isn't.
 - **Number sections** so the user can reference them.
 - Each annotatable section ends with exactly: `<div class="annobar" data-section="N · Short Title"></div>`
   (unique `data-section` per section; the server wires a 💬 button + saved-note list onto each).
