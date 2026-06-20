@@ -27,8 +27,10 @@ _CV = threading.Condition()  # notified on every /submit — powers the /wait lo
 ROOT = os.environ.get("WEBDIFF_DIR") or os.path.expanduser("~/.local/share/webdiff")
 PAGES = os.path.join(ROOT, "pages")
 STATE = os.path.join(ROOT, "state")
+ARCHIVE = os.path.join(ROOT, "archive")
 os.makedirs(PAGES, exist_ok=True)
 os.makedirs(STATE, exist_ok=True)
+os.makedirs(ARCHIVE, exist_ok=True)
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8730
 _ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -46,13 +48,13 @@ def _tailscale_ip() -> str:
 HOST = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("WEB_MOCKUP_HOST") or _tailscale_ip()
 
 
-def _pages() -> list[dict]:
+def _list(dirpath: str) -> list[dict]:
     items = []
-    for fn in os.listdir(PAGES):
+    for fn in os.listdir(dirpath):
         if not fn.endswith(".html"):
             continue
         pid = fn[:-5]
-        path = os.path.join(PAGES, fn)
+        path = os.path.join(dirpath, fn)
         title = pid
         try:
             head = open(path, encoding="utf-8").read(4000)
@@ -64,6 +66,14 @@ def _pages() -> list[dict]:
         items.append({"id": pid, "title": title, "mtime": os.path.getmtime(path)})
     items.sort(key=lambda x: x["mtime"])
     return items
+
+
+def _pages() -> list[dict]:
+    return _list(PAGES)
+
+
+def _archived() -> list[dict]:
+    return list(reversed(_list(ARCHIVE)))  # most-recently-closed first
 
 
 def _load(path: str, default):
@@ -188,9 +198,37 @@ wdTabs();wdLoad();setInterval(wdPoll,3000);
 """.replace("%PID%", json.dumps(pid)).replace("%MTIME%", json.dumps(mtime))
 
 
-INDEX = """<!DOCTYPE html><html><head><meta charset="utf-8"><title>webdiff hub</title>
-<style>body{background:#16161e;color:#c0caf5;font:15px sans-serif;margin:0;padding:30px}code{color:#7aa2f7}</style></head>
-<body><h1>webdiff hub</h1><p>No pages yet. Drop an <code>&lt;id&gt;.html</code> into <code>%PAGES%</code>.</p></body></html>""".replace("%PAGES%", PAGES)
+INDEX = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>webdiff &mdash; all caught up</title>
+<style>
+body{background:#16161e;color:#c0caf5;font:15px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;margin:0 auto;padding:30px 20px;max-width:760px}
+h1{color:#9ece6a;font-size:24px;margin:0 0 6px} .sub{color:#9aa5ce;margin:0 0 22px}
+.h{color:#565f89;font-size:13px;margin:18px 0 8px;text-transform:uppercase;letter-spacing:.06em}
+.arow{display:flex;align-items:center;gap:10px;background:#1a1b26;border:1px solid #3b4261;border-radius:10px;padding:11px 13px;margin:8px 0}
+.arow .t{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.arow button{flex:0 0 auto;background:#7aa2f7;color:#16161e;border:0;border-radius:8px;padding:8px 14px;font:13px sans-serif;font-weight:700;cursor:pointer;min-height:38px}
+#none{color:#565f89}
+</style></head>
+<body>
+<h1>&#10003; All caught up</h1>
+<p class="sub">No open reviews. Reopen a closed one below to revisit it &mdash; and this page jumps to any new review automatically.</p>
+<div class="h">Closed reviews</div>
+<div id="arch"><span id="none">(nothing archived yet)</span></div>
+<script>
+async function load(){
+  try{const pages=await(await fetch('/pages')).json(); if(pages.length){location.href='/p/'+encodeURIComponent(pages[pages.length-1].id);return;}}catch(e){}
+  let arch=[]; try{arch=await(await fetch('/archived')).json();}catch(e){}
+  const c=document.getElementById('arch');
+  if(!arch.length){c.innerHTML='<span id="none">(nothing archived yet)</span>';return;}
+  c.innerHTML='';
+  arch.forEach(a=>{const r=document.createElement('div');r.className='arow';
+    const t=document.createElement('span');t.className='t';t.textContent=a.title;
+    const b=document.createElement('button');b.textContent='Reopen';
+    b.onclick=async()=>{await fetch('/reopen?id='+encodeURIComponent(a.id),{method:'POST'});location.href='/p/'+encodeURIComponent(a.id);};
+    r.append(t,b);c.appendChild(r);});
+}
+load();setInterval(load,4000);
+</script></body></html>"""
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -218,6 +256,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, INDEX, "text/html; charset=utf-8")
         elif u.path == "/pages":
             self._send(200, json.dumps(_pages()))
+        elif u.path == "/archived":
+            self._send(200, json.dumps(_archived()))
         elif u.path.startswith("/p/"):
             pid = u.path[3:]
             if not _ID_RE.match(pid) or not os.path.exists(os.path.join(PAGES, pid + ".html")):
@@ -284,11 +324,14 @@ class Handler(BaseHTTPRequestHandler):
             # in state/ so the agent can still read this final batch.
             src = os.path.join(PAGES, pid + ".html")
             if os.path.exists(src):
-                arch = os.path.join(ROOT, "archive")
-                os.makedirs(arch, exist_ok=True)
-                os.replace(src, os.path.join(arch, pid + ".html"))
+                os.replace(src, os.path.join(ARCHIVE, pid + ".html"))
             with _CV:
                 _CV.notify_all()
+            self._send(200, json.dumps({"ok": True}))
+        elif u.path == "/reopen":
+            src = os.path.join(ARCHIVE, pid + ".html")
+            if os.path.exists(src):
+                os.replace(src, os.path.join(PAGES, pid + ".html"))
             self._send(200, json.dumps({"ok": True}))
         elif u.path in ("/clear", "/rearm"):
             if u.path == "/clear":

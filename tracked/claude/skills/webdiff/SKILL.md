@@ -64,8 +64,10 @@ as a tab automatically. Don't spawn a per-page server.
 ## Endpoints (all keyed by page id)
 
 - `GET /` → 302 to the most-recent page · `GET /p/<id>` → the page (tab bar + annotation runtime injected) · `GET /pages` → tab list `[{id,title,mtime}]`.
-- `GET /annotations?id=<id>` · `GET /submitted?id=<id>` · `GET /wait?ids=a,b,c` (long-poll; blocks until a listed page is submitted, returns `{"id":...}` or `{"id":null}` after ~5min).
-- `POST /annotate {id,section,text}` · `POST /submit?id=<id>` · `POST /close?id=<id>` (**Submit & Close** — archive the page out of the tab bar; annotations kept for a final read) · `POST /resolve {id,section,text,ts}` (drop one handled note — each has a ✕) · `POST /clear?id=<id>` (wipe + disarm) · `POST /rearm?id=<id>` (disarm only).
+- `GET /annotations?id=<id>` · `GET /submitted?id=<id>` · `GET /wait?ids=a,b,c` (long-poll; blocks until a listed page is submitted, returns `{"id":...}` or `{"id":null}` after ~5min) · `GET /archived` → closed pages `[{id,title,mtime}]`.
+- `POST /annotate {id,section,text}` · `POST /submit?id=<id>` · `POST /close?id=<id>` (**Submit & Close** — archive the page out of the tab bar; annotations kept for a final read) · `POST /reopen?id=<id>` (restore an archived page to the tabs) · `POST /resolve {id,section,text,ts}` (drop one handled note — each has a ✕) · `POST /clear?id=<id>` (wipe + disarm) · `POST /rearm?id=<id>` (disarm only).
+
+**Empty state:** when no pages are open, `GET /` serves an "All caught up" page listing the **archived** reviews with **Reopen** buttons, and it auto-redirects to any new review that appears. So closing the last tab lands somewhere useful, not a dead end.
 
 After addressing a batch, `/clear` the page (or the user ✕'s each) so it shows a clean slate next round. If a page comes back from `/wait` but is no longer in `/pages`, the user hit **Submit & Close** — read its final notes, then `/clear` its state; it won't be a tab again.
 
