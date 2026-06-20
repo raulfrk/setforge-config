@@ -49,14 +49,18 @@ as a tab automatically. Don't spawn a per-page server.
    ```bash
    curl -s --max-time 300 "http://<ip>:8730/wait?ids=page-a,page-b,page-c"   # -> {"id":"page-a"} on Submit
    ```
-   It returns `{"id":"<which>"}` immediately on Submit, or `{"id":null}` after ~5 min idle (just re-issue —
-   one request per idle window, not a busy loop). Watch only YOUR session's page ids (the shared hub also
-   holds other sessions' pages). **Keep one `/wait` armed whenever a page is open** — finish a turn without
-   one and a Submit lands inert. (Do NOT nest it in `nohup … &` inside the bg task — run the `curl` as the
+   On Submit it returns **`{"id":"<which>", "closed":<bool>, "annotations":[...]}`** and **consumes them
+   atomically** — the notes are returned, then cleared + the flag reset server-side, so you never call a
+   separate `/annotations` or `/clear`. (`closed:true` = the user hit Submit & Close.) With `timeout=0` it
+   blocks indefinitely; otherwise `{"id":null}` after the timeout (re-issue). Watch only YOUR session's
+   page ids. **Keep one `/wait` armed whenever a page is open** — finish a turn without one and a Submit
+   lands inert. (Do NOT nest it in `nohup … &` inside the bg task — run the `curl` as the
    background task itself so it blocks and notifies on return. Never `pkill -f` a pattern that matches your
    own shell.)
-7. **Read annotations** of the submitted page: `curl -s "http://<ip>:8730/annotations?id=$HIT"` → `[{section,text,ts}]`.
-   Work each; restate + resolve. Treat `??`/"explain"/"what is" as questions (answer, optionally as a new explainer page).
+7. **Read the notes straight from the `/wait` response** (`annotations[]` — already consumed/cleared
+   server-side; no `/annotations` or `/clear` call needed). Work each; treat `??`/"explain"/"what is" as
+   questions (answer, optionally as a new explainer page). `GET /annotations?id=` still exists for a
+   non-consuming peek.
 8. **Iterate:** regenerate the page file (hub serves it live — it auto-reloads), then re-open the gate.
    **Once you've ADDRESSED the notes, use `/clear?id=<id>` (wipes them + resets the flag)** — `/rearm`
    only resets the submit flag and *keeps* the notes, so they linger and reappear on the next round (use
@@ -81,7 +85,7 @@ session must scope itself to what *it* created:
 ## Endpoints (all keyed by page id)
 
 - `GET /` → 302 to the most-recent page · `GET /p/<id>` → the page (tab bar + annotation runtime injected) · `GET /pages` → tab list `[{id,title,mtime}]`.
-- `GET /annotations?id=<id>` · `GET /submitted?id=<id>` · `GET /wait?ids=a,b,c[&timeout=<secs>]` (long-poll; blocks until a listed page is submitted, returns `{"id":...}`, or `{"id":null}` after `timeout` — default 300s, no upper cap, **`timeout=0` blocks indefinitely** until a submit. Arm with `timeout=0` (and a `curl` with no `--max-time`) to keep one wait open forever, zero re-arm churn) · `GET /archived` → closed pages `[{id,title,mtime}]`.
+- `GET /annotations?id=<id>` · `GET /submitted?id=<id>` · `GET /wait?ids=a,b,c[&timeout=<secs>]` (long-poll; blocks until a listed page is submitted, returns **`{"id","closed","annotations"}` and consumes (clears) the notes + resets the flag atomically**, or `{"id":null}` after `timeout` — default 300s, no upper cap, **`timeout=0` blocks indefinitely** until a submit. Arm with `timeout=0` (and a `curl` with no `--max-time`) for one forever-open wait, zero churn) · `GET /archived` → closed pages `[{id,title,mtime}]`.
 - `POST /annotate {id,section,text}` · `POST /submit?id=<id>` · `POST /close?id=<id>` (**Submit & Close** — archive the page out of the tab bar; annotations kept for a final read) · `POST /reopen?id=<id>` (restore an archived page to the tabs) · `POST /resolve {id,section,text,ts}` (drop one handled note — each has a ✕) · `POST /clear?id=<id>` (wipe + disarm) · `POST /rearm?id=<id>` (disarm only).
 
 **Empty state:** when no pages are open, `GET /` serves an "All caught up" page listing the **archived** reviews with **Reopen** buttons, and it auto-redirects to any new review that appears. So closing the last tab lands somewhere useful, not a dead end.

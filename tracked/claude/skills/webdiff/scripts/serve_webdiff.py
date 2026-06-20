@@ -292,7 +292,13 @@ class Handler(BaseHTTPRequestHandler):
                 while True:
                     hit = next((i for i in ids if _load(_sub(i), {"submitted": False}).get("submitted")), None)
                     if hit is not None:
-                        self._send(200, json.dumps({"id": hit}))
+                        # consume atomically: return the notes AND clear them + reset the flag,
+                        # so the caller never has to remember a separate /clear.
+                        ann = _load(_anno(hit), [])
+                        _save(_anno(hit), [])
+                        _save(_sub(hit), {"submitted": False})
+                        closed = not os.path.exists(os.path.join(PAGES, hit + ".html"))
+                        self._send(200, json.dumps({"id": hit, "closed": closed, "annotations": ann}))
                         return
                     if deadline is None:
                         _CV.wait(timeout=30)
