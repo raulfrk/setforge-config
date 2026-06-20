@@ -12,6 +12,18 @@
         ],
         "matcher": ""
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "command": "python3 \"$HOME/.claude/skills/webdiff/scripts/plan-review-webdiff-hook.py\"",
+            "type": "command",
+            "timeout": 345600
+          }
+        ]
+      }
     ]
   },
   "permissions": {
