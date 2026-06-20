@@ -44,7 +44,8 @@ as a tab automatically. Don't spawn a per-page server.
    ```
 5. **Give the user the URL** `http://<tailscale-ip>:8730/p/<id>` — tabs switch between all pages.
 6. **Wait via the `/wait` long-poll — event-driven, NOT a poll loop.** Run ONE blocking background request
-   over the whole set of this session's pages; the hub answers it the *instant* any listed page is submitted
+   over the whole set of this session's pages (or one per page — see *Multiple sessions* for the per-tab
+   shape); the hub answers it the *instant* any listed page is submitted
    (a condition variable wakes it — no timer), then your turn resumes. End the turn with:
    ```bash
    curl -s --max-time 300 "http://<ip>:8730/wait?ids=page-a,page-b,page-c"   # -> {"id":"page-a"} on Submit
@@ -53,8 +54,14 @@ as a tab automatically. Don't spawn a per-page server.
    atomically** — the notes are returned, then cleared + the flag reset server-side, so you never call a
    separate `/annotations` or `/clear`. (`closed:true` = the user hit Submit & Close.) With `timeout=0` it
    blocks indefinitely; otherwise `{"id":null}` after the timeout (re-issue). Watch only YOUR session's
-   page ids. **Keep one `/wait` armed whenever a page is open** — finish a turn without one and a Submit
-   lands inert. (Do NOT nest it in `nohup … &` inside the bg task — run the `curl` as the
+   page ids. **Keep one `/wait` armed whenever a page is open — but branch on `closed` before re-arming:**
+   a plain Submit (`closed:false`) means the page is still open, so address the notes and **re-arm**; a
+   **Submit & Close** (`closed:true`) is the user's **APPROVAL — the review is concluded**: archive is
+   done server-side, so read any final notes, `/clear` its state, and do **NOT** re-arm that id (the review
+   is over; a fresh `/wait` on a closed page just blocks forever or instant-fires on a stale flag).
+   Likewise, once a review is otherwise concluded (the user signals alignment / an empty plain-Submit that
+   ends the loop), treat it like a close: stop watching, do not re-arm. Finish a turn without a wait armed
+   on a still-*open*, still-*active* page and a Submit lands inert. (Do NOT nest it in `nohup … &` inside the bg task — run the `curl` as the
    background task itself so it blocks and notifies on return. Never `pkill -f` a pattern that matches your
    own shell.)
 7. **Read the notes straight from the `/wait` response** (`annotations[]` — already consumed/cleared
@@ -78,9 +85,18 @@ session must scope itself to what *it* created:
    per-page (`annotations-<id>.json`, `submit-<id>.json`), so you never see another session's notes or
    submits (INV-5/INV-6). `/submit` does `notify_all`, which briefly wakes every waiter — but each
    re-checks only its own `ids` and returns nothing unless one of *those* flipped. No false pickup.
-3. **Keep exactly ONE `/wait` armed for your set.** Don't stack duplicates — two waiters on the same ids
-   both return the same hit and you process it twice. Before re-arming, reset your pages' flags
-   (`/rearm?id=…` each, or the task clears the fired id) so a stale `submitted:true` can't re-fire instantly.
+3. **Keep one `/wait` armed per id set — shared OR per-tab.** Two shapes both work:
+   - **Shared:** one `/wait?ids=a,b,c` over your whole set, one background task. It returns the *first*
+     page to flip and consumes only that one; re-arm to drain the next. Simplest; submits are serialized.
+   - **Per-tab:** one `/wait?ids=<single>` per page (disjoint id sets), each its own background task. A
+     multi-tab submit wakes each waiter independently — no serial drain. More concurrency-robust, more
+     tasks to track; re-arm only the tab that fired — and only if it came back `closed:false` (a
+     `closed:true` Submit & Close retires that tab; don't re-arm it).
+
+   The hazard is **two waiters on the *same* ids** — both return the same hit and you process it twice.
+   Disjoint per-tab waiters never overlap, so they're safe to run side by side. Before re-arming, reset the
+   fired page's flag (`/rearm?id=…`, or the task clears the fired id) so a stale `submitted:true` can't
+   re-fire instantly.
 
 ## Endpoints (all keyed by page id)
 

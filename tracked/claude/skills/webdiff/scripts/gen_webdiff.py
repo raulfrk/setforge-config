@@ -121,7 +121,7 @@ h2 .badge{{font-size:11px;font-weight:700;border-radius:6px;padding:2px 8px;marg
 .seam .why b{{color:#cfeeff}} .seam .why code{{color:#9ece6a}} .why-list{{margin:4px 0;padding-left:18px}} .why-list li{{margin:3px 0}}
 code{{background:var(--panel2);padding:1px 6px;border-radius:5px;font:12.5px ui-monospace,Menlo,monospace;color:#7dcfff}}
 /* GitHub-style flexbox diff */
-.dt{{margin:9px 0 4px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow-y:auto;overflow-x:hidden;max-height:75vh;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.5}}
+.dt{{margin:9px 0 4px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow-y:auto;overflow-x:hidden;max-height:75vh;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10px;line-height:1.5}}
 .dl{{display:flex;min-width:0}}
 .dl .no{{flex:0 0 auto;width:3.2ch;padding:0 6px;text-align:right;color:var(--dim);user-select:none;white-space:nowrap}}
 .dl .co{{flex:1 1 auto;min-width:0;padding:0 8px 0 4px;white-space:pre-wrap;overflow-wrap:anywhere;color:#a9b1d6}}
@@ -140,9 +140,9 @@ b{{color:#fff}} @media(max-width:760px){{.wrap{{padding:16px 12px 90px}}}}
 <h1>{html.escape(spec.get("title","webdiff"))}</h1><p class="sub">{sub}</p>
 {BODY}
 </div>
-<div id="dctl"><span style="color:#9aa5ce;font:12px sans-serif">text</span><button onclick="dz(-1)">A&minus;</button><span class="v" id="zval">13px</span><button onclick="dz(1)">A+</button></div>
+<div id="dctl"><span style="color:#9aa5ce;font:12px sans-serif">text</span><button onclick="dz(-1)">A&minus;</button><span class="v" id="zval">10px</span><button onclick="dz(1)">A+</button></div>
 <script>
-var _fs=13;
+var _fs=10;
 function dz(n){{_fs=Math.max(9,Math.min(30,_fs+n));document.querySelectorAll('.dt').forEach(function(d){{d.style.fontSize=_fs+'px';}});var v=document.getElementById('zval');if(v)v.textContent=_fs+'px';}}
 dz(0);
 </script>
