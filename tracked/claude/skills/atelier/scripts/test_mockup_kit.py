@@ -69,6 +69,8 @@ def main() -> int:
                 ck(f"@{w} device frame renders", pg.evaluate("()=>!!document.querySelector('.dev .dev-screen')"))
                 ck(f"@{w} mockup annobars injected (runtime ran on authored HTML)",
                    pg.eval_on_selector_all(".annobar .add", "e=>e.length") == 3)
+                ck(f"@{w} no overview map on a no-reviewable-section mockup (no 0/0 count)",
+                   not pg.evaluate("()=>!!document.getElementById('wd-map')"))
                 ov = pg.evaluate("()=>document.documentElement.scrollWidth-document.documentElement.clientWidth")
                 ck(f"@{w} no horizontal overflow (ov={ov})", ov <= 2)
                 pg.close()

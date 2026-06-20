@@ -288,8 +288,6 @@ function wdMap(){
   var reviewed=window.__REVIEWED__||{};
   var anchor=document.querySelector('.wrap'); if(!anchor)return;          // only on generated pages
   var bars=document.querySelectorAll('.annobar');
-  var box=document.getElementById('wd-map');
-  if(!box){box=document.createElement('div');box.id='wd-map';anchor.insertBefore(box,anchor.firstChild);}
   var done=0,total=0,items=[];
   bars.forEach(function(bar){
     var secid=bar.dataset.secid,sechash=bar.dataset.sechash,sec=bar.dataset.section||'';
@@ -300,6 +298,9 @@ function wdMap(){
     items.push({secid:secid,sec:sec,st:st});
   });
   window.__REVCOUNT__={done:done,total:total};
+  var box=document.getElementById('wd-map');
+  if(total===0){if(box)box.remove();return;}   // no reviewable sections (e.g. a mockup) -> no map, no 0/0 count
+  if(!box){box=document.createElement('div');box.id='wd-map';anchor.insertBefore(box,anchor.firstChild);}
   box.innerHTML='';
   var head=document.createElement('div');head.className='wd-map-h';
   head.textContent='Sections \\u2014 '+done+'/'+total+' reviewed';
