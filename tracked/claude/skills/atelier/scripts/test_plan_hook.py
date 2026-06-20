@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Logic tests for plan-review-webdiff-hook.py.
+"""Logic tests for plan-review-atelier-hook.py.
 
-Spins an isolated webdiff hub, drives the hook through stdin, simulates the user
+Spins an isolated atelier hub, drives the hook through stdin, simulates the user
 (annotate/submit) against the served plan page, and asserts the ask/deny contract,
 marker rollover, and revdiff-fallback delegation. The live 'only one hook fires'
 + real-ExitPlanMode check is manual (interactive) and done at the gate.
@@ -11,8 +11,8 @@ Run: python3 test_plan_hook.py   (exit 0 = all pass)
 import json, os, re, socket, subprocess, sys, tempfile, threading, time, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HOOK = os.path.join(HERE, "plan-review-webdiff-hook.py")
-SERVE = os.path.join(HERE, "serve_webdiff.py")
+HOOK = os.path.join(HERE, "plan-review-atelier-hook.py")
+SERVE = os.path.join(HERE, "serve_atelier.py")
 MARKER_RE = re.compile(r"<!--\s*previous revision:\s*(.+?)\s*-->")
 fails = []
 
@@ -38,7 +38,7 @@ def req(method, url, body=None):
 def run_hook(plan, env, simulate):
     """Run the hook with a plan; `simulate(base, page_id)` is called once the page
     appears to drive the user side. Returns (returncode, stdout, stderr)."""
-    base = env["WEBDIFF_HUB_URL"]
+    base = env["ATELIER_HUB_URL"]
     proc = subprocess.Popen([sys.executable, HOOK], stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                             env={**os.environ, **env})
@@ -70,10 +70,10 @@ def main() -> int:
     os.makedirs(os.path.join(d, "pages")); os.makedirs(os.path.join(d, "state"))
     port = free_port()
     srv = subprocess.Popen([sys.executable, SERVE, str(port), "127.0.0.1"],
-                           env=dict(os.environ, WEBDIFF_DIR=d),
+                           env=dict(os.environ, ATELIER_DIR=d),
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     base = f"http://127.0.0.1:{port}"
-    env = {"WEBDIFF_HUB_URL": base, "WEBDIFF_DIR": d, "REVIEW_SURFACE": "webdiff"}
+    env = {"ATELIER_HUB_URL": base, "ATELIER_DIR": d, "REVIEW_SURFACE": "atelier"}
     try:
         for _ in range(50):
             try:
@@ -81,7 +81,7 @@ def main() -> int:
             except Exception:
                 time.sleep(0.1)
 
-        # (1) webdiff DENY: annotate then submit -> exit 2, stderr carries notes + marker
+        # (1) atelier DENY: annotate then submit -> exit 2, stderr carries notes + marker
         def sim_annotate(b, pid):
             req("POST", b + "/annotate", json.dumps({"id": pid, "section": "1 · Plan",
                 "text": "tighten step 2", "file": "plan"}))
@@ -94,7 +94,7 @@ def main() -> int:
         ck("deny: page archived (not in tabs)", pid not in [p["id"] for p in req("GET", base + "/pages")])
         marker_path = MARKER_RE.search(se).group(1) if MARKER_RE.search(se) else None
 
-        # (2) webdiff ASK: submit with no annotation -> exit 0, permissionDecision ask
+        # (2) atelier ASK: submit with no annotation -> exit 0, permissionDecision ask
         def sim_submit(b, pid):
             req("POST", b + "/submit?id=" + pid)
         rc, so, se, pid = run_hook("# Plan2\n\nbody\n", env, sim_submit)

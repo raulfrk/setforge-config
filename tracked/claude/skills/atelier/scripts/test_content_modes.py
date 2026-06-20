@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Security + content-parity invariants for gen_webdiff.py content modes.
+"""Security + content-parity invariants for gen_atelier.py content modes.
 
-Builds an isolated temp git repo, runs gen_webdiff.py with crafted specs, and inspects
+Builds an isolated temp git repo, runs gen_atelier.py with crafted specs, and inspects
 the generated HTML. Dependency-light. Run: python3 test_content_modes.py (exit 0 = pass).
 """
 import json, os, subprocess, sys, tempfile
 
-GEN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gen_webdiff.py")
+GEN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gen_atelier.py")
 
 
 def gen(repo, blocks, **extra):

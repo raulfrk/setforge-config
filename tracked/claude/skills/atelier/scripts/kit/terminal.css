@@ -1,0 +1,24 @@
+/* Atelier kit — terminal.css
+ * A terminal-emulator look for mockup pages. Self-contained, no CDN, mobile-safe.
+ *
+ * Markup:
+ *   <div class="term">
+ *     <div class="term-bar"><i></i><i></i><i></i><span class="term-title">zsh — ~/project</span></div>
+ *     <pre class="term-body">
+ * <span class="t-prompt">~/p ❯</span> <span class="t-cmd">cargo build</span>
+ * <span class="t-ok">Compiling</span> project v0.1.0
+ * <span class="t-err">error[E0382]</span>: borrow of moved value
+ *     </pre>
+ *   </div>
+ * Colour spans: .t-prompt .t-cmd .t-ok .t-warn .t-err .t-dim .t-accent
+ */
+.term{background:#16161e;border:1px solid #3b4261;border-radius:10px;overflow:hidden;margin:10px 0;
+  box-shadow:0 8px 28px #0006;max-width:100%;font-family:ui-monospace,Menlo,Consolas,monospace}
+.term-bar{display:flex;align-items:center;gap:7px;background:#1a1b26;border-bottom:1px solid #3b4261;padding:8px 11px}
+.term-bar i{width:11px;height:11px;border-radius:50%;background:#565f89;flex:0 0 auto}
+.term-bar i:nth-child(1){background:#f7768e}.term-bar i:nth-child(2){background:#e0af68}.term-bar i:nth-child(3){background:#9ece6a}
+.term-title{margin-left:8px;color:#9aa5ce;font:12px ui-monospace,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.term-body{margin:0;padding:13px 15px;color:#c0caf5;font-size:13px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;overflow-x:auto}
+.t-prompt{color:#7aa2f7;font-weight:700}.t-cmd{color:#c0caf5}.t-ok{color:#9ece6a}.t-warn{color:#e0af68}
+.t-err{color:#f7768e;font-weight:700}.t-dim{color:#565f89}.t-accent{color:#bb9af7}
+@media(max-width:600px){.term-body{font-size:12px;padding:10px 11px}}

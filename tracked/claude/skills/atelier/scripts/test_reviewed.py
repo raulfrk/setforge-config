@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Backend regression tests for the per-section reviewed-tick.
 
-Dependency-light (urllib only); spins an isolated hub on 127.0.0.1 with a temp WEBDIFF_DIR.
+Dependency-light (urllib only); spins an isolated hub on 127.0.0.1 with a temp ATELIER_DIR.
 Run: python3 test_reviewed.py   (exit 0 = all pass)
 """
 import json, os, socket, subprocess, sys, tempfile, time, urllib.request, urllib.error
 
-SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "serve_webdiff.py")
+SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "serve_atelier.py")
 
 # A page carrying two live sections (s_a, s_b). s_ghost is deliberately NOT present, so the
 # server must prune it (orphan prune via live-secid intersection).
@@ -46,7 +46,7 @@ def main() -> int:
     open(os.path.join(d, "pages", "p.html"), "w").write(PAGE)
     port = _free_port()
     srv = subprocess.Popen([sys.executable, SCRIPT, str(port), "127.0.0.1"],
-                           env=dict(os.environ, WEBDIFF_DIR=d),
+                           env=dict(os.environ, ATELIER_DIR=d),
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     base = f"http://127.0.0.1:{port}"
     try:

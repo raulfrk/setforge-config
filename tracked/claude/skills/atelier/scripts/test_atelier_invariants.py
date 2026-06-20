@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Invariant suite for the webdiff hub. Run against an isolated test hub.
+"""Invariant suite for the atelier hub. Run against an isolated test hub.
 
 INV-1  every listed page renders 200 at /p/<id>, well-formed (exactly one </body>)
 INV-2  unknown page -> 404 ; bad id -> 400 ; malformed JSON tolerated
@@ -159,4 +159,4 @@ if fails:
     for f in fails:
         print("  -", f)
     sys.exit(1)
-print("ALL WEBDIFF INVARIANTS HOLD")
+print("ALL ATELIER INVARIANTS HOLD")

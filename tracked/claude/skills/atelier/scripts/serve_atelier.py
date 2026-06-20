@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""webdiff hub — ONE persistent server for ALL sessions. Each page is a subpath
+"""atelier hub — ONE persistent server for ALL sessions. Each page is a subpath
 (/p/<id>); a sticky tab bar switches between pages; each page has its own
 annotations + Submit flag (so the agent polls /submitted?id=<id> and auto-resumes).
 
-Pages live as <id>.html in $WEBDIFF_DIR/pages (default ~/.local/share/webdiff).
-State (annotations-<id>.json, submit-<id>.json) lives in $WEBDIFF_DIR/state.
+Pages live as <id>.html in $ATELIER_DIR/pages (default ~/.local/share/atelier).
+State (annotations-<id>.json, submit-<id>.json) lives in $ATELIER_DIR/state.
+($WEBDIFF_DIR / $WEB_MOCKUP_HOST are still read as back-compat aliases for one cycle.)
 Drop a new page file in pages/ and it appears as a tab automatically.
 
-Usage: python3 serve_webdiff.py [port] [host]   (defaults: 8730, tailscale ip)
+Usage: python3 serve_atelier.py [port] [host]   (defaults: 8730, tailscale ip)
 """
 from __future__ import annotations
 
@@ -24,14 +25,15 @@ from urllib.parse import urlparse, parse_qs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
-    from annotation_format import from_webdiff as _to_revdiff_md  # unified revdiff '## file:line (type)' format
+    from annotation_format import from_atelier as _to_revdiff_md  # unified revdiff '## file:line (type)' format
 except Exception:
     _to_revdiff_md = None
 
 _CV = threading.Condition()  # notified on every /submit — powers the /wait long-poll
 _STATE_LOCK = threading.Lock()  # guards read-modify-write of per-page state files
 
-ROOT = os.environ.get("WEBDIFF_DIR") or os.path.expanduser("~/.local/share/webdiff")
+ROOT = (os.environ.get("ATELIER_DIR") or os.environ.get("WEBDIFF_DIR")  # WEBDIFF_DIR: back-compat alias
+        or os.path.expanduser("~/.local/share/atelier"))
 PAGES = os.path.join(ROOT, "pages")
 STATE = os.path.join(ROOT, "state")
 ARCHIVE = os.path.join(ROOT, "archive")
@@ -52,7 +54,9 @@ def _tailscale_ip() -> str:
     return "127.0.0.1"
 
 
-HOST = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("WEB_MOCKUP_HOST") or _tailscale_ip()
+HOST = sys.argv[2] if len(sys.argv) > 2 else (
+    os.environ.get("ATELIER_HOST") or os.environ.get("WEB_MOCKUP_HOST")  # WEB_MOCKUP_HOST: back-compat
+    or _tailscale_ip())
 
 
 def _list(dirpath: str) -> list[dict]:
@@ -162,6 +166,9 @@ body{padding-top:54px}
 #wd-tabs #wd-close:disabled{background:#26304a;color:#7aa2f7}
 #wd-tabs .ct{flex:0 0 auto;color:#9aa5ce;font:12px sans-serif;padding:0 4px}
 #wd-tabs #wd-master{flex:0 0 auto;background:#24283b;color:#7aa2f7;border:1px solid #3b4261;border-radius:8px;padding:8px 12px;font:13px sans-serif;font-weight:700;cursor:pointer;min-height:38px}
+#wd-tabs #wd-hide{flex:0 0 auto;background:#24283b;color:#9aa5ce;border:1px solid #3b4261;border-radius:8px;padding:8px 12px;font:13px sans-serif;font-weight:700;cursor:pointer;min-height:38px}
+/* hide-annotation-chrome toggle (persisted): pristine design view — content only, no review UI */
+body.atelier-hide-anno .annobar,body.atelier-hide-anno #wd-map,body.atelier-hide-anno #wd-master,body.atelier-hide-anno #wd-mbox{display:none!important}
 #wd-mbox{display:none;position:fixed;top:53px;left:0;right:0;z-index:9999;background:#1c2333;border-bottom:1px solid #3b4261;padding:10px 12px;box-shadow:0 6px 16px #0007}
 #wd-mbox textarea{width:100%;min-height:64px;background:#16161e;color:#c0caf5;border:1px solid #3b4261;border-radius:8px;padding:10px;font:16px sans-serif}
 #wd-mbox .b{margin-top:8px;display:flex;gap:8px}
@@ -205,6 +212,8 @@ body{padding-top:54px}
 <script>
 window.__PID__=%PID%;
 window.__MTIME__=%MTIME%;
+// apply the persisted hide-annotations preference before the runtime populates any chrome (no flash)
+(function(){try{if(localStorage.getItem('atelier-hide-anno')==='1')document.body.classList.add('atelier-hide-anno');}catch(e){}})();
 async function wdTabs(){
   let pages=[]; try{pages=await(await fetch('/pages')).json();}catch(e){}
   let cnt=0; try{cnt=(await(await fetch('/annotations?id='+encodeURIComponent(__PID__))).json()).length;}catch(e){}
@@ -216,6 +225,10 @@ async function wdTabs(){
   const mb=document.createElement('button');mb.id='wd-master';mb.textContent='\\u{1F4AC} Note';
   mb.onclick=()=>{const x=document.getElementById('wd-mbox');x.style.display=x.style.display==='block'?'none':'block';if(x.style.display==='block')x.querySelector('textarea').focus();};
   bar.appendChild(mb);
+  const hb=document.createElement('button');hb.id='wd-hide';
+  const _hl=()=>{hb.textContent=document.body.classList.contains('atelier-hide-anno')?'\\u270e Show annotations':'\\u{1F441} Hide annotations';};
+  hb.onclick=()=>{const on=document.body.classList.toggle('atelier-hide-anno');try{localStorage.setItem('atelier-hide-anno',on?'1':'0');}catch(e){}_hl();};
+  _hl();bar.appendChild(hb);
   const sb=document.createElement('button');sb.id='wd-submit';sb.textContent='\\u2713 Submit';
   sb.onclick=async()=>{sb.disabled=true;sb.textContent='\\u23f3 Submitting\\u2026';await fetch('/submit?id='+encodeURIComponent(__PID__),{method:'POST'});wdPoll();};
   bar.appendChild(sb);
@@ -350,7 +363,7 @@ wdTabs();wdLoad();setInterval(wdPoll,3000);
 
 
 INDEX = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>webdiff &mdash; all caught up</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>atelier &mdash; all caught up</title>
 <style>
 body{background:#16161e;color:#c0caf5;font:15px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;margin:0 auto;padding:30px 20px;max-width:760px}
 h1{color:#9ece6a;font-size:24px;margin:0 0 6px} .sub{color:#9aa5ce;margin:0 0 22px}
@@ -565,5 +578,5 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print(f"webdiff hub at http://{HOST}:{PORT}  (pages: {PAGES})")
+    print(f"atelier hub at http://{HOST}:{PORT}  (pages: {PAGES})")
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

@@ -18,7 +18,7 @@
         "matcher": "ExitPlanMode",
         "hooks": [
           {
-            "command": "python3 \"$HOME/.claude/skills/webdiff/scripts/plan-review-webdiff-hook.py\"",
+            "command": "python3 \"$HOME/.claude/skills/atelier/scripts/plan-review-atelier-hook.py\"",
             "type": "command",
             "timeout": 345600
           }

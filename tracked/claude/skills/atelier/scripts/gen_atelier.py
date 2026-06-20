@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a webdiff page: per-section authored "why" + a GitHub-style diff rendered
+"""Generate a atelier page: per-section authored "why" + a GitHub-style diff rendered
 with a self-contained FLEXBOX renderer (line-number gutter + code), so it wraps cleanly
 on mobile (flex min-width:0 doesn't collapse like a <table>). No CDN.
 
@@ -7,7 +7,7 @@ on mobile (flex min-width:0 doesn't collapse like a <table>). No CDN.
 - WRAP toggle: code column wraps to fit width; gutter stays fixed.
 - A-/A+ zoom sets the diff font-size inline (reliable). Python syntax highlighting inline.
 
-Usage: python3 gen_webdiff.py <spec.json> <out.html>   (schema in repo SKILL.md)
+Usage: python3 gen_atelier.py <spec.json> <out.html>   (schema in repo SKILL.md)
 """
 import hashlib
 import html
@@ -351,7 +351,7 @@ sub = spec.get("sub") or (
     if RANGE else "Review — each section with its why; annotate any.")
 
 PAGE = f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>{html.escape(spec.get("title","webdiff"))}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>{html.escape(spec.get("title","atelier"))}</title>
 <style>
 :root{{--bg:#16161e;--bg2:#1a1b26;--panel:#1c2333;--panel2:#24283b;--line:#3b4261;--text:#c0caf5;--muted:#9aa5ce;--dim:#565f89;--F:#7aa2f7;--E:#9ece6a;--ok:#9ece6a;--warn:#e0af68;--why:#89ddff;}}
 *{{box-sizing:border-box}} body{{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow-x:hidden}}
@@ -404,7 +404,7 @@ summary.gsum .gh{{color:#fff}} summary.gsum .badge{{font-size:11px;font-weight:7
 #dctl .v{{color:#9aa5ce;font:12px sans-serif;min-width:34px;text-align:center}}
 b{{color:#fff}} @media(max-width:760px){{.wrap{{padding:16px 12px 90px}}}}
 </style></head><body><div class="wrap">
-<h1>{html.escape(spec.get("title","webdiff"))}</h1><p class="sub">{sub}</p>
+<h1>{html.escape(spec.get("title","atelier"))}</h1><p class="sub">{sub}</p>
 {BODY}
 </div>
 <div id="dctl"><span style="color:#9aa5ce;font:12px sans-serif">text</span><button onclick="dz(-1)">A&minus;</button><span class="v" id="zval">10px</span><button onclick="dz(1)">A+</button></div>

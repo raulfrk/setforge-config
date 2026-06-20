@@ -8,7 +8,7 @@ and file-level records. Run: python3 test_annotation_format.py (exit 0 = pass).
 import sys
 from hypothesis import given, settings, strategies as st
 
-from annotation_format import Annotation, parse, format_output, from_webdiff
+from annotation_format import Annotation, parse, format_output, from_atelier
 
 fails = []
 
@@ -54,12 +54,12 @@ def explicit():
     # empty list -> empty string
     check("empty -> ''", format_output([]) == "")
 
-    # from_webdiff: section-level note -> file-level using section label as path
-    md = from_webdiff([{"section": "1 · gen.py", "text": "looks good"}])
-    check("webdiff section -> file-level", "## 1 · gen.py (file-level)" in md and "looks good" in md)
-    # webdiff note carrying real hunk coords -> line-level
-    md = from_webdiff([{"file": "gen.py", "line": 5, "type": "+", "text": "here"}])
-    check("webdiff hunk coords -> line-level", md.splitlines()[0] == "## gen.py:5 (+)")
+    # from_atelier: section-level note -> file-level using section label as path
+    md = from_atelier([{"section": "1 · gen.py", "text": "looks good"}])
+    check("atelier section -> file-level", "## 1 · gen.py (file-level)" in md and "looks good" in md)
+    # atelier note carrying real hunk coords -> line-level
+    md = from_atelier([{"file": "gen.py", "line": 5, "type": "+", "text": "here"}])
+    check("atelier hunk coords -> line-level", md.splitlines()[0] == "## gen.py:5 (+)")
 
 
 # ---- property: parse∘format is identity ----

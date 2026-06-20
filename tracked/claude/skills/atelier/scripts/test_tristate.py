@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Backend regression tests for the submit tri-state (idle -> submitted -> working -> idle).
 
-Dependency-light (urllib only); spins an isolated hub on 127.0.0.1 with a temp WEBDIFF_DIR.
+Dependency-light (urllib only); spins an isolated hub on 127.0.0.1 with a temp ATELIER_DIR.
 Run: python3 test_tristate.py   (exit 0 = all pass)
 """
 import json, os, socket, subprocess, sys, tempfile, time, urllib.request
 
-SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "serve_webdiff.py")
+SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "serve_atelier.py")
 
 
 def _free_port():
@@ -34,7 +34,7 @@ def main() -> int:
     open(os.path.join(d, "pages", "p.html"), "w").write("<html><body>hi</body></html>")
     port = _free_port()
     srv = subprocess.Popen([sys.executable, SCRIPT, str(port), "127.0.0.1"],
-                           env=dict(os.environ, WEBDIFF_DIR=d),
+                           env=dict(os.environ, ATELIER_DIR=d),
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     base = f"http://127.0.0.1:{port}"
     try:

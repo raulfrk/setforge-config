@@ -1,0 +1,24 @@
+/* Atelier kit — browser-frame.css
+ * A browser-window chrome to wrap a sub-site / full-site mockup. Self-contained, no CDN, mobile-safe.
+ *
+ * Markup:
+ *   <div class="bf">
+ *     <div class="bf-bar">
+ *       <i></i><i></i><i></i>
+ *       <div class="bf-url">https://example.com/pricing</div>
+ *     </div>
+ *     <div class="bf-view">   <!-- your site mockup goes here, any HTML -->
+ *       ...
+ *     </div>
+ *   </div>
+ * Use .bf-view as the page canvas; style your site freely inside it.
+ */
+.bf{background:#fff;border:1px solid #3b4261;border-radius:11px;overflow:hidden;margin:10px 0;
+  box-shadow:0 10px 32px #0007;max-width:100%}
+.bf-bar{display:flex;align-items:center;gap:7px;background:#24283b;border-bottom:1px solid #3b4261;padding:9px 12px}
+.bf-bar i{width:11px;height:11px;border-radius:50%;background:#565f89;flex:0 0 auto}
+.bf-bar i:nth-child(1){background:#f7768e}.bf-bar i:nth-child(2){background:#e0af68}.bf-bar i:nth-child(3){background:#9ece6a}
+.bf-url{flex:1 1 auto;margin-left:10px;background:#16161e;color:#9aa5ce;border:1px solid #3b4261;border-radius:7px;
+  padding:6px 12px;font:12.5px ui-monospace,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bf-view{background:#fff;color:#16161e;min-height:120px;overflow-x:hidden}
+@media(max-width:600px){.bf-url{font-size:11px;padding:5px 9px}}

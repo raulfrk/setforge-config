@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared annotation format — webdiff ⇄ revdiff interchange.
+"""Shared annotation format — atelier ⇄ revdiff interchange.
 
 A faithful Python port of revdiff's annotation grammar (app/annotation/parse.go
 + store.go), so annotation bodies cross between the two review surfaces
@@ -12,13 +12,13 @@ byte-faithfully and ONE parser governs both. The header grammar (emitted by Form
 with T ∈ {"+", "-", " "}. Bodies may themselves contain "## " lines; those are
 escaped on output (one leading space) and un-escaped on parse, so the body text
 round-trips byte-for-byte — including embedded headers, multiline, and
-path-with-colon. (ts / section metadata is webdiff-only and is NOT carried in
+path-with-colon. (ts / section metadata is atelier-only and is NOT carried in
 this format — a documented loss across the surface boundary.)
 
 CLI:
     python3 annotation_format.py format < anns.json   # [{file,line,end_line,type,comment}] -> markdown
     python3 annotation_format.py parse  < anns.md      # markdown -> JSON list
-    python3 annotation_format.py from-webdiff < wd.json  # webdiff [{section,text,file?,line?,...}] -> markdown
+    python3 annotation_format.py from-atelier < wd.json  # atelier [{section,text,file?,line?,...}] -> markdown
 """
 from __future__ import annotations
 
@@ -137,8 +137,8 @@ def parse(text: str) -> list:
     return out
 
 
-def from_webdiff(items: list) -> str:
-    """Map webdiff annotations to revdiff markdown. A webdiff note is section-level,
+def from_atelier(items: list) -> str:
+    """Map atelier annotations to revdiff markdown. A atelier note is section-level,
     so it emits file-level (no :N) unless it carries explicit line/type from the real
     hunk model. `file` falls back to the section label for non-file sections."""
     anns = []
@@ -157,8 +157,8 @@ def _main(argv: list) -> int:
     data = sys.stdin.read()
     if cmd == "format":
         print(format_output(json.loads(data or "[]")), end="")
-    elif cmd == "from-webdiff":
-        print(from_webdiff(json.loads(data or "[]")), end="")
+    elif cmd == "from-atelier":
+        print(from_atelier(json.loads(data or "[]")), end="")
     elif cmd == "parse":
         print(json.dumps([a.as_dict() for a in parse(data)], ensure_ascii=False, indent=2))
     else:

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""plan-review-webdiff-hook.py — custom PreToolUse hook for ExitPlanMode.
+"""plan-review-atelier-hook.py — custom PreToolUse hook for ExitPlanMode.
 
 Owns review-surface dispatch for plan review:
-  • review-surface = webdiff (default) AND the hub is reachable/startable →
-    serve the plan as a webdiff page (plan-file render; two-file compare for the
+  • review-surface = atelier (default) AND the hub is reachable/startable →
+    serve the plan as a atelier page (plan-file render; two-file compare for the
     previous-revision rollover), block on /wait?timeout=0, and map the captured
     annotations onto the ask/deny contract (deny-with-notes / ask-when-empty).
   • review-surface = revdiff, OR no browser/hub → delegate to the revdiff-planning
@@ -16,11 +16,11 @@ Hook contract (Claude Code):
   deny  → plain text on stderr + exit 2  (tool blocked; text shown as feedback)
   ask   → JSON on stdout + exit 0        (proceed to normal confirmation)
 
-Env overrides (also used by the test harness):
-  REVIEW_SURFACE      webdiff | revdiff   (default webdiff)
-  WEBDIFF_HUB_URL     explicit hub base (e.g. http://127.0.0.1:8730); else derived
-  WEBDIFF_DIR         hub pages/state root (default ~/.local/share/webdiff)
-  WEBDIFF_PORT        hub port (default 8730)
+Env overrides (also used by the test harness; WEBDIFF_* are back-compat aliases for one cycle):
+  REVIEW_SURFACE      atelier | revdiff   (default atelier; "webdiff" also accepted)
+  ATELIER_HUB_URL     explicit hub base (e.g. http://127.0.0.1:8730); else derived
+  ATELIER_DIR         hub pages/state root (default ~/.local/share/atelier)
+  ATELIER_PORT        hub port (default 8730)
   REVDIFF_PLANNING_ROOT  override the revdiff-planning plugin root for fallback
 """
 from __future__ import annotations
@@ -69,9 +69,10 @@ def make_response(decision: str, reason: str = "") -> None:
 
 # ------------------------------- hub helpers -------------------------------
 def _hub_base() -> str:
-    if os.environ.get("WEBDIFF_HUB_URL"):
-        return os.environ["WEBDIFF_HUB_URL"].rstrip("/")
-    port = os.environ.get("WEBDIFF_PORT", "8730")
+    explicit = os.environ.get("ATELIER_HUB_URL") or os.environ.get("WEBDIFF_HUB_URL")  # WEBDIFF_*: back-compat
+    if explicit:
+        return explicit.rstrip("/")
+    port = os.environ.get("ATELIER_PORT") or os.environ.get("WEBDIFF_PORT", "8730")
     host = "127.0.0.1"
     try:
         out = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=5).stdout.split()
@@ -97,10 +98,10 @@ def ensure_hub() -> str | None:
     base = _hub_base()
     if _probe(base):
         return base
-    serve = SCRIPTS / "serve_webdiff.py"
+    serve = SCRIPTS / "serve_atelier.py"
     if not serve.exists():
         return None
-    port = os.environ.get("WEBDIFF_PORT", "8730")
+    port = os.environ.get("ATELIER_PORT") or os.environ.get("WEBDIFF_PORT", "8730")
     try:
         subprocess.Popen(
             ["setsid", "nohup", sys.executable, str(serve), port],
@@ -129,14 +130,15 @@ def _post(base: str, path: str):
 
 
 def _pages_dir() -> Path:
-    root = os.environ.get("WEBDIFF_DIR") or os.path.expanduser("~/.local/share/webdiff")
+    root = (os.environ.get("ATELIER_DIR") or os.environ.get("WEBDIFF_DIR")  # WEBDIFF_DIR: back-compat
+            or os.path.expanduser("~/.local/share/atelier"))
     d = Path(root) / "pages"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def _gen_page(spec: dict, out: Path) -> bool:
-    gen = SCRIPTS / "gen_webdiff.py"
+    gen = SCRIPTS / "gen_atelier.py"
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as sf:
         json.dump(spec, sf)
         spec_path = sf.name
@@ -168,7 +170,7 @@ def _build_spec(new_snap: Path, old_snap: Path | None) -> dict:
             "groups": [{"heading": "Plan review", "blocks": blocks}]}
 
 
-def webdiff_review(plan_content: str, base: str) -> None:
+def atelier_review(plan_content: str, base: str) -> None:
     """Serve the plan, block until Submit, then deny-with-notes or ask-when-empty.
     Exits via make_response. The page is always /close'd (archived) on the way out."""
     first_line, sep, rest = plan_content.partition("\n")
@@ -197,7 +199,7 @@ def webdiff_review(plan_content: str, base: str) -> None:
     except Exception as exc:
         page_file.unlink(missing_ok=True)
         new_snap.unlink(missing_ok=True)
-        make_response("ask", f"webdiff plan review failed ({exc}); plan not reviewed this round")
+        make_response("ask", f"atelier plan review failed ({exc}); plan not reviewed this round")
     finally:
         _post(base, "/close?id=" + page_id)         # trap: always archive the page out of the tabs
         page_file.unlink(missing_ok=True)
@@ -208,7 +210,7 @@ def webdiff_review(plan_content: str, base: str) -> None:
             old_snap.unlink(missing_ok=True)
         make_response(
             "deny",
-            "user reviewed the plan in webdiff and added annotations (revdiff markdown "
+            "user reviewed the plan in atelier and added annotations (revdiff markdown "
             "below; plan notes are section/file-level, i.e. '## <section> (file-level)'). "
             "Each carries the user's feedback.\n\n"
             f"{md}\n\n"
@@ -218,12 +220,12 @@ def webdiff_review(plan_content: str, base: str) -> None:
             "conversation (older markers belong to unrelated tasks and would diff against the "
             "wrong baseline).\n"
             f"<!-- previous revision: {new_snap} -->\n"
-            "This lets webdiff show only what changed in your revision.")
+            "This lets atelier show only what changed in your revision.")
     else:
         new_snap.unlink(missing_ok=True)
         if old_snap is not None:
             old_snap.unlink(missing_ok=True)
-        make_response("ask", "plan reviewed in webdiff, no annotations")
+        make_response("ask", "plan reviewed in atelier, no annotations")
 
 
 def _revdiff_planning_root() -> Path | None:
@@ -244,7 +246,7 @@ def delegate_to_revdiff(raw: str) -> None:
     root = _revdiff_planning_root()
     hook = root / "scripts" / "plan-review-hook.py" if root else None
     if hook is None or not hook.exists():
-        make_response("ask", "no plan-review surface available (webdiff hub down, revdiff-planning absent)")
+        make_response("ask", "no plan-review surface available (atelier hub down, revdiff-planning absent)")
     env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(root)}
     try:
         r = subprocess.run([sys.executable, str(hook)], input=raw,
@@ -271,11 +273,11 @@ def main() -> None:
     if not plan:
         make_response("ask", "no plan content in hook event")
 
-    surface = (os.environ.get("REVIEW_SURFACE") or "webdiff").strip().lower()
+    surface = (os.environ.get("REVIEW_SURFACE") or "atelier").strip().lower()
     if surface != "revdiff":
         base = ensure_hub()
         if base is not None:
-            webdiff_review(plan, base)             # exits via make_response
+            atelier_review(plan, base)             # exits via make_response
         # hub unreachable/unstartable → fall through to the revdiff fallback
     delegate_to_revdiff(raw)
 
