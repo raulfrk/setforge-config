@@ -280,16 +280,20 @@ class Handler(BaseHTTPRequestHandler):
             q = parse_qs(u.query)
             ids = [i for i in q.get("ids", [""])[0].split(",") if i and _ID_RE.match(i)]
             try:
-                to = min(max(int(q.get("timeout", ["300"])[0]), 10), 3600)
+                to = int(q.get("timeout", ["300"])[0])
             except ValueError:
                 to = 300
-            deadline = time.monotonic() + to
+            to = min(max(to, 0), 86400)  # 0 = block indefinitely until a submit
+            deadline = None if to == 0 else time.monotonic() + to
             with _CV:
                 while True:
                     hit = next((i for i in ids if _load(_sub(i), {"submitted": False}).get("submitted")), None)
                     if hit is not None:
                         self._send(200, json.dumps({"id": hit}))
                         return
+                    if deadline is None:
+                        _CV.wait(timeout=30)
+                        continue
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         self._send(200, json.dumps({"id": None}))
