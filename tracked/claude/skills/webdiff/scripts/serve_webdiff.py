@@ -136,6 +136,7 @@ async function wdTabs(){
 }
 async function wdLoad(){
   let data=[]; try{data=await(await fetch('/annotations?id='+encodeURIComponent(__PID__))).json();}catch(e){}
+  window.__NCOUNT__=data.length;
   document.querySelectorAll('.annobar').forEach(bar=>{
     const sec=bar.dataset.section||'unlabelled'; bar.innerHTML='';
     const btn=document.createElement('button');btn.className='add';btn.textContent='\\u{1F4AC} Annotate';
@@ -166,6 +167,10 @@ async function wdLoad(){
     ta.value='';box.style.display='none';wdLoad();wdTabs();};})();
 function wdPoll(){
   fetch('/pages').then(r=>r.json()).then(ps=>{var me=ps.find(p=>p.id===__PID__); if(me && me.mtime>__MTIME__+0.001){location.reload();}}).catch(function(){});
+  fetch('/annotations?id='+encodeURIComponent(__PID__)).then(r=>r.json()).then(function(data){
+    var ae=document.activeElement; if(ae&&ae.tagName==='TEXTAREA')return;  // don't disrupt typing
+    if(data.length!==window.__NCOUNT__){wdLoad();wdTabs();}                // live-refresh on clear/add/resolve
+  }).catch(function(){});
   fetch('/submitted?id='+encodeURIComponent(__PID__)).then(r=>r.json()).then(s=>{var sb=document.getElementById('wd-submit'); if(!sb)return;
     if(s.submitted){sb.disabled=true;sb.textContent='\\u23f3 Claude working\\u2026';} else if(sb.textContent.indexOf('Submitting')<0){sb.disabled=false;sb.textContent='\\u2713 Submit';}}).catch(function(){});
 }
