@@ -225,6 +225,7 @@ async function wdTabs(){
   var _h=bar.offsetHeight;
   document.body.style.paddingTop=(_h+4)+'px';  // bar may wrap to 2 rows on narrow screens
   var _mb=document.getElementById('wd-mbox'); if(_mb)_mb.style.top=_h+'px';  // note box sits below the (possibly 2-row) bar
+  wdGate();  // reflect review state on the freshly-(re)built Submit & Close button
 }
 async function wdLoad(){
   let data=[]; try{data=await(await fetch('/annotations?id='+encodeURIComponent(__PID__))).json();}catch(e){}
@@ -266,7 +267,7 @@ async function wdLoad(){
     var x=document.createElement('button');x.className='dismiss';x.textContent='\\u00d7';
     x.onclick=async()=>{await fetch('/resolve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:__PID__,ts:a.ts,section:a.section,text:a.text})});wdLoad();wdTabs();};
     var t=document.createElement('div');t.textContent=a.text;d.append(x,t);ml.append(d);});}
-  wdMap();
+  wdMap();wdGate();
 }
 function wdMap(){
   // sticky section overview map: a status dot per section (green=reviewed, amber=changed
@@ -302,6 +303,22 @@ function wdMap(){
   });
   box.appendChild(row);
   var bar=document.getElementById('wd-tabs'); if(bar)box.style.top=(bar.offsetHeight+2)+'px';
+}
+function wdGate(){
+  // close-gating: Submit & Close stays disabled until EVERY section is reviewed (count
+  // shown). Plain Submit is never gated. This gates only the page Close, never a bead merge.
+  var cb=document.getElementById('wd-close'); if(!cb)return;
+  var reviewed=window.__REVIEWED__||{};
+  var total=0,done=0;
+  document.querySelectorAll('.annobar').forEach(function(bar){
+    var secid=bar.dataset.secid,sechash=bar.dataset.sechash; if(!secid)return;
+    total++; if(reviewed[secid]===sechash)done++;
+  });
+  if(total===0){cb.disabled=false;cb.textContent='Submit & Close';cb.title='';return;}
+  var left=total-done;
+  cb.disabled=left>0;
+  cb.textContent=left>0?('Submit & Close ('+left+' left)'):'Submit & Close';
+  cb.title=left>0?(left+' section'+(left===1?'':'s')+' still need review'):'all sections reviewed';
 }
 (function(){var dz=document.getElementById('wd-dismiss');if(dz)dz.onclick=function(){window.__wddismissed=true;var ov=document.getElementById('wd-working');if(ov)ov.classList.remove('on');};})();
 (function(){var box=document.getElementById('wd-mbox');if(!box)return;
