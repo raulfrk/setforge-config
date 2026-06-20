@@ -8,13 +8,14 @@ Base directory for this skill: /home/raul/.claude/skills/session-flow
 ## Session start
 
 1. This skill loads when you invoke it — no SessionStart hook fires it; work-mode is opt-in. Also invoke `superpowers:using-superpowers` to establish skill-invocation discipline for the session.
-2. **Check for a paused handoff** → invoke the `pickup` skill. It scans `~/handoff`, path-matches open handoffs against the session's start dir, and owns the resume gate (present the matched handoff(s) + ready beads; you pick one or several; it closes the consumed handoff, claims, and enters the flow). If nothing matches it says so and falls through to fresh selection. NEVER auto-claim — the user always picks.
-3. **Select work** (no handoff, or you declined resume):
+2. **Resolve the review surface** (do this once, up front). Read the `review-surface` setting — `webdiff` (default) or `revdiff`. If unset, default to `webdiff`; if `webdiff` resolves but no browser/hub is reachable, fall back to `revdiff` (prompt only when genuinely ambiguous). Every later human review gate — Phase-1 mockup, Phase-2 plan-review, Phase-5/6 diff review, and learning mode — inherits this surface. See "Review surface" below.
+3. **Check for a paused handoff** → invoke the `pickup` skill. It scans `~/handoff`, path-matches open handoffs against the session's start dir, and owns the resume gate (present the matched handoff(s) + ready beads; you pick one or several; it closes the consumed handoff, claims, and enters the flow). If nothing matches it says so and falls through to fresh selection. NEVER auto-claim — the user always picks.
+4. **Select work** (no handoff, or you declined resume):
    - Multi-select from `bd ready`, OR the user passes bead IDs directly.
    - **One bead** → single-bead flow (Phases 1–7 over that bead).
    - **N beads** → multi-bead flow (the combined pipeline below; the gate runs ONCE over the batch).
    - If the selection mixes dependency-blocked or clearly unrelated beads → flag it, propose a grouping/sequence (or dropping some), and confirm with the user before brainstorming.
-4. **Discover the current epic** (when resuming a worktree without a fresh selection) — parse the worktree slug for the bd ID → `bd show <id>` → walk `--parent` until `type == "epic"`. Works for both layouts: a single-repo project (many epics, one DB) and a monorepo (one epic per project, one shared DB).
+5. **Discover the current epic** (when resuming a worktree without a fresh selection) — parse the worktree slug for the bd ID → `bd show <id>` → walk `--parent` until `type == "epic"`. Works for both layouts: a single-repo project (many epics, one DB) and a monorepo (one epic per project, one shared DB).
 
 ## The 7-phase flow (STRICT GATE)
 
@@ -138,6 +139,15 @@ When ON, the review step becomes a teaching protocol (per bead, parallel still a
 3. Then proceed to merge.
 
 When OFF, use the standard per-bead "review with revdiff?" ask (Phase 6).
+
+## Review surface
+
+Every human review gate — Phase-1 mockup, Phase-2 plan-review, Phase-5/6 diff review, learning mode — renders through ONE configurable surface, resolved once at session start (step 2):
+
+- **`webdiff`** (default) — a served web page over the tailnet: each change with its authored rationale beside the syntax-highlighted hunk, embedded diagrams/charts, a section overview map, per-section reviewed-ticks with close-gating, inline annotations, and a Submit button that auto-resumes you. Best when rationale-beside-code, colour, diagrams, or phone/iPad review carry the meaning.
+- **`revdiff`** — terminal TUI; the **no-browser fallback**, and the right pick for a fast in-terminal pass.
+
+The `review-surface` setting (`webdiff` | `revdiff`) is a **plain documented setting** read at session start — NOT a user-section and NOT external config. Resolution: use the set value; if unset, default to `webdiff`; if `webdiff` is selected but no browser/hub is reachable, fall back to `revdiff`. The user can override per session or per review. Both surfaces emit annotations in the same `## file:line (type)` markdown (one shared parser), so a single review can even hand off between them.
 
 ## Merge policy
 
