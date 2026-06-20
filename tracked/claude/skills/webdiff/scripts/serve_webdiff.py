@@ -264,7 +264,10 @@ class Handler(BaseHTTPRequestHandler):
         elif u.path.startswith("/p/"):
             pid = u.path[3:]
             if not _ID_RE.match(pid) or not os.path.exists(os.path.join(PAGES, pid + ".html")):
-                self._send(404, "no such page", "text/plain")
+                # archived/unknown page → send to the index (All caught up + Reopen), not a dead 404
+                self.send_response(302)
+                self.send_header("Location", "/")
+                self.end_headers()
                 return
             ppath = os.path.join(PAGES, pid + ".html")
             html = open(ppath, encoding="utf-8").read()
