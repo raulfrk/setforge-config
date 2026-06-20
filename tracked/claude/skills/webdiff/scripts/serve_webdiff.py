@@ -152,7 +152,9 @@ async function wdTabs(){
   const cb=document.createElement('button');cb.id='wd-close';cb.textContent='Submit & Close';
   cb.onclick=async()=>{cb.disabled=true;cb.textContent='\\u23f3\\u2026';await fetch('/submit?id='+encodeURIComponent(__PID__),{method:'POST'});await fetch('/close?id='+encodeURIComponent(__PID__),{method:'POST'});location.href='/';};
   bar.appendChild(cb);
-  document.body.style.paddingTop=(bar.offsetHeight+4)+'px';  // bar may wrap to 2 rows on narrow screens
+  var _h=bar.offsetHeight;
+  document.body.style.paddingTop=(_h+4)+'px';  // bar may wrap to 2 rows on narrow screens
+  var _mb=document.getElementById('wd-mbox'); if(_mb)_mb.style.top=_h+'px';  // note box sits below the (possibly 2-row) bar
 }
 async function wdLoad(){
   let data=[]; try{data=await(await fetch('/annotations?id='+encodeURIComponent(__PID__))).json();}catch(e){}
