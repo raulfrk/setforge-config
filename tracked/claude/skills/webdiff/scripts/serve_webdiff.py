@@ -169,6 +169,13 @@ body{padding-top:54px}
 .annobar button.rvw.stale{background:#3a2f1a;color:#e0af68;border-color:#e0af68}
 .seam:has(.annobar .rvw.on){border-color:#9ece6a55}
 .seam:has(.annobar .rvw.stale){border-color:#e0af6855}
+#wd-map{position:sticky;z-index:50;background:#1a1b26;border:1px solid #3b4261;border-radius:10px;padding:8px 10px;margin:0 0 14px}
+#wd-map .wd-map-h{color:#9aa5ce;font:12px sans-serif;font-weight:700;margin-bottom:6px}
+#wd-map .wd-map-row{display:flex;flex-wrap:wrap;gap:6px}
+#wd-map a.wd-dot{display:inline-flex;align-items:center;gap:5px;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9aa5ce;text-decoration:none;font:12px sans-serif;background:#24283b;border:1px solid #3b4261;border-radius:20px;padding:4px 10px;min-height:30px}
+#wd-map a.wd-dot i{flex:0 0 auto;width:9px;height:9px;border-radius:50%;background:#565f89}
+#wd-map a.wd-dot.done i{background:#9ece6a} #wd-map a.wd-dot.stale i{background:#e0af68}
+#wd-map a.wd-dot:hover{border-color:#7aa2f7;color:#c0caf5}
 .annobox{display:none;margin-top:10px}
 .annobox textarea{width:100%;min-height:72px;background:#16161e;color:#c0caf5;border:1px solid #3b4261;border-radius:8px;padding:11px;font:16px sans-serif}
 .annobox .b{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
@@ -252,6 +259,42 @@ async function wdLoad(){
     var x=document.createElement('button');x.className='dismiss';x.textContent='\\u00d7';
     x.onclick=async()=>{await fetch('/resolve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:__PID__,ts:a.ts,section:a.section,text:a.text})});wdLoad();wdTabs();};
     var t=document.createElement('div');t.textContent=a.text;d.append(x,t);ml.append(d);});}
+  wdMap();
+}
+function wdMap(){
+  // sticky section overview map: a status dot per section (green=reviewed, amber=changed
+  // since reviewed, grey=todo) + a jump link. Built from the annobars + the reviewed map.
+  var reviewed=window.__REVIEWED__||{};
+  var anchor=document.querySelector('.wrap'); if(!anchor)return;          // only on generated pages
+  var bars=document.querySelectorAll('.annobar');
+  var box=document.getElementById('wd-map');
+  if(!box){box=document.createElement('div');box.id='wd-map';anchor.insertBefore(box,anchor.firstChild);}
+  var done=0,total=0,items=[];
+  bars.forEach(function(bar){
+    var secid=bar.dataset.secid,sechash=bar.dataset.sechash,sec=bar.dataset.section||'';
+    if(!secid)return; total++;
+    var stored=reviewed[secid];
+    var st=(stored!==undefined&&stored===sechash)?'done':((stored!==undefined)?'stale':'todo');
+    if(st==='done')done++;
+    items.push({secid:secid,sec:sec,st:st});
+  });
+  window.__REVCOUNT__={done:done,total:total};
+  box.innerHTML='';
+  var head=document.createElement('div');head.className='wd-map-h';
+  head.textContent='Sections \\u2014 '+done+'/'+total+' reviewed';
+  box.appendChild(head);
+  var row=document.createElement('div');row.className='wd-map-row';
+  items.forEach(function(it){
+    var a=document.createElement('a');a.className='wd-dot '+it.st;a.href='#sec-'+it.secid;
+    var i=document.createElement('i');var s=document.createElement('span');s.textContent=it.sec;
+    a.append(i,s);
+    a.onclick=function(e){e.preventDefault();
+      var t=document.getElementById('sec-'+it.secid)||document.querySelector('[data-secid="'+it.secid+'"]');
+      if(t){var d=t.closest('details');if(d)d.open=true;t.scrollIntoView({behavior:'smooth',block:'start'});}};
+    row.appendChild(a);
+  });
+  box.appendChild(row);
+  var bar=document.getElementById('wd-tabs'); if(bar)box.style.top=(bar.offsetHeight+2)+'px';
 }
 (function(){var dz=document.getElementById('wd-dismiss');if(dz)dz.onclick=function(){window.__wddismissed=true;var ov=document.getElementById('wd-working');if(ov)ov.classList.remove('on');};})();
 (function(){var box=document.getElementById('wd-mbox');if(!box)return;

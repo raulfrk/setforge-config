@@ -227,6 +227,41 @@ def render_allfiles() -> tuple[str, bool]:
     return f'<ul class="md-ul allfiles">{rows}</ul>', truncated
 
 
+# ---------------------------------------------------------------------------
+# Visual upgrades: diff-stat charts, embedded diagrams (overview map = runtime)
+# ---------------------------------------------------------------------------
+def _diffstat(raw: str) -> tuple[int, int]:
+    add = sum(1 for ln in raw.splitlines() if ln.startswith("+") and not ln.startswith("+++"))
+    dele = sum(1 for ln in raw.splitlines() if ln.startswith("-") and not ln.startswith("---"))
+    return add, dele
+
+
+def render_diffstat(add: int, dele: int) -> str:
+    total = add + dele
+    if total == 0:
+        return ""
+    aw = round(100 * add / total)
+    return (f'<div class="dstat"><span class="dstat-n da">+{add}</span>'
+            f'<span class="dstat-bar"><span class="da" style="width:{aw}%"></span>'
+            f'<span class="dd" style="width:{100 - aw}%"></span></span>'
+            f'<span class="dstat-n dd">&minus;{dele}</span></div>')
+
+
+def render_diagram(d: dict) -> str:
+    """Embed an AUTHORED diagram. SVG is inlined (Excalidraw/mermaid should be pre-exported
+    to SVG for a real render); 'img' takes a data-URI/confined src; any other type falls back
+    to a labelled source block (no CDN, so no client-side mermaid runtime)."""
+    t = (d.get("type") or "svg").lower()
+    content = d.get("content", "")
+    if t == "svg":
+        return f'<div class="diagram">{content}</div>'
+    if t == "img":
+        return f'<div class="diagram"><img alt="diagram" src="{html.escape(d.get("src", ""))}"></div>'
+    return ('<div class="diagram"><div class="note">⟨'
+            f'{html.escape(t)} source — pre-export to SVG to render inline⟩</div>'
+            f'<pre class="md-pre">{html.escape(content)}</pre></div>')
+
+
 parts = []
 _ov_callouts = "".join(c.get("html", "") for c in spec.get("callouts", []))
 for c in spec.get("callouts", []):
@@ -235,9 +270,12 @@ parts.append(_annobar("0 · Overview", "overview", _sechash("overview", _ov_call
 
 for gi, g in enumerate(spec["groups"], 1):
     badge = f' <span class="badge {g.get("badge_cls","b1")}">{html.escape(g["badge"])}</span>' if g.get("badge") else ""
-    parts.append(f'<h2>{html.escape(g["heading"])}{badge}</h2>')
+    parts.append(f'<details class="grp" open><summary class="gsum">'
+                 f'<span class="gh">{html.escape(g["heading"])}</span>{badge}</summary>')
     if g.get("note"):
         parts.append(f'<p class="note">{g["note"]}</p>')
+    if g.get("diagram"):
+        parts.append(render_diagram(g["diagram"]))
     for blk in g["blocks"]:
         mode = blk.get("mode", "diff")
         # Defaults; each mode fills body (rendered HTML), hash_src (content fingerprint
@@ -285,19 +323,23 @@ for gi, g in enumerate(spec["groups"], 1):
                     label = path.split("/")[-1]
                 else:
                     label = blk["label"]
-                body, hash_src, ident = render_diff(raw, _lang_for(path)), raw, path
+                body = render_diffstat(*_diffstat(raw)) + render_diff(raw, _lang_for(path))
+                hash_src, ident = raw, path
         except (ValueError, OSError, KeyError) as e:
             # rejected traversal / missing file / bad spec → a VISIBLE, escaped error block
             # (never silently read or render unconfined content)
             label = blk.get("label", blk.get("file", mode))
             body = f'<div class="callout warn">cannot render ({mode}): {html.escape(str(e))}</div>'
             hash_src, ident = str(e), str(blk)
+        if blk.get("diagram"):
+            body = render_diagram(blk["diagram"]) + body
         secid = _secid(g["heading"], label, ident)
         sechash = _sechash(hash_src, label, str(why))
         parts.append(
-            f'<div class="seam"><div class="lbl">{html.escape(label)}</div>'
+            f'<div class="seam" id="sec-{secid}"><div class="lbl">{html.escape(label)}</div>'
             f'<div class="why">{why}</div>{body}'
             f'{_annobar(f"{gi} · {label}", secid, sechash)}</div>')
+    parts.append('</details>')
 
 BODY = "\n".join(parts)
 sub = spec.get("sub") or (
@@ -338,6 +380,21 @@ code{{background:var(--panel2);padding:1px 6px;border-radius:5px;font:12.5px ui-
 .md-body p{{margin:6px 0}} .md-ul{{margin:6px 0;padding-left:20px}} .md-ul li{{margin:3px 0}}
 .md-pre{{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px ui-monospace,Menlo,monospace;color:#a9b1d6}}
 .allfiles{{max-height:60vh;overflow-y:auto;font:12.5px ui-monospace,Menlo,monospace;color:#a9b1d6}}
+/* diff-stat charts */
+.dstat{{display:flex;align-items:center;gap:8px;margin:6px 0 2px;font:11px ui-monospace,Menlo,monospace}}
+.dstat-n.da{{color:#9ece6a}} .dstat-n.dd{{color:#f7768e}}
+.dstat-bar{{flex:0 0 120px;display:flex;height:9px;border-radius:4px;overflow:hidden;background:#3b4261}}
+.dstat-bar .da{{background:#9ece6a}} .dstat-bar .dd{{background:#f7768e}}
+/* embedded diagrams */
+.diagram{{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0;overflow-x:auto}}
+.diagram svg,.diagram img{{max-width:100%;height:auto}}
+/* collapsible groups */
+details.grp{{margin:18px 0 0}}
+summary.gsum{{cursor:pointer;list-style:none;font-size:17px;font-weight:700;border-bottom:1px solid var(--line);padding:8px 0 6px;margin-bottom:6px}}
+summary.gsum::-webkit-details-marker{{display:none}}
+summary.gsum::before{{content:"\\25BE  ";color:var(--dim)}}
+details.grp:not([open]) summary.gsum::before{{content:"\\25B8  "}}
+summary.gsum .gh{{color:#fff}} summary.gsum .badge{{font-size:11px;font-weight:700;border-radius:6px;padding:2px 8px;margin-left:8px;vertical-align:middle}}
 #dctl{{position:fixed;bottom:14px;right:14px;z-index:9998;display:flex;gap:6px;align-items:center;background:#1a1b26ee;border:1px solid var(--line);border-radius:10px;padding:6px}}
 #dctl button{{background:#24283b;color:#7aa2f7;border:1px solid var(--line);border-radius:7px;padding:7px 11px;font:13px sans-serif;font-weight:700;cursor:pointer;min-height:36px}}
 #dctl .v{{color:#9aa5ce;font:12px sans-serif;min-width:34px;text-align:center}}
