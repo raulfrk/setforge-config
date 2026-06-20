@@ -57,9 +57,11 @@ as a tab automatically. Don't spawn a per-page server.
    own shell.)
 7. **Read annotations** of the submitted page: `curl -s "http://<ip>:8730/annotations?id=$HIT"` → `[{section,text,ts}]`.
    Work each; restate + resolve. Treat `??`/"explain"/"what is" as questions (answer, optionally as a new explainer page).
-8. **Iterate:** regenerate the page file (hub serves it live — user reloads), then **re-arm** that page:
-   `curl -X POST "http://<ip>:8730/rearm?id=<id>"` (resets submit, keeps annotations) or `/clear?id=<id>`
-   (also wipes them). Re-launch the poller.
+8. **Iterate:** regenerate the page file (hub serves it live — it auto-reloads), then re-open the gate.
+   **Once you've ADDRESSED the notes, use `/clear?id=<id>` (wipes them + resets the flag)** — `/rearm`
+   only resets the submit flag and *keeps* the notes, so they linger and reappear on the next round (use
+   `/rearm` only when you deliberately want to keep unaddressed notes). Bake the clear into the wait task
+   (it `/clear`s the fired id after reading) so handled notes never pile up. Re-launch one `/wait`.
 
 ## Multiple sessions on the shared hub
 
