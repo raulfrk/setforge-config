@@ -20,7 +20,7 @@ from pathlib import Path
 spec = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 OUT = Path(sys.argv[2])
 REPO = spec["repo"]
-RANGE = spec["range"]
+RANGE = spec.get("range", "")  # optional: content-only pages (plan/all-files/text) need no range
 
 _KW = ("def class return if elif else for while in not and or import from as with try except finally "
        "raise yield lambda pass break continue None True False self cls async await global nonlocal "
@@ -111,6 +111,122 @@ def render_diff(raw: str, lang: str) -> str:
     return '<div class="dt">' + "".join(rows) + "</div>"
 
 
+# ---------------------------------------------------------------------------
+# Content-parity modes (context / plan / text / all-files / compare) + security
+# ---------------------------------------------------------------------------
+MAX_BYTES = 256 * 1024          # per-file read cap
+MAX_FILES = 2000                # all-files listing cap
+_ROOT = Path(REPO).resolve()
+
+
+def _confined(p: str) -> Path:
+    """Resolve p UNDER the repo root and reject any escape (.., absolute path, or a
+    symlink whose target leaves the root). resolve() collapses .. and follows symlinks,
+    so relative_to(root) is a true containment test, not a string-prefix guess."""
+    full = (_ROOT / p).resolve()
+    try:
+        full.relative_to(_ROOT)
+    except ValueError:
+        raise ValueError(f"path escapes repo root: {p!r}")
+    return full
+
+
+def _read_confined(p: str) -> tuple[str, bool]:
+    """Read a repo-confined file as display text. Returns (text, truncated).
+    Binary (NUL-sniffed) → placeholder; non-utf8 → errors='replace'; size-capped."""
+    full = _confined(p)
+    raw = full.read_bytes()
+    truncated = len(raw) > MAX_BYTES
+    raw = raw[:MAX_BYTES]
+    if b"\x00" in raw:
+        return "⟨binary file — not shown⟩", truncated
+    return raw.decode("utf-8", errors="replace"), truncated
+
+
+def _lang_for(path: str) -> str:
+    return "py" if path.endswith(".py") else ""
+
+
+def _trunc_row() -> str:
+    return ('<div class="dl meta"><span class="no"></span><span class="no"></span>'
+            '<span class="co">⟨truncated — file exceeds display cap⟩</span></div>')
+
+
+def render_file(text: str, lang: str, truncated: bool, start: int = 1) -> str:
+    """Render plain file content as a context-only listing (line gutter, no +/- diff).
+    `text` is the raw, UNESCAPED file body — _row/hl_py escape it (never join raw)."""
+    rows = [_row("ctx", str(i), str(i), " ", line, lang)
+            for i, line in enumerate(text.splitlines() or [""], start)]
+    if truncated:
+        rows.append(_trunc_row())
+    return '<div class="dt">' + "".join(rows) + "</div>"
+
+
+def render_compare(old_p: str, new_p: str, lang: str) -> str:
+    """Unified diff between two repo-confined files (difflib, never git --no-index, so
+    both paths stay confined). Content lines are escaped by render_diff."""
+    import difflib
+    o, ot = _read_confined(old_p)
+    n, nt = _read_confined(new_p)
+    raw = "\n".join(difflib.unified_diff(o.splitlines(), n.splitlines(),
+                                         fromfile=old_p, tofile=new_p, lineterm="", n=3))
+    body = render_diff(raw, lang) if raw.strip() else (
+        '<div class="dt"><div class="dl meta"><span class="no"></span><span class="no"></span>'
+        '<span class="co">⟨files identical⟩</span></div></div>')
+    return body + (_trunc_row() if (ot or nt) else "")
+
+
+_MD_H = re.compile(r"^(#{1,4})\s+(.*)$")
+_MD_FENCE = re.compile(r"^```")
+
+
+def render_markdown(text: str) -> tuple[str, str]:
+    """Minimal, SAFE markdown → HTML (everything html.escaped first, then a small set of
+    block constructs re-applied). Returns (toc_html, body_html). Used for plan-file mode."""
+    out, toc, in_code, in_list = [], [], False, False
+    for line in text.splitlines():
+        if _MD_FENCE.match(line):
+            if in_list:
+                out.append("</ul>"); in_list = False
+            out.append("</pre>" if in_code else '<pre class="md-pre">')
+            in_code = not in_code
+            continue
+        if in_code:
+            out.append(html.escape(line)); continue
+        m = _MD_H.match(line)
+        if m:
+            if in_list:
+                out.append("</ul>"); in_list = False
+            lvl = len(m.group(1)); txt = html.escape(m.group(2))
+            anchor = "h" + _sechash(line)[:8]
+            toc.append(f'<li class="toc-l{lvl}"><a href="#{anchor}">{txt}</a></li>')
+            out.append(f'<h{lvl+1} id="{anchor}" class="md-h">{txt}</h{lvl+1}>')
+            continue
+        if line.lstrip().startswith(("- ", "* ")):
+            if not in_list:
+                out.append('<ul class="md-ul">'); in_list = True
+            out.append(f"<li>{html.escape(line.lstrip()[2:])}</li>")
+            continue
+        if in_list:
+            out.append("</ul>"); in_list = False
+        out.append(f"<p>{html.escape(line)}</p>" if line.strip() else "")
+    if in_list:
+        out.append("</ul>")
+    if in_code:
+        out.append("</pre>")
+    toc_html = ('<ul class="toc">' + "".join(toc) + "</ul>") if toc else ""
+    return toc_html, "".join(out)
+
+
+def render_allfiles() -> tuple[str, bool]:
+    """List repo files (git ls-files), capped. Names only — no content read."""
+    files = subprocess.run(["git", "-C", REPO, "ls-files"],
+                           capture_output=True, text=True, check=True).stdout.splitlines()
+    truncated = len(files) > MAX_FILES
+    rows = "".join(f'<li>{html.escape(f)}</li>' for f in files[:MAX_FILES])
+    return f'<ul class="md-ul allfiles">{rows}</ul>', truncated
+
+
 parts = []
 _ov_callouts = "".join(c.get("html", "") for c in spec.get("callouts", []))
 for c in spec.get("callouts", []):
@@ -123,25 +239,70 @@ for gi, g in enumerate(spec["groups"], 1):
     if g.get("note"):
         parts.append(f'<p class="note">{g["note"]}</p>')
     for blk in g["blocks"]:
-        path = blk["file"]
-        lang = "py" if path.endswith(".py") else ""
-        raw = diff_for(path)
-        if "split" in blk or "hunks" in blk:
-            subs = blk.get("split") or blk.get("hunks")
-            why = "<ul class='why-list'>" + "".join(
-                f"<li><b>{html.escape(s['label'])}</b> — {s['why']}</li>" for s in subs) + "</ul>"
-            label = path.split("/")[-1]
-        else:
-            why, label = blk["why"], blk["label"]
-        secid = _secid(g["heading"], label, path)
-        sechash = _sechash(raw, label, str(why))
+        mode = blk.get("mode", "diff")
+        # Defaults; each mode fills body (rendered HTML), hash_src (content fingerprint
+        # basis), ident (stable secid input), label, why. `why` is AUTHORED markup (raw,
+        # like callouts) — only file/stdin CONTENT is escaped, inside the render_* helpers.
+        why = blk.get("why", "")
+        try:
+            if mode == "context":
+                path = blk["file"]
+                text, trunc = _read_confined(path)
+                label = blk.get("label", path.split("/")[-1])
+                body, hash_src, ident = render_file(text, _lang_for(path), trunc), text, path
+            elif mode == "compare":
+                old_p, new_p = blk["old"], blk["new"]
+                label = blk.get("label", f"{old_p} → {new_p}")
+                body = render_compare(old_p, new_p, _lang_for(new_p))
+                hash_src, ident = old_p + "\x00" + new_p, old_p + "\x00" + new_p
+            elif mode == "text":
+                content = str(blk.get("content", ""))
+                trunc = len(content) > MAX_BYTES
+                content = content[:MAX_BYTES]
+                label = blk.get("label", "text")
+                body, hash_src, ident = render_file(content, "", trunc), content, label
+            elif mode == "plan":
+                path = blk["file"]
+                text, trunc = _read_confined(path)
+                toc, md = render_markdown(text)
+                label = blk.get("label", path.split("/")[-1])
+                toc_block = f'<div class="toc-wrap">{toc}</div>' if toc else ""
+                body = f'{toc_block}<div class="md-body">{md}</div>' + (_trunc_row() if trunc else "")
+                hash_src, ident = text, path
+            elif mode == "all-files":
+                lst, trunc = render_allfiles()
+                label = blk.get("label", "repository files")
+                body = lst + (
+                    '<p class="note">⟨listing truncated at the file cap⟩</p>' if trunc else "")
+                hash_src, ident = "all-files", "all-files"
+            else:  # diff (default)
+                path = blk["file"]
+                raw = diff_for(path)
+                if "split" in blk or "hunks" in blk:
+                    subs = blk.get("split") or blk.get("hunks")
+                    why = "<ul class='why-list'>" + "".join(
+                        f"<li><b>{html.escape(s['label'])}</b> — {s['why']}</li>" for s in subs) + "</ul>"
+                    label = path.split("/")[-1]
+                else:
+                    label = blk["label"]
+                body, hash_src, ident = render_diff(raw, _lang_for(path)), raw, path
+        except (ValueError, OSError, KeyError) as e:
+            # rejected traversal / missing file / bad spec → a VISIBLE, escaped error block
+            # (never silently read or render unconfined content)
+            label = blk.get("label", blk.get("file", mode))
+            body = f'<div class="callout warn">cannot render ({mode}): {html.escape(str(e))}</div>'
+            hash_src, ident = str(e), str(blk)
+        secid = _secid(g["heading"], label, ident)
+        sechash = _sechash(hash_src, label, str(why))
         parts.append(
             f'<div class="seam"><div class="lbl">{html.escape(label)}</div>'
-            f'<div class="why">{why}</div>{render_diff(raw, lang)}'
+            f'<div class="why">{why}</div>{body}'
             f'{_annobar(f"{gi} · {label}", secid, sechash)}</div>')
 
 BODY = "\n".join(parts)
-sub = spec.get("sub", f"Diff <code>{html.escape(RANGE)}</code> — each change with its why; annotate either.")
+sub = spec.get("sub") or (
+    f"Diff <code>{html.escape(RANGE)}</code> — each change with its why; annotate either."
+    if RANGE else "Review — each section with its why; annotate any.")
 
 PAGE = f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>{html.escape(spec.get("title","webdiff"))}</title>
@@ -169,6 +330,14 @@ code{{background:var(--panel2);padding:1px 6px;border-radius:5px;font:12.5px ui-
 .hk{{color:#bb9af7}}.hs{{color:#e0af68}}.hc{{color:#565f89;font-style:italic}}.hn{{color:#ff9e64}}.hd{{color:#7dcfff}}
 .callout{{background:#7aa2f714;border:1px solid var(--F);border-radius:9px;padding:11px 13px;margin:10px 0;font-size:13.5px}}
 .callout.ok{{background:#9ece6a14;border-color:var(--ok)}} .callout.warn{{background:#e0af6814;border-color:var(--warn)}}
+/* content-parity modes: plan-file markdown + TOC, all-files listing */
+.toc-wrap{{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:8px 0}}
+.toc{{list-style:none;margin:0;padding:0;font-size:13px}} .toc li{{margin:2px 0}} .toc a{{color:var(--F);text-decoration:none}}
+.toc .toc-l2{{padding-left:14px}} .toc .toc-l3{{padding-left:28px}} .toc .toc-l4{{padding-left:42px}}
+.md-body{{font-size:14px;line-height:1.6;overflow-wrap:anywhere}} .md-body .md-h{{color:#fff;margin:14px 0 6px;border-bottom:1px solid var(--line);padding-bottom:3px}}
+.md-body p{{margin:6px 0}} .md-ul{{margin:6px 0;padding-left:20px}} .md-ul li{{margin:3px 0}}
+.md-pre{{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px ui-monospace,Menlo,monospace;color:#a9b1d6}}
+.allfiles{{max-height:60vh;overflow-y:auto;font:12.5px ui-monospace,Menlo,monospace;color:#a9b1d6}}
 #dctl{{position:fixed;bottom:14px;right:14px;z-index:9998;display:flex;gap:6px;align-items:center;background:#1a1b26ee;border:1px solid var(--line);border-radius:10px;padding:6px}}
 #dctl button{{background:#24283b;color:#7aa2f7;border:1px solid var(--line);border-radius:7px;padding:7px 11px;font:13px sans-serif;font-weight:700;cursor:pointer;min-height:36px}}
 #dctl .v{{color:#9aa5ce;font:12px sans-serif;min-width:34px;text-align:center}}
