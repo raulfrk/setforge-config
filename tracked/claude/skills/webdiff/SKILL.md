@@ -43,12 +43,18 @@ as a tab automatically. Don't spawn a per-page server.
    curl -sf http://<ip>:8730/pages >/dev/null || setsid nohup python3 scripts/serve_webdiff.py 8730 > /tmp/webdiff-hub.log 2>&1 < /dev/null &
    ```
 5. **Give the user the URL** `http://<tailscale-ip>:8730/p/<id>` — tabs switch between all pages.
-6. **Block on Submit, not on the user typing.** Background-poll that page's flag and end the turn:
+6. **Block on Submit, not on the user typing — and poll the WHOLE set of pages this session is reviewing,**
+   not just one (so a Submit on ANY of them reaches you, and you learn which). Watch your own page ids only
+   (don't react to other sessions' pages on the shared hub). End the turn:
    ```bash
-   until curl -s "http://<ip>:8730/submitted?id=<id>" | grep -q '"submitted": true'; do sleep 20; done; echo SUBMITTED
+   IDS="page-a page-b page-c"   # the pages THIS session opened for review
+   until for id in $IDS; do curl -s "http://<ip>:8730/submitted?id=$id" | grep -q '"submitted": true' && echo "$id"; done | grep -q .; do sleep 15; done
+   HIT=$(for id in $IDS; do curl -s "http://<ip>:8730/submitted?id=$id" | grep -q '"submitted": true' && echo "$id"; done | head -1); echo "SUBMITTED=$HIT"
    ```
-7. **Read annotations:** `curl -s "http://<ip>:8730/annotations?id=<id>"` → `[{section,text,ts}]`. Work each;
-   restate + resolve. Treat `??`/"explain"/"what is" as questions (answer, optionally as a new explainer page).
+   **Keep a poller armed whenever a page is open for the user** — if you finish a turn without one, a Submit
+   lands inert (no listener). Re-arm after every iteration.
+7. **Read annotations** of the submitted page: `curl -s "http://<ip>:8730/annotations?id=$HIT"` → `[{section,text,ts}]`.
+   Work each; restate + resolve. Treat `??`/"explain"/"what is" as questions (answer, optionally as a new explainer page).
 8. **Iterate:** regenerate the page file (hub serves it live — user reloads), then **re-arm** that page:
    `curl -X POST "http://<ip>:8730/rearm?id=<id>"` (resets submit, keeps annotations) or `/clear?id=<id>`
    (also wipes them). Re-launch the poller.
