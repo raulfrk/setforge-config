@@ -43,16 +43,18 @@ as a tab automatically. Don't spawn a per-page server.
    curl -sf http://<ip>:8730/pages >/dev/null || setsid nohup python3 scripts/serve_webdiff.py 8730 > /tmp/webdiff-hub.log 2>&1 < /dev/null &
    ```
 5. **Give the user the URL** `http://<tailscale-ip>:8730/p/<id>` — tabs switch between all pages.
-6. **Block on Submit, not on the user typing — and poll the WHOLE set of pages this session is reviewing,**
-   not just one (so a Submit on ANY of them reaches you, and you learn which). Watch your own page ids only
-   (don't react to other sessions' pages on the shared hub). End the turn:
+6. **Wait via the `/wait` long-poll — event-driven, NOT a poll loop.** Run ONE blocking background request
+   over the whole set of this session's pages; the hub answers it the *instant* any listed page is submitted
+   (a condition variable wakes it — no timer), then your turn resumes. End the turn with:
    ```bash
-   IDS="page-a page-b page-c"   # the pages THIS session opened for review
-   until for id in $IDS; do curl -s "http://<ip>:8730/submitted?id=$id" | grep -q '"submitted": true' && echo "$id"; done | grep -q .; do sleep 15; done
-   HIT=$(for id in $IDS; do curl -s "http://<ip>:8730/submitted?id=$id" | grep -q '"submitted": true' && echo "$id"; done | head -1); echo "SUBMITTED=$HIT"
+   curl -s --max-time 300 "http://<ip>:8730/wait?ids=page-a,page-b,page-c"   # -> {"id":"page-a"} on Submit
    ```
-   **Keep a poller armed whenever a page is open for the user** — if you finish a turn without one, a Submit
-   lands inert (no listener). Re-arm after every iteration.
+   It returns `{"id":"<which>"}` immediately on Submit, or `{"id":null}` after ~5 min idle (just re-issue —
+   one request per idle window, not a busy loop). Watch only YOUR session's page ids (the shared hub also
+   holds other sessions' pages). **Keep one `/wait` armed whenever a page is open** — finish a turn without
+   one and a Submit lands inert. (Do NOT nest it in `nohup … &` inside the bg task — run the `curl` as the
+   background task itself so it blocks and notifies on return. Never `pkill -f` a pattern that matches your
+   own shell.)
 7. **Read annotations** of the submitted page: `curl -s "http://<ip>:8730/annotations?id=$HIT"` → `[{section,text,ts}]`.
    Work each; restate + resolve. Treat `??`/"explain"/"what is" as questions (answer, optionally as a new explainer page).
 8. **Iterate:** regenerate the page file (hub serves it live — user reloads), then **re-arm** that page:

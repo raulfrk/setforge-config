@@ -17,8 +17,12 @@ import os
 import re
 import subprocess
 import sys
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
+
+_CV = threading.Condition()  # notified on every /submit — powers the /wait long-poll
 
 ROOT = os.environ.get("WEBDIFF_DIR") or os.path.expanduser("~/.local/share/webdiff")
 PAGES = os.path.join(ROOT, "pages")
@@ -223,6 +227,22 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps(_load(_anno(self._qs_id(u)), [])))
         elif u.path == "/submitted":
             self._send(200, json.dumps(_load(_sub(self._qs_id(u)), {"submitted": False})))
+        elif u.path == "/wait":
+            # long-poll: block until any listed page is submitted (or ~5min timeout), return its id
+            q = parse_qs(u.query)
+            ids = [i for i in q.get("ids", [""])[0].split(",") if i and _ID_RE.match(i)]
+            deadline = time.monotonic() + 300
+            with _CV:
+                while True:
+                    hit = next((i for i in ids if _load(_sub(i), {"submitted": False}).get("submitted")), None)
+                    if hit is not None:
+                        self._send(200, json.dumps({"id": hit}))
+                        return
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        self._send(200, json.dumps({"id": None}))
+                        return
+                    _CV.wait(timeout=min(remaining, 30))
         else:
             self._send(404, json.dumps({"error": "not found"}))
 
@@ -246,6 +266,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps({"ok": True, "count": len(items)}))
         elif u.path == "/submit":
             _save(_sub(pid), {"submitted": True, "ts": datetime.datetime.now().isoformat(timespec="seconds")})
+            with _CV:
+                _CV.notify_all()  # wake any /wait long-poll instantly
             self._send(200, json.dumps({"ok": True}))
         elif u.path == "/resolve":
             items = [a for a in _load(_anno(pid), []) if not (
