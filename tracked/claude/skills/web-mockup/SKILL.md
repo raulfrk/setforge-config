@@ -34,12 +34,17 @@ Prefer **revdiff** for code diffs and plain prose review; prefer **web-mockup** 
    shell command — it kills the running shell (exit 144). Stop a prior instance by pid from `ss -ltnp`.
 4. **Give the user the URL** it prints: `http://<tailscale-ip>:<port>` — reachable from any tailnet
    device (Mac, iPad). If it fell back to `127.0.0.1`, tell them to port-forward (`ssh -N -L`).
-5. **Wait** for the user to annotate and say done. Don't poll.
+5. **Block on Submit, not on the user typing.** The page has a **Submit** button (top bar) that flips a
+   server flag. Launch a background poller and end the turn — the click auto-resumes you:
+   ```bash
+   until curl -s http://<ip>:<port>/submitted | grep -q '"submitted": true'; do sleep 20; done; echo SUBMITTED
+   ```
+   (OR-in more `curl ... || curl ...` checks to watch several pages.) The user no longer has to say "annotated".
 6. **Read annotations**: `curl -s http://<ip>:<port>/annotations` (or `cat annotations.json`) →
    `[{section, text, ts}]`. Work through each section by section; restate + resolve.
 7. **Iterate**: edit the HTML file in place (the server serves it live — user just reloads). After
-   addressing a batch, **clear** the resolved ones: `curl -X POST http://<ip>:<port>/clear` (wipes all)
-   or rewrite `annotations.json` to drop addressed entries. Tell the user it's refreshed.
+   addressing a batch, **re-arm** the gate: `curl -X POST http://<ip>:<port>/rearm` (resets the submit flag,
+   keeps annotations) or `/clear` (also wipes annotations). Re-launch the poller. Tell the user it's refreshed.
 
 ## HTML contract
 
@@ -85,6 +90,7 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 PAGE = os.path.join(BASE, sys.argv[1] if len(sys.argv) > 1 else "index.html")
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8722
 STORE = os.path.join(BASE, "annotations.json")
+SUBMIT = os.path.join(BASE, "submit.json")
 
 
 def _tailscale_ip() -> str:
@@ -125,9 +131,14 @@ RUNTIME = """
 .annobox button.cancel{background:#24283b;color:#9aa5ce}
 .anno{background:#1c2333;border:1px solid #3b4261;border-left:3px solid #e0af68;border-radius:7px;padding:9px 12px;font:14px sans-serif;color:#c0caf5;margin-top:6px}
 .anno .meta{color:#565f89;font-size:11px;margin-top:3px}
+.anno button.dismiss{float:right;background:none;border:0;color:#f7768e;font-size:18px;line-height:1;cursor:pointer;padding:0 2px;margin-left:8px}
 #wm-counter{position:fixed;bottom:14px;right:14px;background:#7aa2f7;color:#16161e;font-weight:700;border-radius:999px;padding:9px 15px;box-shadow:0 4px 16px #0008;font:13px sans-serif;z-index:9999}
 @media(max-width:600px){#wm-counter{bottom:10px;right:10px;padding:8px 12px;font-size:12px}}
+#wm-bar{position:fixed;top:0;left:0;right:0;z-index:9999;background:#1a1b26;border-bottom:1px solid #3b4261;display:flex;gap:10px;align-items:center;padding:8px 14px}
+#wm-bar button{background:#9ece6a;color:#16161e;border:0;border-radius:8px;padding:9px 16px;font:14px sans-serif;font-weight:700;cursor:pointer;min-height:40px}
+#wm-bar button:disabled{background:#2c3a2a;color:#9ece6a;cursor:default}
 </style>
+<div id="wm-bar"><button id="wm-submit">&#10003; Submit &mdash; done annotating</button></div>
 <div id="wm-counter">0 annotations</div>
 <script>
 async function wmLoad(){
@@ -145,10 +156,16 @@ async function wmLoad(){
       await fetch('/annotate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({section:sec,text})});
       ta.value='';box.style.display='none';wmLoad();};
     data.filter(a=>a.section===sec).forEach(a=>{const d=document.createElement('div');d.className='anno';
-      d.innerHTML='<div></div><div class="meta"></div>';d.children[0].textContent=a.text;d.children[1].textContent=a.ts||'';list.append(d);});
+      const x=document.createElement('button');x.className='dismiss';x.title='Clear handled';x.textContent='\\u00d7';
+      x.onclick=async()=>{await fetch('/resolve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ts:a.ts,section:a.section,text:a.text})});wmLoad();};
+      const t=document.createElement('div');t.textContent=a.text;const m=document.createElement('div');m.className='meta';m.textContent=a.ts||'';
+      d.append(x,t,m);list.append(d);});
   });
   const c=document.getElementById('wm-counter');if(c)c.textContent=data.length+' annotation'+(data.length===1?'':'s');
+  document.body.style.paddingTop='52px';
 }
+const _sb=document.getElementById('wm-submit');
+if(_sb)_sb.onclick=async()=>{await fetch('/submit',{method:'POST'});_sb.disabled=true;_sb.textContent='\\u2713 Submitted \\u2014 Claude is resuming\\u2026';};
 wmLoad();
 </script>
 """
@@ -167,6 +184,21 @@ def save(items: list[dict]) -> None:
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(items, f, indent=2, ensure_ascii=False)
     os.replace(tmp, STORE)
+
+
+def load_submit() -> dict:
+    try:
+        with open(SUBMIT, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"submitted": False}
+
+
+def save_submit(obj: dict) -> None:
+    tmp = SUBMIT + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, SUBMIT)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -191,6 +223,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, html, "text/html; charset=utf-8")
         elif self.path == "/annotations":
             self._send(200, json.dumps(load()))
+        elif self.path == "/submitted":
+            self._send(200, json.dumps(load_submit()))
         else:
             self._send(404, json.dumps({"error": "not found"}))
 
@@ -213,8 +247,23 @@ class Handler(BaseHTTPRequestHandler):
             )
             save(items)
             self._send(200, json.dumps({"ok": True, "count": len(items)}))
-        elif self.path == "/clear":
-            save([])
+        elif self.path == "/submit":
+            save_submit({"submitted": True, "ts": datetime.datetime.now().isoformat(timespec="seconds")})
+            self._send(200, json.dumps({"ok": True}))
+        elif self.path == "/resolve":
+            try:
+                d = json.loads(raw or b"{}")
+            except json.JSONDecodeError:
+                self._send(400, json.dumps({"error": "bad json"}))
+                return
+            items = [a for a in load() if not (
+                a.get("ts") == d.get("ts") and a.get("section") == d.get("section") and a.get("text") == d.get("text"))]
+            save(items)
+            self._send(200, json.dumps({"ok": True, "count": len(items)}))
+        elif self.path in ("/clear", "/rearm"):
+            if self.path == "/clear":
+                save([])
+            save_submit({"submitted": False})
             self._send(200, json.dumps({"ok": True}))
         else:
             self._send(404, json.dumps({"error": "not found"}))
