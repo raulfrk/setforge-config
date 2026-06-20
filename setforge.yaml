@@ -189,8 +189,10 @@ claude_plugins:
     marketplace: llm-wiki
   revdiff:
     marketplace: revdiff
-  revdiff-planning:
-    marketplace: revdiff
+  # revdiff-planning intentionally NOT managed here: its ExitPlanMode hook would
+  # double-fire with Atelier's. setforge disables it (kept on disk so Atelier's
+  # revdiff fallback can still call its launcher script). Re-adding it here would
+  # re-enable the hook on the next install.
 
 # ============================================================================
 # Profiles. Single `debian-vm` profile serves all three Debian-VM
@@ -254,6 +256,5 @@ profiles:
     - superpowers
     - wiki
     - revdiff
-    - revdiff-planning
 schema_version: '2.0'
 minimum_version: '2.0'
