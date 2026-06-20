@@ -197,7 +197,8 @@ body.atelier-hide-anno .annobar,body.atelier-hide-anno #wd-map,body.atelier-hide
 .anno{background:#1c2333;border:1px solid #3b4261;border-left:3px solid #e0af68;border-radius:7px;padding:9px 12px;font:14px sans-serif;color:#c0caf5;margin-top:6px}
 .anno .meta{color:#565f89;font-size:11px;margin-top:3px}
 .anno button.dismiss{float:right;background:none;border:0;color:#f7768e;font-size:18px;line-height:1;cursor:pointer;padding:0 2px;margin-left:8px}
-#wd-working{position:fixed;inset:0;z-index:30000;background:rgba(22,22,30,.95);display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px}
+#wd-working{position:fixed;inset:0;z-index:9990;background:rgba(22,22,30,.95);display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px}
+/* z-index 9990 keeps the working overlay BELOW the tab bar (10000) so you can switch tabs while a page works */
 #wd-working.on{display:flex}
 #wd-working .bn{font-size:50px;animation:wdbnc 1s infinite ease-in-out}
 @keyframes wdbnc{0%,100%{transform:translateY(0)}50%{transform:translateY(-18px)}}
@@ -358,7 +359,7 @@ function wdPoll(){
     }).catch(function(){});
   }).catch(function(){});
 }
-wdTabs();wdLoad();setInterval(wdPoll,3000);
+wdTabs();wdLoad();wdPoll();setInterval(wdPoll,3000);  // wdPoll() on load re-shows the overlay immediately when returning to a still-working page
 </script>
 """.replace("%PID%", json.dumps(pid)).replace("%MTIME%", json.dumps(mtime))
 

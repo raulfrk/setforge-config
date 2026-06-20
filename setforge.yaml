@@ -160,6 +160,9 @@ tracked_files:
   claude_atelier_test_mockup_kit:
     src: claude/skills/atelier/scripts/test_mockup_kit.py
     dst: ~/.claude/skills/atelier/scripts/test_mockup_kit.py
+  claude_atelier_test_overlay:
+    src: claude/skills/atelier/scripts/test_overlay.py
+    dst: ~/.claude/skills/atelier/scripts/test_overlay.py
 
   # Canary degradation-probe shell snippet. Sourced (not owned) by the
   # host's ~/.zshrc + ~/.bashrc, so setforge never touches those rc files.
@@ -229,6 +232,7 @@ profiles:
     - claude_atelier_test_plan_hook
     - claude_atelier_test_hide_toggle
     - claude_atelier_test_mockup_kit
+    - claude_atelier_test_overlay
     - claude_bd_skill
     - claude_wt_skill
     - claude_skill_reviewing_python_code
