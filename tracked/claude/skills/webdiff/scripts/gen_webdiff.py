@@ -60,9 +60,10 @@ def _secid(*parts: str) -> str:
     return base if n == 0 else f"{base}-{n}"
 
 
-def _annobar(section: str, secid: str, sechash: str) -> str:
+def _annobar(section: str, secid: str, sechash: str, file: str = "") -> str:
+    fattr = f' data-file="{html.escape(file)}"' if file else ""
     return (f'<div class="annobar" data-section="{html.escape(section)}" '
-            f'data-secid="{html.escape(secid)}" data-sechash="{html.escape(sechash)}"></div>')
+            f'data-secid="{html.escape(secid)}" data-sechash="{html.escape(sechash)}"{fattr}></div>')
 
 
 def diff_for(path: str) -> str:
@@ -335,10 +336,11 @@ for gi, g in enumerate(spec["groups"], 1):
             body = render_diagram(blk["diagram"]) + body
         secid = _secid(g["heading"], label, ident)
         sechash = _sechash(hash_src, label, str(why))
+        secfile = blk.get("file") or blk.get("new") or ""   # for revdiff-format file-level emit
         parts.append(
             f'<div class="seam" id="sec-{secid}"><div class="lbl">{html.escape(label)}</div>'
             f'<div class="why">{why}</div>{body}'
-            f'{_annobar(f"{gi} · {label}", secid, sechash)}</div>')
+            f'{_annobar(f"{gi} · {label}", secid, sechash, secfile)}</div>')
     parts.append('</details>')
 
 BODY = "\n".join(parts)

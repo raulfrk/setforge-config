@@ -22,6 +22,12 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from annotation_format import from_webdiff as _to_revdiff_md  # unified revdiff '## file:line (type)' format
+except Exception:
+    _to_revdiff_md = None
+
 _CV = threading.Condition()  # notified on every /submit — powers the /wait long-poll
 _STATE_LOCK = threading.Lock()  # guards read-modify-write of per-page state files
 
@@ -246,7 +252,8 @@ async function wdLoad(){
     btn.onclick=()=>{box.style.display=box.style.display==='block'?'none':'block';const t=box.querySelector('textarea');if(box.style.display==='block')t.focus();};
     box.querySelector('.cancel').onclick=()=>{box.style.display='none';};
     box.querySelector('.save').onclick=async()=>{const ta=box.querySelector('textarea');const text=ta.value.trim();if(!text)return;
-      await fetch('/annotate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:__PID__,section:sec,text})});
+      const file=bar.dataset.file||'';
+      await fetch('/annotate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:__PID__,section:sec,text,file})});
       ta.value='';box.style.display='none';wdLoad();wdTabs();};
     data.filter(a=>a.section===sec).forEach(a=>{const d=document.createElement('div');d.className='anno';
       const x=document.createElement('button');x.className='dismiss';x.title='Clear handled';x.textContent='\\u00d7';
@@ -430,7 +437,10 @@ class Handler(BaseHTTPRequestHandler):
                             _save(_anno(hit), [])
                             _set_state(hit, "working")
                         closed = not os.path.exists(os.path.join(PAGES, hit + ".html"))
-                        self._send(200, json.dumps({"id": hit, "closed": closed, "annotations": ann}))
+                        resp = {"id": hit, "closed": closed, "annotations": ann}
+                        if _to_revdiff_md is not None:  # unified revdiff-format view of this batch
+                            resp["markdown"] = _to_revdiff_md(ann)
+                        self._send(200, json.dumps(resp))
                         return
                     if deadline is None:
                         _CV.wait(timeout=30)
@@ -458,8 +468,11 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/annotate":
             with _STATE_LOCK:
                 items = _load(_anno(pid), [])
-                items.append({"section": str(d.get("section", ""))[:200], "text": str(d.get("text", ""))[:5000],
-                              "ts": datetime.datetime.now().isoformat(timespec="seconds")})
+                item = {"section": str(d.get("section", ""))[:200], "text": str(d.get("text", ""))[:5000],
+                        "ts": datetime.datetime.now().isoformat(timespec="seconds")}
+                if d.get("file"):                       # carries the section's file for revdiff-format emit
+                    item["file"] = str(d.get("file"))[:400]
+                items.append(item)
                 _save(_anno(pid), items)
             self._send(200, json.dumps({"ok": True, "count": len(items)}))
         elif u.path == "/review":
