@@ -115,7 +115,7 @@ Additionally, when running non-interactively (no one is there to paste), also ru
 
 Fix ALL findings inline (CRITICAL, IMPORTANT, and MINOR) unless the fix is large or clearly out-of-scope — in that case, file a new bd with dep link. Review-fix commits stay SEPARATE — never squash into the implementation commit.
 
-**Before each bead merges, always ask WHICH review surface to use: `revdiff` (terminal TUI) or `webdiff` (served web page — each change with its authored rationale beside the syntax-highlighted hunk, inline annotations, and a Submit button that auto-resumes you).** Both are available on all hosts; pick by what the diff needs — revdiff for a fast in-terminal pass, webdiff when rationale-beside-code, colour, or phone/iPad review matters. Under an APPROVED wave plan the offers may be batched per sub-wave instead of per bead. In **learning mode** (see below), run the annotated-diff protocol instead of a plain ask.
+**Before each bead merges, offer review on the session's resolved review surface — `webdiff` by default** (served web page: each change with its authored rationale beside the syntax-highlighted hunk, a section overview map, per-section reviewed-ticks, inline annotations, and a Submit button that auto-resumes you), with **`revdiff` as the no-browser fallback** (or when you want a fast in-terminal pass). The offer reads "webdiff (default) / revdiff (no-browser fallback)"; the user may switch surfaces at the offer. Under an APPROVED wave plan the offers may be batched per sub-wave instead of per bead. In **learning mode** (see below), run the teaching protocol instead of a plain ask.
 
 This gate is MANDATORY: a clean review fan, an active review-`/goal`, and "run to merge-ready" autonomy do NOT discharge it — they cover the automated fan, while the revdiff/webdiff offer is the separate human gate that still fires before any merge. In a background session it opens in the attached tmux popup (revdiff) or over the tailnet (webdiff) — never downgrade to an inline-only proposal because the session is backgrounded. **A bead is not merge-ready until this offer has been made and resolved.**
 
@@ -134,11 +134,11 @@ Select beads → ONE combined brainstorm → ONE spec (plan mode) → carve per-
 Some projects optimize for understanding over speed. **Detection:** learning mode is **opt-in** — default to the standard flow, and offer it ("learning-focused session?") only when a project's own project-scoped instructions mark it learning-default, or the user asks. Do not auto-enable it by project name.
 
 When ON, the review step becomes a teaching protocol (per bead, parallel still allowed):
-1. Write the bead's diff to a temp file with **inline explanatory annotations** — what changed, why, and the reasoning.
-2. Open **revdiff** on that annotated diff for back-and-forth: the user asks questions until they fully understand the change and its rationale.
+1. Generate a **webdiff** page populating each section's authored **`why`** with the teaching explanation — what changed, why, and the reasoning. This is the native fit: the rationale sits beside each hunk, per section. (No-browser fallback: write the diff to a temp file with inline explanatory annotations.)
+2. Open it on the resolved surface for back-and-forth: the user annotates/asks per section until they fully understand the change and its rationale. (revdiff on the annotated temp diff is the no-browser fallback.)
 3. Then proceed to merge.
 
-When OFF, use the standard per-bead "review with revdiff?" ask (Phase 6).
+When OFF, use the standard per-bead review offer (webdiff default; Phase 6).
 
 ## Review surface
 
