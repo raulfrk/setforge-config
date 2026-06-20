@@ -206,10 +206,17 @@ body.atelier-hide-anno .annobar,body.atelier-hide-anno #wd-map,body.atelier-hide
 #wd-working .dots i:nth-child(2){animation-delay:.15s}#wd-working .dots i:nth-child(3){animation-delay:.3s}
 #wd-working .t{color:#fff;font:18px sans-serif;font-weight:700}#wd-working .s{color:#9aa5ce;font:13px sans-serif;max-width:340px;line-height:1.5}
 #wd-working .dz{margin-top:6px;background:#24283b;color:#9aa5ce;border:1px solid #3b4261;border-radius:7px;padding:6px 12px;font:12px sans-serif;cursor:pointer}
+/* minimized working pill: Dismiss collapses the overlay to this bottom bar; tap to expand. Page stays scrollable. */
+#wd-working-min{position:fixed;bottom:0;left:0;right:0;z-index:9990;display:none;align-items:center;gap:10px;background:#1a1b26;border-top:1px solid #3b4261;box-shadow:0 -4px 16px #0007;padding:9px 14px;cursor:pointer;font:13px sans-serif;color:#c0caf5}
+#wd-working-min.on{display:flex}
+#wd-working-min .bn{font-size:20px;animation:wdbnc 1s infinite ease-in-out}
+#wd-working-min .t{font-weight:700}
+#wd-working-min .exp{margin-left:auto;color:#7aa2f7;font-size:12px}
 </style>
 <div id="wd-tabs"></div>
 <div id="wd-mbox"><div id="wd-mlist"></div><textarea placeholder="Note for this whole page"></textarea><div class="b"><button class="msave">Save note</button><button class="cancel">Cancel</button></div></div>
-<div id="wd-working"><div class="bn">&#x1F916;</div><div class="dots"><i></i><i></i><i></i></div><div class="t">Claude is working&hellip;</div><div class="s">Your submit was received. This page holds until Claude finishes and re-arms, then refreshes to the updated review &mdash; no stale content.</div><button class="dz" id="wd-dismiss">Dismiss</button></div>
+<div id="wd-working"><div class="bn">&#x1F916;</div><div class="dots"><i></i><i></i><i></i></div><div class="t">Claude is working&hellip;</div><div class="s">Your submit was received. This page holds until Claude finishes and re-arms, then refreshes to the updated review &mdash; no stale content.</div><button class="dz" id="wd-dismiss">Dismiss &mdash; minimize to a bar</button></div>
+<div id="wd-working-min"><span class="bn">&#x1F916;</span><span class="t">Claude is working&hellip;</span><span class="exp">tap to expand &#x25B4;</span></div>
 <script>
 window.__PID__=%PID%;
 window.__MTIME__=%MTIME%;
@@ -335,7 +342,11 @@ function wdGate(){
   cb.textContent=left>0?('Submit & Close ('+left+' left)'):'Submit & Close';
   cb.title=left>0?(left+' section'+(left===1?'':'s')+' still need review'):'all sections reviewed';
 }
-(function(){var dz=document.getElementById('wd-dismiss');if(dz)dz.onclick=function(){window.__wddismissed=true;var ov=document.getElementById('wd-working');if(ov)ov.classList.remove('on');};})();
+(function(){var ov=document.getElementById('wd-working'),mn=document.getElementById('wd-working-min');
+  var dz=document.getElementById('wd-dismiss');
+  if(dz)dz.onclick=function(){window.__wdmin=true;if(ov)ov.classList.remove('on');if(mn)mn.classList.add('on');};   // minimize, don't hide
+  if(mn)mn.onclick=function(){window.__wdmin=false;if(mn)mn.classList.remove('on');if(ov)ov.classList.add('on');}; // tap pill -> expand
+})();
 (function(){var box=document.getElementById('wd-mbox');if(!box)return;
   box.querySelector('.cancel').onclick=function(){box.style.display='none';};
   box.querySelector('.msave').onclick=async function(){var ta=box.querySelector('textarea');var text=ta.value.trim();if(!text)return;
@@ -346,8 +357,10 @@ function wdPoll(){
   fetch('/submitted?id='+encodeURIComponent(__PID__)).then(r=>r.json()).then(function(s){
     var st=s.state||(s.submitted?'submitted':'idle');
     var working=(st==='submitted'||st==='working');
-    if(!working)window.__wddismissed=false;                                   // re-arm the overlay for next round
-    var ov=document.getElementById('wd-working'); if(ov)ov.classList.toggle('on',working&&!window.__wddismissed);
+    if(!working)window.__wdmin=false;                                         // working ended -> reset minimize state
+    var ov=document.getElementById('wd-working'); var mn=document.getElementById('wd-working-min');
+    if(ov)ov.classList.toggle('on',working&&!window.__wdmin);                 // full overlay unless minimized
+    if(mn)mn.classList.toggle('on',working&&!!window.__wdmin);                // minimized pill when working + minimized
     var sb=document.getElementById('wd-submit');
     if(sb){if(working){sb.disabled=true;sb.textContent='\\u23f3 Claude working\\u2026';}
       else if(sb.textContent.indexOf('Submitting')<0){sb.disabled=false;sb.textContent='\\u2713 Submit';}}

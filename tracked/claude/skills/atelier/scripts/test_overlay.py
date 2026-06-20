@@ -62,6 +62,18 @@ def main() -> int:
                pg.evaluate("""()=>{var t=document.querySelector('#wd-tabs .tab');if(!t)return false;
                  var r=t.getBoundingClientRect();var el=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
                  return !!(el&&el.closest('#wd-tabs'));}"""))
+            # Dismiss -> minimize: full overlay hides, bottom pill shows, page scrollable
+            onfull = lambda: pg.evaluate("()=>document.getElementById('wd-working').classList.contains('on')")
+            onmin = lambda: pg.evaluate("()=>document.getElementById('wd-working-min').classList.contains('on')")
+            pg.evaluate("()=>document.getElementById('wd-dismiss').click()"); pg.wait_for_timeout(200)
+            ck("dismiss -> full overlay hidden", not onfull())
+            ck("dismiss -> minimized pill shown", onmin())
+            ck("minimized pill does not cover the page (scrollable)",
+               pg.evaluate("""()=>{var m=document.getElementById('wd-working-min');var r=m.getBoundingClientRect();
+                 var el=document.elementFromPoint(window.innerWidth/2, r.top-40);return !(el&&el.id==='wd-working');}"""))
+            # tap pill -> expand back to full overlay
+            pg.evaluate("()=>document.getElementById('wd-working-min').click()"); pg.wait_for_timeout(200)
+            ck("tap pill -> overlay expanded", onfull() and not onmin())
             # clear -> idle -> reload -> overlay gone
             req("POST", base + "/clear?id=p")
             pg.goto(f"{base}/p/p", wait_until="networkidle", timeout=30000); pg.wait_for_timeout(700)
