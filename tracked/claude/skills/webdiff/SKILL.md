@@ -61,6 +61,21 @@ as a tab automatically. Don't spawn a per-page server.
    `curl -X POST "http://<ip>:8730/rearm?id=<id>"` (resets submit, keeps annotations) or `/clear?id=<id>`
    (also wipes them). Re-launch the poller.
 
+## Multiple sessions on the shared hub
+
+The hub is one server for ALL Claude sessions, so its `pages/` holds everyone's reviews at once. Each
+session must scope itself to what *it* created:
+
+1. **Namespace your page ids.** Prefix with the bead id or a session slug (e.g. `deoq.3.1-review`,
+   `jkbt-graph`) so your page files + state never collide with another session's.
+2. **Subscribe to exactly the ids you created.** Pass only your own ids to `/wait?ids=…`. State is
+   per-page (`annotations-<id>.json`, `submit-<id>.json`), so you never see another session's notes or
+   submits (INV-5/INV-6). `/submit` does `notify_all`, which briefly wakes every waiter — but each
+   re-checks only its own `ids` and returns nothing unless one of *those* flipped. No false pickup.
+3. **Keep exactly ONE `/wait` armed for your set.** Don't stack duplicates — two waiters on the same ids
+   both return the same hit and you process it twice. Before re-arming, reset your pages' flags
+   (`/rearm?id=…` each, or the task clears the fired id) so a stale `submitted:true` can't re-fire instantly.
+
 ## Endpoints (all keyed by page id)
 
 - `GET /` → 302 to the most-recent page · `GET /p/<id>` → the page (tab bar + annotation runtime injected) · `GET /pages` → tab list `[{id,title,mtime}]`.
