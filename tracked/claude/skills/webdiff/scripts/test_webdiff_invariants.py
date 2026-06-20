@@ -57,8 +57,9 @@ for pid in ids:
     check("INV-1.body", html.count("</body>") == 1, f"{pid} has {html.count('</body>')} </body>")
     check("INV-1.tabs", 'id="wd-tabs"' in html, f"{pid} missing tab bar")
 
-# INV-2
-check("INV-2.404", get("/p/does-not-exist")[0] == 404, "unknown page not 404")
+# INV-2  (unknown page redirects to the "All caught up" index, not a dead 404 —
+# urllib follows the 302 chain to a served page, so the effective status is 200)
+check("INV-2.unknown-graceful", get("/p/does-not-exist")[0] == 200, "unknown page not handled gracefully")
 check("INV-2.badid", post("/annotate", {"id": "../etc", "section": "s", "text": "t"})[0] == 400, "bad id not 400")
 # malformed JSON tolerated (no 500)
 mal_code, _ = _req("POST", "/submit?id=" + A, None)
@@ -101,8 +102,11 @@ def test_submit_isolation():
     post("/submit?id=" + A)
     check("INV-6.set", json.loads(get("/submitted?id=" + A)[1])["submitted"] is True, "A submit not set")
     check("INV-6.iso", json.loads(get("/submitted?id=" + B)[1])["submitted"] is False, "B leaked submit")
+    # tri-state (bead A): /rearm must NOT clobber a pending submit; /clear is the hard reset.
     post("/rearm?id=" + A)
-    check("INV-6.rearm", json.loads(get("/submitted?id=" + A)[1])["submitted"] is False, "A rearm failed")
+    check("INV-6.rearm-keeps-submit", json.loads(get("/submitted?id=" + A)[1])["submitted"] is True, "rearm dropped a pending submit")
+    post("/clear?id=" + A)
+    check("INV-6.clear-resets", json.loads(get("/submitted?id=" + A)[1])["submitted"] is False, "clear did not reset")
 
 
 test_annotate_roundtrip()
@@ -124,6 +128,14 @@ with sync_playwright() as p:
         check("INV-7.tabcount", tabs == len(ids), f"{pid}: {tabs} tabs vs {len(ids)} pages")
         check("INV-7.oneactive", len(active) == 1, f"{pid}: {len(active)} active")
         check("INV-7.submit", has_submit, f"{pid}: no submit")
+        # INV-10/11: review features on generated pages — overview map dot per section, reviewed toggle per section
+        if pg.evaluate("()=>!!document.querySelector('.wrap') && document.querySelectorAll('.annobar[data-secid]').length>0"):
+            secs = pg.eval_on_selector_all(".annobar[data-secid]", "e=>e.length")
+            dots = pg.eval_on_selector_all("#wd-map a.wd-dot", "e=>e.length")
+            rvw = pg.eval_on_selector_all(".annobar .rvw", "e=>e.length")
+            has_map = pg.evaluate("()=>!!document.getElementById('wd-map')")
+            check("INV-10.map", has_map and dots == secs, f"{pid}: map={has_map} dots {dots} vs secs {secs}")
+            check("INV-11.reviewtoggle", rvw == secs, f"{pid}: {rvw} toggles vs {secs} secs")
         # INV-8 zoom (only on pages that have a .dt diff)
         if pg.evaluate("()=>!!document.querySelector('.dt')"):
             f0 = pg.evaluate("()=>parseFloat(getComputedStyle(document.querySelector('.dt')).fontSize)")
