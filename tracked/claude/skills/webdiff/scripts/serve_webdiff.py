@@ -100,6 +100,8 @@ body{padding-top:54px}
 #wd-tabs .tab.active{background:#24283b;color:#7aa2f7;border-color:#3b4261;font-weight:700}
 #wd-tabs #wd-submit{flex:0 0 auto;background:#9ece6a;color:#16161e;border:0;border-radius:8px;padding:8px 14px;font:13px sans-serif;font-weight:700;cursor:pointer;min-height:38px}
 #wd-tabs #wd-submit:disabled{background:#2c3a2a;color:#9ece6a}
+#wd-tabs #wd-close{flex:0 0 auto;background:#7aa2f7;color:#16161e;border:0;border-radius:8px;padding:8px 12px;font:13px sans-serif;font-weight:700;cursor:pointer;min-height:38px}
+#wd-tabs #wd-close:disabled{background:#26304a;color:#7aa2f7}
 #wd-tabs .ct{flex:0 0 auto;color:#9aa5ce;font:12px sans-serif;padding:0 4px}
 #wd-tabs #wd-master{flex:0 0 auto;background:#24283b;color:#7aa2f7;border:1px solid #3b4261;border-radius:8px;padding:8px 12px;font:13px sans-serif;font-weight:700;cursor:pointer;min-height:38px}
 #wd-mbox{display:none;position:fixed;top:53px;left:0;right:0;z-index:9999;background:#1c2333;border-bottom:1px solid #3b4261;padding:10px 12px;box-shadow:0 6px 16px #0007}
@@ -137,6 +139,9 @@ async function wdTabs(){
   const sb=document.createElement('button');sb.id='wd-submit';sb.textContent='\\u2713 Submit';
   sb.onclick=async()=>{sb.disabled=true;sb.textContent='\\u23f3 Submitting\\u2026';await fetch('/submit?id='+encodeURIComponent(__PID__),{method:'POST'});wdPoll();};
   bar.appendChild(sb);
+  const cb=document.createElement('button');cb.id='wd-close';cb.textContent='Submit & Close';
+  cb.onclick=async()=>{cb.disabled=true;cb.textContent='\\u23f3\\u2026';await fetch('/submit?id='+encodeURIComponent(__PID__),{method:'POST'});await fetch('/close?id='+encodeURIComponent(__PID__),{method:'POST'});location.href='/';};
+  bar.appendChild(cb);
 }
 async function wdLoad(){
   let data=[]; try{data=await(await fetch('/annotations?id='+encodeURIComponent(__PID__))).json();}catch(e){}
@@ -274,6 +279,17 @@ class Handler(BaseHTTPRequestHandler):
                 a.get("ts") == d.get("ts") and a.get("section") == d.get("section") and a.get("text") == d.get("text"))]
             _save(_anno(pid), items)
             self._send(200, json.dumps({"ok": True, "count": len(items)}))
+        elif u.path == "/close":
+            # archive the page out of pages/ (drops it from the tab bar); keep annotations
+            # in state/ so the agent can still read this final batch.
+            src = os.path.join(PAGES, pid + ".html")
+            if os.path.exists(src):
+                arch = os.path.join(ROOT, "archive")
+                os.makedirs(arch, exist_ok=True)
+                os.replace(src, os.path.join(arch, pid + ".html"))
+            with _CV:
+                _CV.notify_all()
+            self._send(200, json.dumps({"ok": True}))
         elif u.path in ("/clear", "/rearm"):
             if u.path == "/clear":
                 _save(_anno(pid), [])
