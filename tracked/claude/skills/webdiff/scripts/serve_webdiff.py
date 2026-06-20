@@ -85,7 +85,7 @@ def _sub(pid: str) -> str:
     return os.path.join(STATE, f"submit-{pid}.json")
 
 
-def runtime(pid: str) -> str:
+def runtime(pid: str, mtime: float) -> str:
     return """
 <style>
 body{padding-top:54px}
@@ -118,6 +118,7 @@ body{padding-top:54px}
 <div id="wd-mbox"><div id="wd-mlist"></div><textarea placeholder="Note for this whole page"></textarea><div class="b"><button class="msave">Save note</button><button class="cancel">Cancel</button></div></div>
 <script>
 window.__PID__=%PID%;
+window.__MTIME__=%MTIME%;
 async function wdTabs(){
   let pages=[]; try{pages=await(await fetch('/pages')).json();}catch(e){}
   let cnt=0; try{cnt=(await(await fetch('/annotations?id='+encodeURIComponent(__PID__))).json()).length;}catch(e){}
@@ -130,7 +131,7 @@ async function wdTabs(){
   mb.onclick=()=>{const x=document.getElementById('wd-mbox');x.style.display=x.style.display==='block'?'none':'block';if(x.style.display==='block')x.querySelector('textarea').focus();};
   bar.appendChild(mb);
   const sb=document.createElement('button');sb.id='wd-submit';sb.textContent='\\u2713 Submit';
-  sb.onclick=async()=>{await fetch('/submit?id='+encodeURIComponent(__PID__),{method:'POST'});sb.disabled=true;sb.textContent='\\u2713 Submitted';};
+  sb.onclick=async()=>{sb.disabled=true;sb.textContent='\\u23f3 Submitting\\u2026';await fetch('/submit?id='+encodeURIComponent(__PID__),{method:'POST'});wdPoll();};
   bar.appendChild(sb);
 }
 async function wdLoad(){
@@ -163,9 +164,14 @@ async function wdLoad(){
   box.querySelector('.msave').onclick=async function(){var ta=box.querySelector('textarea');var text=ta.value.trim();if(!text)return;
     await fetch('/annotate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:__PID__,section:'\\u2605 page note',text:text})});
     ta.value='';box.style.display='none';wdLoad();wdTabs();};})();
-wdTabs();wdLoad();
+function wdPoll(){
+  fetch('/pages').then(r=>r.json()).then(ps=>{var me=ps.find(p=>p.id===__PID__); if(me && me.mtime>__MTIME__+0.001){location.reload();}}).catch(function(){});
+  fetch('/submitted?id='+encodeURIComponent(__PID__)).then(r=>r.json()).then(s=>{var sb=document.getElementById('wd-submit'); if(!sb)return;
+    if(s.submitted){sb.disabled=true;sb.textContent='\\u23f3 Claude working\\u2026';} else if(sb.textContent.indexOf('Submitting')<0){sb.disabled=false;sb.textContent='\\u2713 Submit';}}).catch(function(){});
+}
+wdTabs();wdLoad();setInterval(wdPoll,3000);
 </script>
-""".replace("%PID%", json.dumps(pid))
+""".replace("%PID%", json.dumps(pid)).replace("%MTIME%", json.dumps(mtime))
 
 
 INDEX = """<!DOCTYPE html><html><head><meta charset="utf-8"><title>webdiff hub</title>
@@ -203,8 +209,9 @@ class Handler(BaseHTTPRequestHandler):
             if not _ID_RE.match(pid) or not os.path.exists(os.path.join(PAGES, pid + ".html")):
                 self._send(404, "no such page", "text/plain")
                 return
-            html = open(os.path.join(PAGES, pid + ".html"), encoding="utf-8").read()
-            rt = runtime(pid)
+            ppath = os.path.join(PAGES, pid + ".html")
+            html = open(ppath, encoding="utf-8").read()
+            rt = runtime(pid, os.path.getmtime(ppath))
             html = html.replace("</body>", rt + "</body>") if "</body>" in html else html + rt
             self._send(200, html, "text/html; charset=utf-8")
         elif u.path == "/annotations":

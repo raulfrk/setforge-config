@@ -116,6 +116,19 @@ tracked_files:
     src: claude/skills/web-mockup/SKILL.md
     dst: ~/.claude/skills/web-mockup/SKILL.md
 
+  claude_webdiff_skill:
+    src: claude/skills/webdiff/SKILL.md
+    dst: ~/.claude/skills/webdiff/SKILL.md
+  claude_webdiff_serve:
+    src: claude/skills/webdiff/scripts/serve_webdiff.py
+    dst: ~/.claude/skills/webdiff/scripts/serve_webdiff.py
+  claude_webdiff_gen:
+    src: claude/skills/webdiff/scripts/gen_webdiff.py
+    dst: ~/.claude/skills/webdiff/scripts/gen_webdiff.py
+  claude_webdiff_test:
+    src: claude/skills/webdiff/scripts/test_webdiff_invariants.py
+    dst: ~/.claude/skills/webdiff/scripts/test_webdiff_invariants.py
+
   # Canary degradation-probe shell snippet. Sourced (not owned) by the
   # host's ~/.zshrc + ~/.bashrc, so setforge never touches those rc files.
   claude_canary_snippet:
@@ -167,6 +180,10 @@ profiles:
     - claude_handoff_skill
     - claude_pickup_skill
     - claude_web_mockup_skill
+    - claude_webdiff_skill
+    - claude_webdiff_serve
+    - claude_webdiff_gen
+    - claude_webdiff_test
     - claude_bd_skill
     - claude_wt_skill
     - claude_skill_reviewing_python_code
