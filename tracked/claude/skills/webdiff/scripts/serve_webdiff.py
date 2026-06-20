@@ -279,7 +279,11 @@ class Handler(BaseHTTPRequestHandler):
             # long-poll: block until any listed page is submitted (or ~5min timeout), return its id
             q = parse_qs(u.query)
             ids = [i for i in q.get("ids", [""])[0].split(",") if i and _ID_RE.match(i)]
-            deadline = time.monotonic() + 300
+            try:
+                to = min(max(int(q.get("timeout", ["300"])[0]), 10), 3600)
+            except ValueError:
+                to = 300
+            deadline = time.monotonic() + to
             with _CV:
                 while True:
                     hit = next((i for i in ids if _load(_sub(i), {"submitted": False}).get("submitted")), None)
