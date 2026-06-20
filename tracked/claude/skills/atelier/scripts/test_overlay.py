@@ -57,11 +57,17 @@ def main() -> int:
             ck(f"overlay below tab bar (overlay z={zwork} < tabs z={ztabs})", zwork < ztabs)
             ck("overlay visible on LOAD while working (no 3s gap)",
                pg.evaluate("()=>document.getElementById('wd-working').classList.contains('on')"))
-            # the tab bar is above the overlay -> its tab links are hit-testable (clickable)
-            ck("tab bar clickable above overlay",
-               pg.evaluate("""()=>{var t=document.querySelector('#wd-tabs .tab');if(!t)return false;
-                 var r=t.getBoundingClientRect();var el=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
-                 return !!(el&&el.closest('#wd-tabs'));}"""))
+            # overlay must start BELOW the tab bar (not cover it), so tabs are clickable while maximized
+            gap = pg.evaluate("()=>{var b=document.getElementById('wd-tabs').getBoundingClientRect();"
+                              "var w=document.getElementById('wd-working').getBoundingClientRect();return w.top>=b.bottom-1;}")
+            ck("overlay starts below the tab bar (bar uncovered)", gap)
+            # the real test the user hit: actually CLICK the other tab while maximized -> it navigates
+            other = pg.query_selector("#wd-tabs .tab:not(.active)")
+            ck("a second tab exists to switch to", other is not None)
+            if other:
+                other.click(); pg.wait_for_timeout(600)
+                ck("switched tabs while overlay maximized (no dismiss needed)", pg.url.rstrip("/").endswith("/p/q"))
+                pg.goto(f"{base}/p/p", wait_until="networkidle", timeout=30000); pg.wait_for_timeout(600)
             # Dismiss -> minimize: full overlay hides, bottom pill shows, page scrollable
             onfull = lambda: pg.evaluate("()=>document.getElementById('wd-working').classList.contains('on')")
             onmin = lambda: pg.evaluate("()=>document.getElementById('wd-working-min').classList.contains('on')")

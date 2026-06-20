@@ -246,6 +246,7 @@ async function wdTabs(){
   var _h=bar.offsetHeight;
   document.body.style.paddingTop=(_h+4)+'px';  // bar may wrap to 2 rows on narrow screens
   var _mb=document.getElementById('wd-mbox'); if(_mb)_mb.style.top=_h+'px';  // note box sits below the (possibly 2-row) bar
+  var _wk=document.getElementById('wd-working'); if(_wk)_wk.style.top=_h+'px';  // overlay starts BELOW the tab bar so tabs are always clickable (even maximized)
   wdGate();  // reflect review state on the freshly-(re)built Submit & Close button
 }
 async function wdLoad(){
