@@ -139,6 +139,9 @@ tracked_files:
   claude_atelier_test:
     src: claude/skills/atelier/scripts/test_atelier_invariants.py
     dst: ~/.claude/skills/atelier/scripts/test_atelier_invariants.py
+  claude_atelier_test_tristate:
+    src: claude/skills/atelier/scripts/test_tristate.py
+    dst: ~/.claude/skills/atelier/scripts/test_tristate.py
   claude_atelier_test_reviewed:
     src: claude/skills/atelier/scripts/test_reviewed.py
     dst: ~/.claude/skills/atelier/scripts/test_reviewed.py
@@ -217,6 +220,7 @@ profiles:
     - claude_atelier_kit_browser
     - claude_atelier_kit_device
     - claude_atelier_test
+    - claude_atelier_test_tristate
     - claude_atelier_test_reviewed
     - claude_atelier_test_content_modes
     - claude_atelier_test_annotation_format

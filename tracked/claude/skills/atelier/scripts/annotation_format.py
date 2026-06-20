@@ -138,7 +138,7 @@ def parse(text: str) -> list:
 
 
 def from_atelier(items: list) -> str:
-    """Map atelier annotations to revdiff markdown. A atelier note is section-level,
+    """Map atelier annotations to revdiff markdown. An atelier note is section-level,
     so it emits file-level (no :N) unless it carries explicit line/type from the real
     hunk model. `file` falls back to the section label for non-file sections."""
     anns = []

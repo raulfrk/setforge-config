@@ -183,7 +183,8 @@ and applied before first paint, so it survives reloads. The tab bar + Submit sta
 ## Binding / reachability
 
 With Tailscale up the hub binds the tailnet IP (tailnet-only, no public exposure). Override the bind with a
-2nd arg or `WEB_MOCKUP_HOST=<ip>` (`0.0.0.0` = LAN, trusted networks only; `127.0.0.1` needs SSH forward).
+2nd arg or `ATELIER_HOST=<ip>` (`WEB_MOCKUP_HOST` is read as a back-compat alias; `0.0.0.0` = LAN, trusted
+networks only; `127.0.0.1` needs SSH forward).
 `ATELIER_DIR` relocates the pages/state root.
 
 ## Notes

@@ -1,6 +1,6 @@
 ---
 name: session-flow
-description: Dynamic 7-phase work flow (brainstorm → spec → plan → implement → review → fix+merge → post-merge) for single OR multiple beads, with parallel multi-bead waves, goal-wrapped review, learning mode, and host-configurable merge policy. Session lifecycle (opt-in handoff resume via the pickup skill, epic discovery, session-end handoff). Superset of superpowers — adds bd, wt, revdiff, and handoff conventions on top. Deviation requires explicit user override. - Invoke when starting any non-trivial task, resuming from a handoff, or when the user says 'work', 'implement', 'start working', or 'resume'.
+description: Dynamic 7-phase work flow (brainstorm → spec → plan → implement → review → fix+merge → post-merge) for single OR multiple beads, with parallel multi-bead waves, goal-wrapped review, learning mode, and host-configurable merge policy. Session lifecycle (opt-in handoff resume via the pickup skill, epic discovery, session-end handoff). Superset of superpowers — adds bd, wt, atelier/revdiff review, and handoff conventions on top. Deviation requires explicit user override. - Invoke when starting any non-trivial task, resuming from a handoff, or when the user says 'work', 'implement', 'start working', or 'resume'.
 ---
 
 Base directory for this skill: /home/raul/.claude/skills/session-flow
@@ -107,7 +107,7 @@ The fan is **goal-wrapped** (iterate-to-clean). Before dispatching it:
 
 Additionally, when running non-interactively (no one is there to paste), also run the fan directly via subagents and loop it yourself until clean — but still surface the `/goal` condition so the user can drive it themselves when present.
 
-**A clean fan ≠ merge-authorized.** The review-fan `/goal` and its "don't pause to ask" directive govern the automated fan loop ONLY — neither discharges the Phase-6 human revdiff gate. A clean fan means the diff converged, not that it may merge. With a review-`/goal` active, still surface the "review this with revdiff?" offer before merging; it is the gate the goal converges toward, not a pause to skip.
+**A clean fan ≠ merge-authorized.** The review-fan `/goal` and its "don't pause to ask" directive govern the automated fan loop ONLY — neither discharges the Phase-6 human review gate. A clean fan means the diff converged, not that it may merge. With a review-`/goal` active, still surface the "review this on the resolved surface (atelier default / revdiff fallback)?" offer before merging; it is the gate the goal converges toward, not a pause to skip.
 
 **Placement:** for multi-bead work, each bead gets its review fan in its own worktree **before that bead merges**; then ONE combined goal-wrapped fan runs post-integration (Phase 7). For multi-artifact changes, review each artifact type's diff separately.
 

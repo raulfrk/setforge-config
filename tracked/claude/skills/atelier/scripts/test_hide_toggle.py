@@ -53,6 +53,7 @@ def main() -> int:
             pg.evaluate("()=>document.getElementById('wd-hide').click()"); pg.wait_for_timeout(300)
             ck("hide -> annobars gone", not vis(".annobar"))
             ck("hide -> map gone", not mapvis())
+            ck("hide -> note button gone", pg.evaluate("()=>{var m=document.getElementById('wd-master');return !(m&&m.offsetParent);}"))
             ck("hide -> content visible", pg.evaluate("()=>!!document.querySelector('.wrap')&&document.querySelector('.wrap').offsetHeight>0"))
             ck("hide -> Submit still usable", pg.evaluate("()=>{var s=document.getElementById('wd-submit');return !!(s&&s.offsetParent);}"))
             ck("label flips to Show", "Show annotations" in pg.evaluate("()=>document.getElementById('wd-hide').textContent"))
