@@ -23,6 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 _CV = threading.Condition()  # notified on every /submit — powers the /wait long-poll
+_STATE_LOCK = threading.Lock()  # guards read-modify-write of per-page state files
 
 ROOT = os.environ.get("WEBDIFF_DIR") or os.path.expanduser("~/.local/share/webdiff")
 PAGES = os.path.join(ROOT, "pages")
@@ -99,6 +100,25 @@ def _sub(pid: str) -> str:
     return os.path.join(STATE, f"submit-{pid}.json")
 
 
+def _state(pid: str) -> str:
+    """Normalized submit state: idle | submitted | working.
+
+    Back-compat: legacy files held {submitted: bool}; map true->submitted, else idle.
+    """
+    d = _load(_sub(pid), {})
+    if isinstance(d, dict):
+        s = d.get("state")
+        if s in ("idle", "submitted", "working"):
+            return s
+        if d.get("submitted"):
+            return "submitted"
+    return "idle"
+
+
+def _set_state(pid: str, st: str) -> None:
+    _save(_sub(pid), {"state": st, "ts": datetime.datetime.now().isoformat(timespec="seconds")})
+
+
 def runtime(pid: str, mtime: float) -> str:
     return """
 <style>
@@ -129,9 +149,18 @@ body{padding-top:54px}
 .anno{background:#1c2333;border:1px solid #3b4261;border-left:3px solid #e0af68;border-radius:7px;padding:9px 12px;font:14px sans-serif;color:#c0caf5;margin-top:6px}
 .anno .meta{color:#565f89;font-size:11px;margin-top:3px}
 .anno button.dismiss{float:right;background:none;border:0;color:#f7768e;font-size:18px;line-height:1;cursor:pointer;padding:0 2px;margin-left:8px}
+#wd-working{position:fixed;inset:0;z-index:30000;background:rgba(22,22,30,.95);display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px}
+#wd-working.on{display:flex}
+#wd-working .bn{font-size:50px;animation:wdbnc 1s infinite ease-in-out}
+@keyframes wdbnc{0%,100%{transform:translateY(0)}50%{transform:translateY(-18px)}}
+#wd-working .dots{display:flex;gap:8px}#wd-working .dots i{width:11px;height:11px;border-radius:50%;background:#7aa2f7;animation:wdbnc 1.2s infinite ease-in-out}
+#wd-working .dots i:nth-child(2){animation-delay:.15s}#wd-working .dots i:nth-child(3){animation-delay:.3s}
+#wd-working .t{color:#fff;font:18px sans-serif;font-weight:700}#wd-working .s{color:#9aa5ce;font:13px sans-serif;max-width:340px;line-height:1.5}
+#wd-working .dz{margin-top:6px;background:#24283b;color:#9aa5ce;border:1px solid #3b4261;border-radius:7px;padding:6px 12px;font:12px sans-serif;cursor:pointer}
 </style>
 <div id="wd-tabs"></div>
 <div id="wd-mbox"><div id="wd-mlist"></div><textarea placeholder="Note for this whole page"></textarea><div class="b"><button class="msave">Save note</button><button class="cancel">Cancel</button></div></div>
+<div id="wd-working"><div class="bn">&#x1F916;</div><div class="dots"><i></i><i></i><i></i></div><div class="t">Claude is working&hellip;</div><div class="s">Your submit was received. This page holds until Claude finishes and re-arms, then refreshes to the updated review &mdash; no stale content.</div><button class="dz" id="wd-dismiss">Dismiss</button></div>
 <script>
 window.__PID__=%PID%;
 window.__MTIME__=%MTIME%;
@@ -182,19 +211,29 @@ async function wdLoad(){
     x.onclick=async()=>{await fetch('/resolve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:__PID__,ts:a.ts,section:a.section,text:a.text})});wdLoad();wdTabs();};
     var t=document.createElement('div');t.textContent=a.text;d.append(x,t);ml.append(d);});}
 }
+(function(){var dz=document.getElementById('wd-dismiss');if(dz)dz.onclick=function(){window.__wddismissed=true;var ov=document.getElementById('wd-working');if(ov)ov.classList.remove('on');};})();
 (function(){var box=document.getElementById('wd-mbox');if(!box)return;
   box.querySelector('.cancel').onclick=function(){box.style.display='none';};
   box.querySelector('.msave').onclick=async function(){var ta=box.querySelector('textarea');var text=ta.value.trim();if(!text)return;
     await fetch('/annotate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:__PID__,section:'\\u2605 page note',text:text})});
     ta.value='';box.style.display='none';wdLoad();wdTabs();};})();
 function wdPoll(){
-  fetch('/pages').then(r=>r.json()).then(ps=>{var me=ps.find(p=>p.id===__PID__); if(me && me.mtime>__MTIME__+0.001){location.reload();}}).catch(function(){});
-  fetch('/annotations?id='+encodeURIComponent(__PID__)).then(r=>r.json()).then(function(data){
-    var ae=document.activeElement; if(ae&&ae.tagName==='TEXTAREA')return;  // don't disrupt typing
-    if(data.length!==window.__NCOUNT__){wdLoad();wdTabs();}                // live-refresh on clear/add/resolve
+  // tri-state drives everything: submitted/working -> hold the overlay; idle -> reload to fresh content.
+  fetch('/submitted?id='+encodeURIComponent(__PID__)).then(r=>r.json()).then(function(s){
+    var st=s.state||(s.submitted?'submitted':'idle');
+    var working=(st==='submitted'||st==='working');
+    if(!working)window.__wddismissed=false;                                   // re-arm the overlay for next round
+    var ov=document.getElementById('wd-working'); if(ov)ov.classList.toggle('on',working&&!window.__wddismissed);
+    var sb=document.getElementById('wd-submit');
+    if(sb){if(working){sb.disabled=true;sb.textContent='\\u23f3 Claude working\\u2026';}
+      else if(sb.textContent.indexOf('Submitting')<0){sb.disabled=false;sb.textContent='\\u2713 Submit';}}
+    if(working)return;                                                        // never reload mid-work (no stale-content flash)
+    fetch('/pages').then(r=>r.json()).then(function(ps){var me=ps.find(p=>p.id===__PID__); if(me && me.mtime>__MTIME__+0.001){location.reload();}}).catch(function(){});
+    fetch('/annotations?id='+encodeURIComponent(__PID__)).then(r=>r.json()).then(function(data){
+      var ae=document.activeElement; if(ae&&ae.tagName==='TEXTAREA')return;   // don't disrupt typing
+      if(data.length!==window.__NCOUNT__){wdLoad();wdTabs();}                 // live-refresh on clear/add/resolve
+    }).catch(function(){});
   }).catch(function(){});
-  fetch('/submitted?id='+encodeURIComponent(__PID__)).then(r=>r.json()).then(s=>{var sb=document.getElementById('wd-submit'); if(!sb)return;
-    if(s.submitted){sb.disabled=true;sb.textContent='\\u23f3 Claude working\\u2026';} else if(sb.textContent.indexOf('Submitting')<0){sb.disabled=false;sb.textContent='\\u2713 Submit';}}).catch(function(){});
 }
 wdTabs();wdLoad();setInterval(wdPoll,3000);
 </script>
@@ -277,7 +316,8 @@ class Handler(BaseHTTPRequestHandler):
         elif u.path == "/annotations":
             self._send(200, json.dumps(_load(_anno(self._qs_id(u)), [])))
         elif u.path == "/submitted":
-            self._send(200, json.dumps(_load(_sub(self._qs_id(u)), {"submitted": False})))
+            _st = _state(self._qs_id(u))
+            self._send(200, json.dumps({"state": _st, "submitted": _st == "submitted"}))
         elif u.path == "/wait":
             # long-poll: block until any listed page is submitted (or ~5min timeout), return its id
             q = parse_qs(u.query)
@@ -290,13 +330,15 @@ class Handler(BaseHTTPRequestHandler):
             deadline = None if to == 0 else time.monotonic() + to
             with _CV:
                 while True:
-                    hit = next((i for i in ids if _load(_sub(i), {"submitted": False}).get("submitted")), None)
+                    hit = next((i for i in ids if _state(i) == "submitted"), None)
                     if hit is not None:
-                        # consume atomically: return the notes AND clear them + reset the flag,
-                        # so the caller never has to remember a separate /clear.
+                        # consume atomically: return the notes AND clear them, and move the
+                        # submit state to `working` (NOT idle) so the page holds the "Claude
+                        # working" overlay until the agent finishes + re-arms (no flicker).
                         ann = _load(_anno(hit), [])
-                        _save(_anno(hit), [])
-                        _save(_sub(hit), {"submitted": False})
+                        with _STATE_LOCK:
+                            _save(_anno(hit), [])
+                            _set_state(hit, "working")
                         closed = not os.path.exists(os.path.join(PAGES, hit + ".html"))
                         self._send(200, json.dumps({"id": hit, "closed": closed, "annotations": ann}))
                         return
@@ -324,20 +366,23 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, json.dumps({"error": "bad id"}))
             return
         if u.path == "/annotate":
-            items = _load(_anno(pid), [])
-            items.append({"section": str(d.get("section", ""))[:200], "text": str(d.get("text", ""))[:5000],
-                          "ts": datetime.datetime.now().isoformat(timespec="seconds")})
-            _save(_anno(pid), items)
+            with _STATE_LOCK:
+                items = _load(_anno(pid), [])
+                items.append({"section": str(d.get("section", ""))[:200], "text": str(d.get("text", ""))[:5000],
+                              "ts": datetime.datetime.now().isoformat(timespec="seconds")})
+                _save(_anno(pid), items)
             self._send(200, json.dumps({"ok": True, "count": len(items)}))
         elif u.path == "/submit":
-            _save(_sub(pid), {"submitted": True, "ts": datetime.datetime.now().isoformat(timespec="seconds")})
+            with _STATE_LOCK:
+                _set_state(pid, "submitted")
             with _CV:
                 _CV.notify_all()  # wake any /wait long-poll instantly
             self._send(200, json.dumps({"ok": True}))
         elif u.path == "/resolve":
-            items = [a for a in _load(_anno(pid), []) if not (
-                a.get("ts") == d.get("ts") and a.get("section") == d.get("section") and a.get("text") == d.get("text"))]
-            _save(_anno(pid), items)
+            with _STATE_LOCK:
+                items = [a for a in _load(_anno(pid), []) if not (
+                    a.get("ts") == d.get("ts") and a.get("section") == d.get("section") and a.get("text") == d.get("text"))]
+                _save(_anno(pid), items)
             self._send(200, json.dumps({"ok": True, "count": len(items)}))
         elif u.path == "/close":
             # archive the page out of pages/ (drops it from the tab bar); keep annotations
@@ -353,10 +398,17 @@ class Handler(BaseHTTPRequestHandler):
             if os.path.exists(src):
                 os.replace(src, os.path.join(PAGES, pid + ".html"))
             self._send(200, json.dumps({"ok": True}))
-        elif u.path in ("/clear", "/rearm"):
-            if u.path == "/clear":
+        elif u.path == "/clear":
+            with _STATE_LOCK:
                 _save(_anno(pid), [])
-            _save(_sub(pid), {"submitted": False})
+                _set_state(pid, "idle")
+            self._send(200, json.dumps({"ok": True}))
+        elif u.path == "/rearm":
+            # reset to idle, but never clobber a submit that landed while working
+            # (else the auto-rearm loop would silently drop an overlapping submit)
+            with _STATE_LOCK:
+                if _state(pid) != "submitted":
+                    _set_state(pid, "idle")
             self._send(200, json.dumps({"ok": True}))
         else:
             self._send(404, json.dumps({"error": "not found"}))
