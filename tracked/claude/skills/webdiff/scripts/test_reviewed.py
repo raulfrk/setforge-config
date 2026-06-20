@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Backend regression tests for the per-section reviewed-tick (bead 3.11).
+"""Backend regression tests for the per-section reviewed-tick.
 
 Dependency-light (urllib only); spins an isolated hub on 127.0.0.1 with a temp WEBDIFF_DIR.
 Run: python3 test_reviewed.py   (exit 0 = all pass)

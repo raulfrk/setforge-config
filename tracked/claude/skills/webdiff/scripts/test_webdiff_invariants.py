@@ -102,7 +102,7 @@ def test_submit_isolation():
     post("/submit?id=" + A)
     check("INV-6.set", json.loads(get("/submitted?id=" + A)[1])["submitted"] is True, "A submit not set")
     check("INV-6.iso", json.loads(get("/submitted?id=" + B)[1])["submitted"] is False, "B leaked submit")
-    # tri-state (bead A): /rearm must NOT clobber a pending submit; /clear is the hard reset.
+    # tri-state: /rearm must NOT clobber a pending submit; /clear is the hard reset.
     post("/rearm?id=" + A)
     check("INV-6.rearm-keeps-submit", json.loads(get("/submitted?id=" + A)[1])["submitted"] is True, "rearm dropped a pending submit")
     post("/clear?id=" + A)

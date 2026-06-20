@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Security + content-parity invariants for gen_webdiff.py content modes (bead 3.13.2).
+"""Security + content-parity invariants for gen_webdiff.py content modes.
 
 Builds an isolated temp git repo, runs gen_webdiff.py with crafted specs, and inspects
 the generated HTML. Dependency-light. Run: python3 test_content_modes.py (exit 0 = pass).

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Round-trip + grammar tests for the shared annotation format (bead 3.13.4).
+"""Round-trip + grammar tests for the shared annotation format.
 
 Property: parse(format_output(anns)) == anns for arbitrary annotation lists,
 including bodies with embedded '## ' headers, multiline text, path-with-colon,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Logic tests for plan-review-webdiff-hook.py (bead 3.13.7).
+"""Logic tests for plan-review-webdiff-hook.py.
 
 Spins an isolated webdiff hub, drives the hook through stdin, simulates the user
 (annotate/submit) against the served plan page, and asserts the ask/deny contract,

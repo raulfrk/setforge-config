@@ -40,7 +40,7 @@ Invoke `superpowers:brainstorming`. Explore intent, requirements, constraints wi
 **Brainstorm technique for complex / open-ended designs (brain-dump → elicit → mockup).** When scope is large or the user is still figuring requirements out, do NOT open with a question barrage — it converges prematurely and reads as an interrogation. Instead:
 1. **Brain-dump first.** Invite the user to dump freely — vision, components, constraints, non-goals — in their own order, before any structured questions. Offer a light scaffold, but let them lead.
 2. **Actively elicit per component.** As each component surfaces, prod for the missing detail before moving on — what & why, interface/shape (config / API / CLI), behavior on the key paths, edge cases, interactions, non-goals. Do NOT let a component pass at one sentence. Once eliciting, the `AskUserQuestion`-exhaustive rule still applies — batch grounded questions, just don't revert to an opening barrage.
-3. **Mock up for alignment.** Show concrete "here's what it would look like" artifacts (mockups, CLI/API/UX sketches, diagrams) and iterate them with the user in **manual revdiff** — sanctioned design exploration, distinct from the Phase-2 spec (which lives in the plan file, reached via the plan-review hook). Abstract agreement is NOT alignment — the mockup confirms you built the same picture.
+3. **Mock up for alignment.** Show concrete "here's what it would look like" artifacts (mockups, CLI/API/UX sketches, diagrams) and iterate them with the user on the resolved review surface (**web-mockup/webdiff**, or **manual revdiff** on a no-browser host) — sanctioned design exploration, distinct from the Phase-2 spec (which lives in the plan file, reached via the plan-review hook). Abstract agreement is NOT alignment — the mockup confirms you built the same picture.
 4. **Then surface `/goal`** (per *Brainstorm goal* above). The brain-dump-first method intentionally **delays the goal to here** — the clarifying-questions / convergence boundary — so it guards against declaring-done-with-ambiguity without pre-empting the dump. Surfacing it at brainstorm-start would force a strawman before the user has led.
 
 **Track component state throughout** (`SETTLED` / `LEANING` / `OPEN`) so the open set is the visible work-list and shrinks each pass.
@@ -57,7 +57,7 @@ into the plan file, never a standalone temp file.
 "Presentation contract" section below (decision ledger + pictures + cut
 line); it REPLACES the older plain-language summary section. Then write
 the spec VERBATIM into the plan body below the cut line — no summarizing
-or reflowing the spec ITSELF. User reviews via revdiff (plan-review hook fires automatically) — do NOT open revdiff on a spec file MANUALLY: the spec lives in the plan file and revdiff is reached via the plan-review hook on `ExitPlanMode`. If you used manual revdiff for design exploration during the Phase-1 brainstorm, transition to plan mode the moment the design converges; manual-revdiff-on-a-spec is the tell that you skipped `EnterPlanMode`. For a multi-bead session this is ONE combined spec covering all beads.
+or reflowing the spec ITSELF. User reviews via the plan-review hook (fires automatically on `ExitPlanMode`) on the resolved review surface — webdiff by default, revdiff as the no-browser fallback — do NOT open a review surface on a spec file MANUALLY: the spec lives in the plan file and is reached via the plan-review hook on `ExitPlanMode`. If you used manual review for design exploration during the Phase-1 brainstorm, transition to plan mode the moment the design converges; manual-review-on-a-spec is the tell that you skipped `EnterPlanMode`. For a multi-bead session this is ONE combined spec covering all beads.
 
 On approval:
 - **Carve** the combined spec into each selected bead's own `--design` / `--acceptance`. Each bead keeps an independent, self-runnable contract (a carved bead's acceptance must not depend on a sibling being merged first unless a real bd dep exists). The bd issue is the durable contract; the spec file is a historical snapshot.
@@ -85,7 +85,7 @@ Invoke `superpowers:executing-plans`. TDD where the contract isn't obvious (`sup
    - **predicted file overlap = ADVISORY** — flag it ("beads X, Y both touch `foo.py` — conflict likely") but still run them in parallel; conflicts are resolved at merge.
 2. **Per-bead execution unit** — assess per bead-set and state the choice: either (a) each worktree runs its own Phase 4–6 autonomously (subagent implements → per-bead review fan → fixes, arriving merge-ready), or (b) worktrees code in parallel and review is centralized. Pick by how independent the beads are.
 3. **Mechanism** — parallelism runs via **in-session subagents** (Task/Agent dispatch from the orchestrator), NOT separate agent-view agents. One worktree per bead (`wt switch --create` each before dispatch; see wt-reference's parallel-dispatch pattern).
-4. **Autonomy** — balance per bead-set; present the level with the wave plan. Default for an approved wave: run to merge-ready and report at real gates (semantic merge conflicts, the pre-merge revdiff offer (Phase 6) — which "merge-ready" includes making, never bypassing — blocking failures).
+4. **Autonomy** — balance per bead-set; present the level with the wave plan. Default for an approved wave: run to merge-ready and report at real gates (semantic merge conflicts, the pre-merge review offer (Phase 6) — which "merge-ready" includes making, never bypassing — blocking failures).
 5. **Gate + blast-radius discipline** — every gate command quotes its real exit code (`cmd; echo EXIT=$?`, or `set -o pipefail` before any pipeline); dispatched agents must quote explicit exit codes — a bare `cmd | tail` pipeline status is not evidence. A cross-cutting change (output-stream move, rename, flag or user-visible text change) additionally requires `rg` of the moved token/symbol across the WHOLE test tree — including e2e files the bead's own gates never execute — before reporting merge-ready (complements Phase 7's post-merge pass; does not replace it).
 
 ### Phase 5 — Review fan
@@ -127,7 +127,7 @@ Re-invoke the same goal-wrapped fan against merged HEAD on the target branch —
 
 ## Multi-bead pipeline (summary)
 
-Select beads → ONE combined brainstorm → ONE spec (plan mode) → carve per-bead contracts → per-bead plans → wave plan (deps HARD, overlap ADVISORY; user-approved) → parallel implement → per-bead fan + serial merge gate (revdiff offers may batch per sub-wave) → ONE combined fan post-integration → `bd close` each.
+Select beads → ONE combined brainstorm → ONE spec (plan mode) → carve per-bead contracts → per-bead plans → wave plan (deps HARD, overlap ADVISORY; user-approved) → parallel implement → per-bead fan + serial merge gate (review offers may batch per sub-wave) → ONE combined fan post-integration → `bd close` each.
 
 ## Learning mode
 
@@ -189,7 +189,7 @@ Never use bare `EnterWorktree` (without `--path`) in a bg session — it creates
    - User invokes `/handoff` explicitly.
 3. **Create handoff bead in `~/handoff/`** — ALWAYS in the handoff repo, NEVER in the current project's beads database (auto-inits `~/handoff/` as git repo + beads on first use). See the `handoff` skill for the full field shape; critically, it records the **exact sub-project working path(s)** — one `Workdir:` line per dir the work touches — so the `pickup` scan can disambiguate (essential in a monorepo where several projects share one repo root, or when one handoff spans several repos).
 4. Handoff bead stays open until the next session consumes it — the `pickup` skill closes it after the user picks what to resume, never before the gate.
-5. **Discovery at next session**: the next session invokes `pickup` (or `session-flow`, which checks pickup at step 2) → pickup scans `~/handoff`, path-matches → presents context → user picks → claim and begin. No hook fires this; resume is opt-in.
+5. **Discovery at next session**: the next session invokes `pickup` (or `session-flow`, which checks pickup at step 3) → pickup scans `~/handoff`, path-matches → presents context → user picks → claim and begin. No hook fires this; resume is opt-in.
 
 ## Superpowers routing table
 

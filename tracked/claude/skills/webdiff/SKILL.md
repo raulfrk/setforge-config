@@ -131,7 +131,7 @@ Every section carries a stable `data-secid` and a `data-sechash` = sha256(conten
 
 ## Unified annotation format
 
-`annotation_format.py` is a faithful port of revdiff's annotation grammar (`## path (file-level)`, `## path:N (T)`, `## path:N-M (T)`, T ∈ {+,−,space}) with `## `-line body escaping, so annotations interchange losslessly between webdiff and revdiff through ONE parser. The `/wait` response's `markdown` field is this format (section notes → file-level; explicit hunk coords → line-level). `ts`/section metadata is webdiff-only and not carried across the handoff.
+`annotation_format.py` is a faithful port of revdiff's annotation grammar (`## path (file-level)`, `## path:N (T)`, `## path:N-M (T)`, T ∈ {+,−,space}) with `## `-line body escaping, so annotation bodies interchange byte-faithfully between webdiff and revdiff through ONE parser. The `/wait` response's `markdown` field is this format (section notes → file-level; explicit hunk coords → line-level). `ts`/section metadata is webdiff-only and not carried across the handoff.
 
 ## Plan-review hook
 

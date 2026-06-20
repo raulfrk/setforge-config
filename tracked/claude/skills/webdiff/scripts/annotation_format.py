@@ -2,8 +2,8 @@
 """Shared annotation format — webdiff ⇄ revdiff interchange.
 
 A faithful Python port of revdiff's annotation grammar (app/annotation/parse.go
-+ store.go), so annotations cross between the two review surfaces losslessly and
-ONE parser governs both. The header grammar (emitted by FormatOutput):
++ store.go), so annotation bodies cross between the two review surfaces
+byte-faithfully and ONE parser governs both. The header grammar (emitted by FormatOutput):
 
     ## path (file-level)
     ## path:N (T)
@@ -13,7 +13,7 @@ with T ∈ {"+", "-", " "}. Bodies may themselves contain "## " lines; those are
 escaped on output (one leading space) and un-escaped on parse, so the body text
 round-trips byte-for-byte — including embedded headers, multiline, and
 path-with-colon. (ts / section metadata is webdiff-only and is NOT carried in
-this format — documented loss across the handoff.)
+this format — a documented loss across the surface boundary.)
 
 CLI:
     python3 annotation_format.py format < anns.json   # [{file,line,end_line,type,comment}] -> markdown
@@ -91,8 +91,9 @@ def _parse_header(line: str) -> Annotation | None:
 
 def parse(text: str) -> list:
     """Parse revdiff markdown into annotations, in source order. A '## ' line that
-    is not a valid header is folded into the current body (un-escaped); such a line
-    before any header is an error. Port of parse.go."""
+    is not a valid header is folded into the current body (un-escaped). Any non-blank
+    content before the first header — a malformed '## ' line OR plain text — raises
+    ValueError. Port of parse.go."""
     out: list = []
     current: Annotation | None = None
     body: list = []

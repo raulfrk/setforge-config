@@ -125,9 +125,27 @@ tracked_files:
   claude_webdiff_gen:
     src: claude/skills/webdiff/scripts/gen_webdiff.py
     dst: ~/.claude/skills/webdiff/scripts/gen_webdiff.py
+  claude_webdiff_annotation_format:
+    src: claude/skills/webdiff/scripts/annotation_format.py
+    dst: ~/.claude/skills/webdiff/scripts/annotation_format.py
+  claude_webdiff_plan_hook:
+    src: claude/skills/webdiff/scripts/plan-review-webdiff-hook.py
+    dst: ~/.claude/skills/webdiff/scripts/plan-review-webdiff-hook.py
   claude_webdiff_test:
     src: claude/skills/webdiff/scripts/test_webdiff_invariants.py
     dst: ~/.claude/skills/webdiff/scripts/test_webdiff_invariants.py
+  claude_webdiff_test_reviewed:
+    src: claude/skills/webdiff/scripts/test_reviewed.py
+    dst: ~/.claude/skills/webdiff/scripts/test_reviewed.py
+  claude_webdiff_test_content_modes:
+    src: claude/skills/webdiff/scripts/test_content_modes.py
+    dst: ~/.claude/skills/webdiff/scripts/test_content_modes.py
+  claude_webdiff_test_annotation_format:
+    src: claude/skills/webdiff/scripts/test_annotation_format.py
+    dst: ~/.claude/skills/webdiff/scripts/test_annotation_format.py
+  claude_webdiff_test_plan_hook:
+    src: claude/skills/webdiff/scripts/test_plan_hook.py
+    dst: ~/.claude/skills/webdiff/scripts/test_plan_hook.py
 
   # Canary degradation-probe shell snippet. Sourced (not owned) by the
   # host's ~/.zshrc + ~/.bashrc, so setforge never touches those rc files.
@@ -183,7 +201,13 @@ profiles:
     - claude_webdiff_skill
     - claude_webdiff_serve
     - claude_webdiff_gen
+    - claude_webdiff_annotation_format
+    - claude_webdiff_plan_hook
     - claude_webdiff_test
+    - claude_webdiff_test_reviewed
+    - claude_webdiff_test_content_modes
+    - claude_webdiff_test_annotation_format
+    - claude_webdiff_test_plan_hook
     - claude_bd_skill
     - claude_wt_skill
     - claude_skill_reviewing_python_code

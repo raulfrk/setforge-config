@@ -208,9 +208,9 @@ def webdiff_review(plan_content: str, base: str) -> None:
             old_snap.unlink(missing_ok=True)
         make_response(
             "deny",
-            "user reviewed the plan in webdiff and added annotations "
-            "(revdiff '## file:line (type)' format below). Each references a section and "
-            "carries the user's feedback.\n\n"
+            "user reviewed the plan in webdiff and added annotations (revdiff markdown "
+            "below; plan notes are section/file-level, i.e. '## <section> (file-level)'). "
+            "Each carries the user's feedback.\n\n"
             f"{md}\n\n"
             "Address each annotation, then call ExitPlanMode again.\n\n"
             "IMPORTANT: the very first line of your revised plan MUST be exactly the marker "
@@ -258,10 +258,16 @@ def delegate_to_revdiff(raw: str) -> None:
 
 def main() -> None:
     raw = sys.stdin.read()
-    try:
-        plan = json.loads(raw).get("tool_input", {}).get("plan", "") if raw.strip() else ""
-    except json.JSONDecodeError:
-        plan = ""
+    plan = ""
+    if raw.strip():
+        try:
+            event = json.loads(raw)
+        except json.JSONDecodeError:
+            event = {}
+        # event / tool_input may be any JSON shape — guard so a list/scalar can't raise
+        # AttributeError and crash past the ask/deny contract.
+        ti = event.get("tool_input", {}) if isinstance(event, dict) else {}
+        plan = ti.get("plan", "") if isinstance(ti, dict) else ""
     if not plan:
         make_response("ask", "no plan content in hook event")
 

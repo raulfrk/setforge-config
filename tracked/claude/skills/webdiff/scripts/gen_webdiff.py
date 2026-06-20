@@ -249,9 +249,10 @@ def render_diffstat(add: int, dele: int) -> str:
 
 
 def render_diagram(d: dict) -> str:
-    """Embed an AUTHORED diagram. SVG is inlined (Excalidraw/mermaid should be pre-exported
-    to SVG for a real render); 'img' takes a data-URI/confined src; any other type falls back
-    to a labelled source block (no CDN, so no client-side mermaid runtime)."""
+    """Embed an AUTHORED diagram (trusted spec input). SVG is inlined (Excalidraw/mermaid
+    should be pre-exported to SVG for a real render); 'img' uses an html-escaped src (no
+    confinement check — authored only); any other type falls back to a labelled source
+    block (no CDN, so no client-side mermaid runtime)."""
     t = (d.get("type") or "svg").lower()
     content = d.get("content", "")
     if t == "svg":
@@ -261,6 +262,69 @@ def render_diagram(d: dict) -> str:
     return ('<div class="diagram"><div class="note">⟨'
             f'{html.escape(t)} source — pre-export to SVG to render inline⟩</div>'
             f'<pre class="md-pre">{html.escape(content)}</pre></div>')
+
+
+def render_block(blk: dict, gi: int, group_heading: str) -> str:
+    """Render one block as a seam (label + why + content + annobar), dispatching on
+    blk['mode'] (default 'diff'). `why` is AUTHORED markup, emitted raw (like callouts);
+    only file/stdin CONTENT is escaped, inside the render_* helpers. A rejected/missing
+    path yields a VISIBLE escaped error block — never unconfined content."""
+    mode = blk.get("mode", "diff")
+    why = blk.get("why", "")
+    try:
+        if mode == "context":
+            path = blk["file"]
+            text, trunc = _read_confined(path)
+            label = blk.get("label", path.split("/")[-1])
+            body, hash_src, ident = render_file(text, _lang_for(path), trunc), text, path
+        elif mode == "compare":
+            old_p, new_p = blk["old"], blk["new"]
+            label = blk.get("label", f"{old_p} → {new_p}")
+            body = render_compare(old_p, new_p, _lang_for(new_p))
+            hash_src, ident = old_p + "\x00" + new_p, old_p + "\x00" + new_p
+        elif mode == "text":
+            content = str(blk.get("content", ""))
+            trunc = len(content) > MAX_BYTES
+            content = content[:MAX_BYTES]
+            label = blk.get("label", "text")
+            body, hash_src, ident = render_file(content, "", trunc), content, label
+        elif mode == "plan":
+            path = blk["file"]
+            text, trunc = _read_confined(path)
+            toc, md = render_markdown(text)
+            label = blk.get("label", path.split("/")[-1])
+            toc_block = f'<div class="toc-wrap">{toc}</div>' if toc else ""
+            body = f'{toc_block}<div class="md-body">{md}</div>' + (_trunc_row() if trunc else "")
+            hash_src, ident = text, path
+        elif mode == "all-files":
+            lst, trunc = render_allfiles()
+            label = blk.get("label", "repository files")
+            body = lst + ('<p class="note">⟨listing truncated at the file cap⟩</p>' if trunc else "")
+            hash_src, ident = "all-files", "all-files"
+        else:  # diff (default)
+            path = blk["file"]
+            raw = diff_for(path)
+            if "split" in blk or "hunks" in blk:
+                subs = blk.get("split") or blk.get("hunks")
+                why = "<ul class='why-list'>" + "".join(
+                    f"<li><b>{html.escape(s['label'])}</b> — {s['why']}</li>" for s in subs) + "</ul>"
+                label = path.split("/")[-1]
+            else:
+                label = blk["label"]
+            body = render_diffstat(*_diffstat(raw)) + render_diff(raw, _lang_for(path))
+            hash_src, ident = raw, path
+    except (ValueError, OSError, KeyError) as e:
+        label = blk.get("label", blk.get("file", mode))
+        body = f'<div class="callout warn">cannot render ({mode}): {html.escape(str(e))}</div>'
+        hash_src, ident = str(e), str(blk)
+    if blk.get("diagram"):
+        body = render_diagram(blk["diagram"]) + body
+    secid = _secid(group_heading, label, ident)
+    sechash = _sechash(hash_src, label, str(why))
+    secfile = blk.get("file") or blk.get("new") or ""   # for revdiff-format file-level emit
+    return (f'<div class="seam" id="sec-{secid}"><div class="lbl">{html.escape(label)}</div>'
+            f'<div class="why">{why}</div>{body}'
+            f'{_annobar(f"{gi} · {label}", secid, sechash, secfile)}</div>')
 
 
 parts = []
@@ -278,69 +342,7 @@ for gi, g in enumerate(spec["groups"], 1):
     if g.get("diagram"):
         parts.append(render_diagram(g["diagram"]))
     for blk in g["blocks"]:
-        mode = blk.get("mode", "diff")
-        # Defaults; each mode fills body (rendered HTML), hash_src (content fingerprint
-        # basis), ident (stable secid input), label, why. `why` is AUTHORED markup (raw,
-        # like callouts) — only file/stdin CONTENT is escaped, inside the render_* helpers.
-        why = blk.get("why", "")
-        try:
-            if mode == "context":
-                path = blk["file"]
-                text, trunc = _read_confined(path)
-                label = blk.get("label", path.split("/")[-1])
-                body, hash_src, ident = render_file(text, _lang_for(path), trunc), text, path
-            elif mode == "compare":
-                old_p, new_p = blk["old"], blk["new"]
-                label = blk.get("label", f"{old_p} → {new_p}")
-                body = render_compare(old_p, new_p, _lang_for(new_p))
-                hash_src, ident = old_p + "\x00" + new_p, old_p + "\x00" + new_p
-            elif mode == "text":
-                content = str(blk.get("content", ""))
-                trunc = len(content) > MAX_BYTES
-                content = content[:MAX_BYTES]
-                label = blk.get("label", "text")
-                body, hash_src, ident = render_file(content, "", trunc), content, label
-            elif mode == "plan":
-                path = blk["file"]
-                text, trunc = _read_confined(path)
-                toc, md = render_markdown(text)
-                label = blk.get("label", path.split("/")[-1])
-                toc_block = f'<div class="toc-wrap">{toc}</div>' if toc else ""
-                body = f'{toc_block}<div class="md-body">{md}</div>' + (_trunc_row() if trunc else "")
-                hash_src, ident = text, path
-            elif mode == "all-files":
-                lst, trunc = render_allfiles()
-                label = blk.get("label", "repository files")
-                body = lst + (
-                    '<p class="note">⟨listing truncated at the file cap⟩</p>' if trunc else "")
-                hash_src, ident = "all-files", "all-files"
-            else:  # diff (default)
-                path = blk["file"]
-                raw = diff_for(path)
-                if "split" in blk or "hunks" in blk:
-                    subs = blk.get("split") or blk.get("hunks")
-                    why = "<ul class='why-list'>" + "".join(
-                        f"<li><b>{html.escape(s['label'])}</b> — {s['why']}</li>" for s in subs) + "</ul>"
-                    label = path.split("/")[-1]
-                else:
-                    label = blk["label"]
-                body = render_diffstat(*_diffstat(raw)) + render_diff(raw, _lang_for(path))
-                hash_src, ident = raw, path
-        except (ValueError, OSError, KeyError) as e:
-            # rejected traversal / missing file / bad spec → a VISIBLE, escaped error block
-            # (never silently read or render unconfined content)
-            label = blk.get("label", blk.get("file", mode))
-            body = f'<div class="callout warn">cannot render ({mode}): {html.escape(str(e))}</div>'
-            hash_src, ident = str(e), str(blk)
-        if blk.get("diagram"):
-            body = render_diagram(blk["diagram"]) + body
-        secid = _secid(g["heading"], label, ident)
-        sechash = _sechash(hash_src, label, str(why))
-        secfile = blk.get("file") or blk.get("new") or ""   # for revdiff-format file-level emit
-        parts.append(
-            f'<div class="seam" id="sec-{secid}"><div class="lbl">{html.escape(label)}</div>'
-            f'<div class="why">{why}</div>{body}'
-            f'{_annobar(f"{gi} · {label}", secid, sechash, secfile)}</div>')
+        parts.append(render_block(blk, gi, g["heading"]))
     parts.append('</details>')
 
 BODY = "\n".join(parts)

@@ -422,16 +422,22 @@ class Handler(BaseHTTPRequestHandler):
             rt = runtime(pid, os.path.getmtime(ppath))
             html = html.replace("</body>", rt + "</body>") if "</body>" in html else html + rt
             self._send(200, html, "text/html; charset=utf-8")
-        elif u.path == "/annotations":
-            self._send(200, json.dumps(_load(_anno(self._qs_id(u)), [])))
-        elif u.path == "/submitted":
-            _st = _state(self._qs_id(u))
-            self._send(200, json.dumps({"state": _st, "submitted": _st == "submitted"}))
-        elif u.path == "/reviewed":
+        elif u.path in ("/annotations", "/submitted", "/reviewed"):
+            # these build state file paths from the id, so validate it like the POST
+            # handlers do — an unvalidated id is a traversal-shaped read over the tailnet.
             pid = self._qs_id(u)
-            live = _live_secids(pid)
-            rev = {k: v for k, v in _load(_rev(pid), {}).items() if not live or k in live}
-            self._send(200, json.dumps(rev))
+            if not pid or not _ID_RE.match(pid):
+                self._send(400, json.dumps({"error": "bad id"}))
+                return
+            if u.path == "/annotations":
+                self._send(200, json.dumps(_load(_anno(pid), [])))
+            elif u.path == "/submitted":
+                _st = _state(pid)
+                self._send(200, json.dumps({"state": _st, "submitted": _st == "submitted"}))
+            else:  # /reviewed
+                live = _live_secids(pid)
+                rev = {k: v for k, v in _load(_rev(pid), {}).items() if not live or k in live}
+                self._send(200, json.dumps(rev))
         elif u.path == "/wait":
             # long-poll: block until any listed page is submitted (or ~5min timeout), return its id
             q = parse_qs(u.query)
