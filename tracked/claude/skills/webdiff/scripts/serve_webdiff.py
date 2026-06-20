@@ -100,6 +100,28 @@ def _sub(pid: str) -> str:
     return os.path.join(STATE, f"submit-{pid}.json")
 
 
+def _rev(pid: str) -> str:
+    return os.path.join(STATE, f"reviewed-{pid}.json")
+
+
+_SECID_RE = re.compile(r'data-secid="([^"]+)"')
+
+
+def _live_secids(pid: str) -> set[str]:
+    """The data-secid set actually present in the page right now. Used to prune reviewed
+    entries for sections that a regeneration removed (so reviewed-<id>.json never accrues
+    orphans, and close-gating counts only live sections)."""
+    try:
+        with open(os.path.join(PAGES, pid + ".html"), encoding="utf-8") as f:
+            return {html_unescape(m) for m in _SECID_RE.findall(f.read())}
+    except OSError:
+        return set()
+
+
+def html_unescape(s: str) -> str:
+    return s.replace("&quot;", '"').replace("&#x27;", "'").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+
+
 def _state(pid: str) -> str:
     """Normalized submit state: idle | submitted | working.
 
@@ -139,8 +161,14 @@ body{padding-top:54px}
 #wd-mbox .b{margin-top:8px;display:flex;gap:8px}
 #wd-mbox button{background:#7aa2f7;color:#16161e;border:0;border-radius:8px;padding:9px 16px;font:14px sans-serif;font-weight:600;cursor:pointer;min-height:40px}
 #wd-mbox button.cancel{background:#24283b;color:#9aa5ce}
-.annobar{margin-top:14px;padding-top:12px;border-top:1px dashed #3b4261}
+.annobar{margin-top:14px;padding-top:12px;border-top:1px dashed #3b4261;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start}
+.annobar .annobox,.annobar>div:last-child{flex-basis:100%}
 .annobar button.add{background:#24283b;color:#7aa2f7;border:1px solid #3b4261;border-radius:8px;padding:9px 14px;cursor:pointer;font:14px sans-serif;min-height:40px}
+.annobar button.rvw{background:#24283b;color:#9aa5ce;border:1px solid #3b4261;border-radius:8px;padding:9px 14px;cursor:pointer;font:14px sans-serif;font-weight:700;min-height:40px}
+.annobar button.rvw.on{background:#1e3a23;color:#9ece6a;border-color:#9ece6a}
+.annobar button.rvw.stale{background:#3a2f1a;color:#e0af68;border-color:#e0af68}
+.seam:has(.annobar .rvw.on){border-color:#9ece6a55}
+.seam:has(.annobar .rvw.stale){border-color:#e0af6855}
 .annobox{display:none;margin-top:10px}
 .annobox textarea{width:100%;min-height:72px;background:#16161e;color:#c0caf5;border:1px solid #3b4261;border-radius:8px;padding:11px;font:16px sans-serif}
 .annobox .b{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
@@ -188,8 +216,22 @@ async function wdTabs(){
 async function wdLoad(){
   let data=[]; try{data=await(await fetch('/annotations?id='+encodeURIComponent(__PID__))).json();}catch(e){}
   window.__NCOUNT__=data.length;
+  let reviewed={}; try{reviewed=await(await fetch('/reviewed?id='+encodeURIComponent(__PID__))).json();}catch(e){}
+  window.__REVIEWED__=reviewed;
   document.querySelectorAll('.annobar').forEach(bar=>{
     const sec=bar.dataset.section||'unlabelled'; bar.innerHTML='';
+    const secid=bar.dataset.secid, sechash=bar.dataset.sechash;
+    if(secid){
+      const stored=reviewed[secid];
+      const on=stored!==undefined&&stored===sechash;
+      const stale=stored!==undefined&&stored!==sechash;
+      const rv=document.createElement('button');rv.className='rvw'+(on?' on':'')+(stale?' stale':'');
+      rv.textContent=on?'\\u2713 Reviewed':(stale?'\\u21bb changed since reviewed':'Mark reviewed');
+      rv.onclick=async()=>{rv.disabled=true;
+        await fetch('/review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:__PID__,secid:secid,hash:sechash,reviewed:!on})});
+        await wdLoad(); if(window.wdGate)wdGate();};
+      bar.appendChild(rv);
+    }
     const btn=document.createElement('button');btn.className='add';btn.textContent='\\u{1F4AC} Annotate';
     const box=document.createElement('div');box.className='annobox';
     box.innerHTML='<textarea placeholder="Your annotation\\u2026"></textarea><div class="b"><button class="save">Save</button><button class="cancel">Cancel</button></div>';
@@ -318,6 +360,11 @@ class Handler(BaseHTTPRequestHandler):
         elif u.path == "/submitted":
             _st = _state(self._qs_id(u))
             self._send(200, json.dumps({"state": _st, "submitted": _st == "submitted"}))
+        elif u.path == "/reviewed":
+            pid = self._qs_id(u)
+            live = _live_secids(pid)
+            rev = {k: v for k, v in _load(_rev(pid), {}).items() if not live or k in live}
+            self._send(200, json.dumps(rev))
         elif u.path == "/wait":
             # long-poll: block until any listed page is submitted (or ~5min timeout), return its id
             q = parse_qs(u.query)
@@ -372,6 +419,27 @@ class Handler(BaseHTTPRequestHandler):
                               "ts": datetime.datetime.now().isoformat(timespec="seconds")})
                 _save(_anno(pid), items)
             self._send(200, json.dumps({"ok": True, "count": len(items)}))
+        elif u.path == "/review":
+            secid = d.get("secid")
+            shash = d.get("hash")
+            reviewed = d.get("reviewed")
+            if not isinstance(secid, str) or not secid or not isinstance(reviewed, bool) or (
+                    reviewed and not isinstance(shash, str)):
+                self._send(400, json.dumps({"error": "bad review payload"}))
+                return
+            live = _live_secids(pid)
+            with _STATE_LOCK:
+                rev = _load(_rev(pid), {})
+                if not isinstance(rev, dict):
+                    rev = {}
+                if reviewed:
+                    rev[secid] = shash
+                else:
+                    rev.pop(secid, None)
+                # prune orphans for sections a regeneration removed
+                rev = {k: v for k, v in rev.items() if not live or k in live}
+                _save(_rev(pid), rev)
+            self._send(200, json.dumps({"ok": True, "reviewed": len(rev)}))
         elif u.path == "/submit":
             with _STATE_LOCK:
                 _set_state(pid, "submitted")

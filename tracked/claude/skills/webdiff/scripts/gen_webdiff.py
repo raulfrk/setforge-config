@@ -9,6 +9,7 @@ on mobile (flex min-width:0 doesn't collapse like a <table>). No CDN.
 
 Usage: python3 gen_webdiff.py <spec.json> <out.html>   (schema in repo SKILL.md)
 """
+import hashlib
 import html
 import re
 import json
@@ -29,6 +30,39 @@ _TOKEN = re.compile(r"(?P<comment>\#[^\n]*)"
                     r"|(?P<number>\b\d[\d_]*\.?\d*\b)|(?P<decorator>@\w[\w.]*)|(?P<name>[A-Za-z_]\w*)")
 _CLS = {"comment": "hc", "string": "hs", "number": "hn", "decorator": "hd"}
 _HUNK = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+
+def _sechash(*parts: str) -> str:
+    """Content fingerprint of a section. Changes ⇒ a prior 'Reviewed' tick goes stale
+    (the runtime flips it to amber '↻ changed since reviewed')."""
+    h = hashlib.sha256()
+    for p in parts:
+        h.update(str(p).encode("utf-8"))
+        h.update(b"\x00")
+    return h.hexdigest()[:16]
+
+
+_seen_secids: dict[str, int] = {}
+
+
+def _secid(*parts: str) -> str:
+    """Stable, ORDINAL-FREE section id derived from section identity (heading/label/file),
+    so inserting or reordering sections does not orphan an unrelated section's reviewed
+    state. A genuine identity collision is disambiguated with a deterministic suffix so the
+    DOM id stays unique (else two sections would share one reviewed entry)."""
+    h = hashlib.sha1()
+    for p in parts:
+        h.update(str(p).encode("utf-8"))
+        h.update(b"\x00")
+    base = "s" + h.hexdigest()[:11]
+    n = _seen_secids.get(base, 0)
+    _seen_secids[base] = n + 1
+    return base if n == 0 else f"{base}-{n}"
+
+
+def _annobar(section: str, secid: str, sechash: str) -> str:
+    return (f'<div class="annobar" data-section="{html.escape(section)}" '
+            f'data-secid="{html.escape(secid)}" data-sechash="{html.escape(sechash)}"></div>')
 
 
 def diff_for(path: str) -> str:
@@ -78,9 +112,10 @@ def render_diff(raw: str, lang: str) -> str:
 
 
 parts = []
+_ov_callouts = "".join(c.get("html", "") for c in spec.get("callouts", []))
 for c in spec.get("callouts", []):
     parts.append(f'<div class="callout {c.get("cls","")}">{c["html"]}</div>')
-parts.append('<div class="annobar" data-section="0 · Overview"></div>')
+parts.append(_annobar("0 · Overview", "overview", _sechash("overview", _ov_callouts)))
 
 for gi, g in enumerate(spec["groups"], 1):
     badge = f' <span class="badge {g.get("badge_cls","b1")}">{html.escape(g["badge"])}</span>' if g.get("badge") else ""
@@ -98,10 +133,12 @@ for gi, g in enumerate(spec["groups"], 1):
             label = path.split("/")[-1]
         else:
             why, label = blk["why"], blk["label"]
+        secid = _secid(g["heading"], label, path)
+        sechash = _sechash(raw, label, str(why))
         parts.append(
             f'<div class="seam"><div class="lbl">{html.escape(label)}</div>'
             f'<div class="why">{why}</div>{render_diff(raw, lang)}'
-            f'<div class="annobar" data-section="{html.escape(f"{gi} · {label}")}"></div></div>')
+            f'{_annobar(f"{gi} · {label}", secid, sechash)}</div>')
 
 BODY = "\n".join(parts)
 sub = spec.get("sub", f"Diff <code>{html.escape(RANGE)}</code> — each change with its why; annotate either.")
