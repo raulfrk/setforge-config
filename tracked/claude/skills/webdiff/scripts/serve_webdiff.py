@@ -283,7 +283,7 @@ class Handler(BaseHTTPRequestHandler):
                 to = int(q.get("timeout", ["300"])[0])
             except ValueError:
                 to = 300
-            to = min(max(to, 0), 86400)  # 0 = block indefinitely until a submit
+            to = max(to, 0)  # 0 = block indefinitely until a submit; no upper cap
             deadline = None if to == 0 else time.monotonic() + to
             with _CV:
                 while True:
