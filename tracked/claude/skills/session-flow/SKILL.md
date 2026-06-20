@@ -84,7 +84,7 @@ Invoke `superpowers:executing-plans`. TDD where the contract isn't obvious (`sup
    - **predicted file overlap = ADVISORY** — flag it ("beads X, Y both touch `foo.py` — conflict likely") but still run them in parallel; conflicts are resolved at merge.
 2. **Per-bead execution unit** — assess per bead-set and state the choice: either (a) each worktree runs its own Phase 4–6 autonomously (subagent implements → per-bead review fan → fixes, arriving merge-ready), or (b) worktrees code in parallel and review is centralized. Pick by how independent the beads are.
 3. **Mechanism** — parallelism runs via **in-session subagents** (Task/Agent dispatch from the orchestrator), NOT separate agent-view agents. One worktree per bead (`wt switch --create` each before dispatch; see wt-reference's parallel-dispatch pattern).
-4. **Autonomy** — balance per bead-set; present the level with the wave plan. Default for an approved wave: run to merge-ready and report at real gates (semantic merge conflicts, the pre-merge review handoff, blocking failures).
+4. **Autonomy** — balance per bead-set; present the level with the wave plan. Default for an approved wave: run to merge-ready and report at real gates (semantic merge conflicts, the pre-merge revdiff offer (Phase 6) — which "merge-ready" includes making, never bypassing — blocking failures).
 5. **Gate + blast-radius discipline** — every gate command quotes its real exit code (`cmd; echo EXIT=$?`, or `set -o pipefail` before any pipeline); dispatched agents must quote explicit exit codes — a bare `cmd | tail` pipeline status is not evidence. A cross-cutting change (output-stream move, rename, flag or user-visible text change) additionally requires `rg` of the moved token/symbol across the WHOLE test tree — including e2e files the bead's own gates never execute — before reporting merge-ready (complements Phase 7's post-merge pass; does not replace it).
 
 ### Phase 5 — Review fan
@@ -106,6 +106,8 @@ The fan is **goal-wrapped** (iterate-to-clean). Before dispatching it:
 
 Additionally, when running non-interactively (no one is there to paste), also run the fan directly via subagents and loop it yourself until clean — but still surface the `/goal` condition so the user can drive it themselves when present.
 
+**A clean fan ≠ merge-authorized.** The review-fan `/goal` and its "don't pause to ask" directive govern the automated fan loop ONLY — neither discharges the Phase-6 human revdiff gate. A clean fan means the diff converged, not that it may merge. With a review-`/goal` active, still surface the "review this with revdiff?" offer before merging; it is the gate the goal converges toward, not a pause to skip.
+
 **Placement:** for multi-bead work, each bead gets its review fan in its own worktree **before that bead merges**; then ONE combined goal-wrapped fan runs post-integration (Phase 7). For multi-artifact changes, review each artifact type's diff separately.
 
 ### Phase 6 — Address findings + merge
@@ -113,6 +115,8 @@ Additionally, when running non-interactively (no one is there to paste), also ru
 Fix ALL findings inline (CRITICAL, IMPORTANT, and MINOR) unless the fix is large or clearly out-of-scope — in that case, file a new bd with dep link. Review-fix commits stay SEPARATE — never squash into the implementation commit.
 
 **Before each bead merges, always ask: "review this with revdiff?"** (revdiff is available on all hosts). Under an APPROVED wave plan the offers may be batched per sub-wave instead of per bead. In **learning mode** (see below), run the annotated-diff protocol instead of a plain ask.
+
+This gate is MANDATORY: a clean review fan, an active review-`/goal`, and "run to merge-ready" autonomy do NOT discharge it — they cover the automated fan, while the revdiff offer is the separate human gate that still fires before any merge. In a background session it opens in the attached tmux popup — never downgrade to an inline-only proposal because the session is backgrounded. **A bead is not merge-ready until this offer has been made and resolved.**
 
 **Merge** per the host's configured policy (see "Merge policy" below). For multi-bead waves the merge gate runs per bead, SERIALLY at the orchestrator: rebase the worktree onto the target, run the full unit suite plus the bead's expensive integration subset (expensive subsets never run inside parallel implementers — shared daemons/hosts saturate), then merge and `bd close`. On conflicts: resolve and continue the merge, reporting what you resolved afterward; pause and ask ONLY when a resolution is semantically load-bearing (two real behaviors collide and the wrong pick changes intent).
 
