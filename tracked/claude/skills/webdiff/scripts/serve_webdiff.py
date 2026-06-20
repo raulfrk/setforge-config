@@ -103,8 +103,8 @@ def runtime(pid: str, mtime: float) -> str:
     return """
 <style>
 body{padding-top:54px}
-#wd-tabs{position:fixed;top:0;left:0;right:0;z-index:10000;background:#1a1b26;border-bottom:1px solid #3b4261;display:flex;align-items:center;gap:8px;padding:7px 10px}
-#wd-tablist{flex:1 1 auto;display:flex;gap:6px;overflow-x:auto;white-space:nowrap}
+#wd-tabs{position:fixed;top:0;left:0;right:0;z-index:10000;background:#1a1b26;border-bottom:1px solid #3b4261;display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:7px 10px}
+#wd-tablist{flex:1 1 220px;min-width:0;display:flex;gap:6px;overflow-x:auto;white-space:nowrap}
 #wd-tabs .tab{flex:0 0 auto;max-width:160px;overflow:hidden;text-overflow:ellipsis;color:#9aa5ce;text-decoration:none;font:13px sans-serif;padding:7px 11px;border-radius:8px;border:1px solid transparent}
 #wd-tabs .tab:hover{background:#24283b}
 #wd-tabs .tab.active{background:#24283b;color:#7aa2f7;border-color:#3b4261;font-weight:700}
@@ -152,6 +152,7 @@ async function wdTabs(){
   const cb=document.createElement('button');cb.id='wd-close';cb.textContent='Submit & Close';
   cb.onclick=async()=>{cb.disabled=true;cb.textContent='\\u23f3\\u2026';await fetch('/submit?id='+encodeURIComponent(__PID__),{method:'POST'});await fetch('/close?id='+encodeURIComponent(__PID__),{method:'POST'});location.href='/';};
   bar.appendChild(cb);
+  document.body.style.paddingTop=(bar.offsetHeight+4)+'px';  // bar may wrap to 2 rows on narrow screens
 }
 async function wdLoad(){
   let data=[]; try{data=await(await fetch('/annotations?id='+encodeURIComponent(__PID__))).json();}catch(e){}
