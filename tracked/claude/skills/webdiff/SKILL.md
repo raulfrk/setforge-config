@@ -101,12 +101,41 @@ session must scope itself to what *it* created:
 ## Endpoints (all keyed by page id)
 
 - `GET /` → 302 to the most-recent page · `GET /p/<id>` → the page (tab bar + annotation runtime injected) · `GET /pages` → tab list `[{id,title,mtime}]`.
-- `GET /annotations?id=<id>` · `GET /submitted?id=<id>` · `GET /wait?ids=a,b,c[&timeout=<secs>]` (long-poll; blocks until a listed page is submitted, returns **`{"id","closed","annotations"}` and consumes (clears) the notes + resets the flag atomically**, or `{"id":null}` after `timeout` — default 300s, no upper cap, **`timeout=0` blocks indefinitely** until a submit. Arm with `timeout=0` (and a `curl` with no `--max-time`) for one forever-open wait, zero churn) · `GET /archived` → closed pages `[{id,title,mtime}]`.
-- `POST /annotate {id,section,text}` · `POST /submit?id=<id>` · `POST /close?id=<id>` (**Submit & Close** — archive the page out of the tab bar; annotations kept for a final read) · `POST /reopen?id=<id>` (restore an archived page to the tabs) · `POST /resolve {id,section,text,ts}` (drop one handled note — each has a ✕) · `POST /clear?id=<id>` (wipe + disarm) · `POST /rearm?id=<id>` (disarm only).
+- `GET /annotations?id=<id>` · `GET /submitted?id=<id>` · `GET /wait?ids=a,b,c[&timeout=<secs>]` (long-poll; blocks until a listed page is submitted, returns **`{"id","closed","annotations","markdown"}` and consumes (clears) the notes + resets the flag atomically**, or `{"id":null}` after `timeout` — default 300s, no upper cap, **`timeout=0` blocks indefinitely** until a submit. Arm with `timeout=0` (and a `curl` with no `--max-time`) for one forever-open wait, zero churn). The **`markdown`** field is the same batch rendered in revdiff's `## file:line (type)` format (see *Unified annotation format*) · `GET /archived` → closed pages `[{id,title,mtime}]`.
+- `GET /reviewed?id=<id>` → `{secid: sechash}` of currently-reviewed sections (pruned to live sections).
+- `POST /annotate {id,section,text[,file]}` · `POST /submit?id=<id>` · `POST /review {id,secid,hash,reviewed}` (toggle a section's reviewed-tick; locked RMW, orphan-pruned) · `POST /close?id=<id>` (**Submit & Close** — archive the page out of the tab bar; annotations kept for a final read) · `POST /reopen?id=<id>` (restore an archived page to the tabs) · `POST /resolve {id,section,text,ts}` (drop one handled note — each has a ✕) · `POST /clear?id=<id>` (wipe annotations + disarm; reviewed-ticks survive) · `POST /rearm?id=<id>` (disarm only).
 
 **Empty state:** when no pages are open, `GET /` serves an "All caught up" page listing the **archived** reviews with **Reopen** buttons, and it auto-redirects to any new review that appears. So closing the last tab lands somewhere useful, not a dead end.
 
 After addressing a batch, `/clear` the page (or the user ✕'s each) so it shows a clean slate next round. If a page comes back from `/wait` but is no longer in `/pages`, the user hit **Submit & Close** — read its final notes, then `/clear` its state; it won't be a tab again.
+
+## Content modes (parity with revdiff)
+
+Beyond the default `diff` block, a block may set an explicit `mode` (gen_webdiff.py):
+
+- **`context`** — `{mode:"context", file}` reads a repo file and renders it context-only (no +/−). Explicit marker required; never inferred from a missing `range`.
+- **`plan`** — `{mode:"plan", file}` renders a markdown file with a generated TOC.
+- **`text`** — `{mode:"text", content}` renders synthetic/stdin content.
+- **`all-files`** — `{mode:"all-files"}` lists `git ls-files` (capped).
+- **`compare`** — `{mode:"compare", old, new}` renders a two-file diff (difflib).
+
+**Security:** every disk path is resolved under the repo root and rejected on `..`/absolute/symlink escape (single shared helper); ALL file/stdin content is `html.escape`d (authored `why`/callouts stay raw); reads are size-capped with a truncation marker; binary files (NUL-sniffed) become a placeholder. A rejected/missing path renders a visible escaped error block, never unconfined content. `range` is optional for content-only pages.
+
+## Visuals
+
+A sticky **section overview map** (status dot per section + jump links + an N/total reviewed counter); per-file **diff-stat charts**; an authored **`diagram`** field on a group/block (inline `{type:"svg"}`, `{type:"img",src}`, or a labelled source fallback for mermaid/excalidraw — pre-export to SVG for an inline render; no CDN); collapsible **`<details>` groups** with badges. Per-section annotate stays on every section.
+
+## Reviewed-tick & close-gating
+
+Every section carries a stable `data-secid` and a `data-sechash` = sha256(content). A per-section **Reviewed** toggle persists in `reviewed-<id>.json` (independent of annotations/submit, so it survives reload/Submit/clear) and shows **green** when reviewed, **amber "↻ changed since reviewed"** when the content hash no longer matches, plain otherwise. **Submit & Close** is disabled (showing "N left") until every section is reviewed; **plain Submit is never gated**, and neither gates the actual bead merge.
+
+## Unified annotation format
+
+`annotation_format.py` is a faithful port of revdiff's annotation grammar (`## path (file-level)`, `## path:N (T)`, `## path:N-M (T)`, T ∈ {+,−,space}) with `## `-line body escaping, so annotations interchange losslessly between webdiff and revdiff through ONE parser. The `/wait` response's `markdown` field is this format (section notes → file-level; explicit hunk coords → line-level). `ts`/section metadata is webdiff-only and not carried across the handoff.
+
+## Plan-review hook
+
+`plan-review-webdiff-hook.py` is a custom `PreToolUse(ExitPlanMode)` hook (registered in tracked `settings.json`) that owns review-surface dispatch: with `review-surface=webdiff` (default) and the hub reachable/startable it serves the plan as a webdiff page (plan render + a two-file compare for the previous-revision rollover), blocks on `/wait?timeout=0`, and maps annotations to the ask/deny contract; with `revdiff`/no-browser it delegates to revdiff-planning's own hook unmodified. **Going live requires disabling revdiff-planning's own ExitPlanMode hook** (toggle that plugin off) so only one fires.
 
 ## Binding / reachability
 
@@ -124,10 +153,9 @@ With Tailscale up the hub binds the tailnet IP (tailnet-only, no public exposure
   widths).
 - **Verify it yourself:** screenshot + assert with Playwright/Chromium (`playwright install chromium` +
   system deps) or test DOM logic with jsdom — both are how this skill's zoom/render were validated.
-- **Invariant suite:** `scripts/test_webdiff_invariants.py <hub-url>` (Hypothesis + Playwright) asserts the
-  hub's 9 invariants (render/404/annotate-roundtrip/resolve/clear/per-page-isolation/submit-isolation/
-  tab-completeness/zoom-clamp/no-mobile-overflow). Run it against an isolated test hub
-  (`WEBDIFF_DIR=<tmp> python serve_webdiff.py <port> 127.0.0.1`) so it never touches live state.
+- **Test suite** (run with `/home/raul/setforge/.venv/bin/python` — it has Playwright + Hypothesis; system `python3` lacks them):
+  - `test_webdiff_invariants.py <hub-url>` (Hypothesis + Playwright) — the hub's render/404/annotate/resolve/clear/isolation/submit/tab/zoom/no-overflow invariants, against an isolated test hub (`WEBDIFF_DIR=<tmp> python serve_webdiff.py <port> 127.0.0.1`).
+  - `test_tristate.py` — submit tri-state (self-spinning). `test_reviewed.py` — reviewed-tick backend. `test_content_modes.py` — content modes + path security. `test_annotation_format.py` — revdiff⇄webdiff round-trip (Hypothesis). `test_plan_hook.py` — the ExitPlanMode hook (ask/deny/rollover/fallback). All self-spin an isolated hub and exit 0.
 - **bg sessions:** this is the sanctioned web review surface for background jobs — never downgrade to an
   inline-only proposal because the session is backgrounded.
 - **Don't `pkill -f` the server** by a pattern that also matches your shell — kill by pid from `ss -ltnp`.
