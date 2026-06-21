@@ -128,6 +128,23 @@ def main() -> int:
         r = subprocess.run([sys.executable, HOOK], input=json.dumps({"tool_input": {"plan": ""}}),
                            capture_output=True, text=True, env={**os.environ, **env})
         ck("empty plan: ask exit 0", r.returncode == 0 and '"ask"' in r.stdout)
+
+        # (6) HTML plan -> served VERBATIM as a mockup page (not markdown-escaped)
+        html_cap = {}
+
+        def sim_check_html(b, pid):
+            html_cap["html"] = open(os.path.join(d, "pages", pid + ".html"), encoding="utf-8").read()
+            req("POST", b + "/submit?id=" + pid)
+        html_plan = ('<!DOCTYPE html>\n<html><head><style>.c{color:red}</style></head>'
+                     '<body><h1>SENTINEL_HTML_PLAN &amp; <b>bold</b></h1>'
+                     '<div class="annobar" data-section="1 · Section"></div></body></html>')
+        rc, so, se, pid = run_hook(html_plan, env, sim_check_html)
+        page_html = html_cap.get("html", "")
+        ck("html: exit 0 (empty submit)", rc == 0, f"rc={rc}")
+        ck("html: served verbatim (raw tags, not escaped)",
+           "<h1>SENTINEL_HTML_PLAN" in page_html and "&lt;h1&gt;" not in page_html)
+        ck("html: annobar preserved for inline notes",
+           'data-section="1 · Section"' in page_html)
     finally:
         srv.terminate(); srv.wait()
 

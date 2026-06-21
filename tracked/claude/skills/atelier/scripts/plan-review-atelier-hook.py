@@ -170,6 +170,15 @@ def _build_spec(new_snap: Path, old_snap: Path | None) -> dict:
             "groups": [{"heading": "Plan review", "blocks": blocks}]}
 
 
+def _is_html(content: str) -> bool:
+    """A plan authored as a full HTML document is served VERBATIM as a mockup page
+    (the hub injects the annotation runtime on GET /p/), instead of the markdown
+    plan-render which html-escapes everything (so HTML never rendered as graphics).
+    Detected by a leading ``<!doctype html>`` / ``<html`` after optional whitespace."""
+    head = content.lstrip()[:256].lower()
+    return head.startswith("<!doctype html") or head.startswith("<html")
+
+
 def atelier_review(plan_content: str, base: str) -> None:
     """Serve the plan, block until Submit, then deny-with-notes or ask-when-empty.
     Exits via make_response. The page is always /close'd (archived) on the way out."""
@@ -184,7 +193,12 @@ def atelier_review(plan_content: str, base: str) -> None:
 
     page_id = "plan-" + new_snap.stem
     page_file = _pages_dir() / (page_id + ".html")
-    if not _gen_page(_build_spec(new_snap, old_snap), page_file):
+    if _is_html(stripped):
+        # HTML plan: serve verbatim as a mockup page; the hub injects the annotation
+        # runtime on serve, so author per-section `annobar` divs for inline notes.
+        # (Markdown rollover-compare does not apply; the HTML page stands alone.)
+        page_file.write_text(stripped, encoding="utf-8")
+    elif not _gen_page(_build_spec(new_snap, old_snap), page_file):
         new_snap.unlink(missing_ok=True)
         make_response("ask", "could not generate the plan page; plan not reviewed this round")
 
