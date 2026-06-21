@@ -135,6 +135,8 @@ with sync_playwright() as p:
             rvw = pg.eval_on_selector_all(".annobar .rvw", "e=>e.length")
             has_map = pg.evaluate("()=>!!document.getElementById('wd-map')")
             check("INV-10.map", has_map and dots == secs, f"{pid}: map={has_map} dots {dots} vs secs {secs}")
+            mappos = pg.evaluate("()=>{var m=document.getElementById('wd-map');return m?getComputedStyle(m).position:'';}")
+            check("INV-10.map-not-sticky", mappos == "static", f"{pid}: map position {mappos!r} (want static, non-floating)")
             check("INV-11.reviewtoggle", rvw == secs, f"{pid}: {rvw} toggles vs {secs} secs")
         # INV-8 zoom (only on pages that have a .dt diff)
         if pg.evaluate("()=>!!document.querySelector('.dt')"):
