@@ -179,38 +179,73 @@ def render_compare(old_p: str, new_p: str, lang: str) -> str:
 
 _MD_H = re.compile(r"^(#{1,4})\s+(.*)$")
 _MD_FENCE = re.compile(r"^```")
+_MD_ROW = re.compile(r"^\s*\|(.+)\|\s*$")
+_MD_SEP = re.compile(r"^\s*\|[\s:|-]+\|\s*$")
+_MD_CODE = re.compile(r"`([^`]+)`")
+_MD_BOLD = re.compile(r"\*\*([^*]+)\*\*")
+
+
+def _md_inline(s: str) -> str:
+    """Inline markdown on ALREADY-html.escaped text: `code` first, then **bold**.
+    Operates only on escaped text and re-introduces a fixed tag set, so it cannot inject HTML."""
+    s = _MD_CODE.sub(r"<code>\1</code>", s)
+    return _MD_BOLD.sub(r"<strong>\1</strong>", s)
+
+
+def _md_cells(row: str) -> list:
+    return [c.strip() for c in row.strip().strip("|").split("|")]
 
 
 def render_markdown(text: str) -> tuple[str, str]:
     """Minimal, SAFE markdown → HTML (everything html.escaped first, then a small set of
-    block constructs re-applied). Returns (toc_html, body_html). Used for plan-file mode."""
+    block + inline constructs re-applied: headings, lists, fenced code, GFM tables,
+    **bold**, `inline code`). Returns (toc_html, body_html). Used for plan-file mode."""
+    lines = text.splitlines()
     out, toc, in_code, in_list = [], [], False, False
-    for line in text.splitlines():
+    i = 0
+    while i < len(lines):
+        line = lines[i]
         if _MD_FENCE.match(line):
             if in_list:
                 out.append("</ul>"); in_list = False
             out.append("</pre>" if in_code else '<pre class="md-pre">')
             in_code = not in_code
-            continue
+            i += 1; continue
         if in_code:
-            out.append(html.escape(line)); continue
+            out.append(html.escape(line)); i += 1; continue
         m = _MD_H.match(line)
         if m:
             if in_list:
                 out.append("</ul>"); in_list = False
-            lvl = len(m.group(1)); txt = html.escape(m.group(2))
+            lvl = len(m.group(1)); txt = _md_inline(html.escape(m.group(2)))
             anchor = "h" + _sechash(line)[:8]
             toc.append(f'<li class="toc-l{lvl}"><a href="#{anchor}">{txt}</a></li>')
             out.append(f'<h{lvl+1} id="{anchor}" class="md-h">{txt}</h{lvl+1}>')
+            i += 1; continue
+        # GFM table: a |..| row immediately followed by a |---| separator row
+        if _MD_ROW.match(line) and i + 1 < len(lines) and _MD_SEP.match(lines[i + 1]):
+            if in_list:
+                out.append("</ul>"); in_list = False
+            head = _md_cells(line)
+            out.append('<table class="md-tbl"><thead><tr>'
+                       + "".join(f"<th>{_md_inline(html.escape(c))}</th>" for c in head)
+                       + "</tr></thead><tbody>")
+            i += 2
+            while i < len(lines) and _MD_ROW.match(lines[i]) and not _MD_SEP.match(lines[i]):
+                out.append("<tr>" + "".join(
+                    f"<td>{_md_inline(html.escape(c))}</td>" for c in _md_cells(lines[i])) + "</tr>")
+                i += 1
+            out.append("</tbody></table>")
             continue
         if line.lstrip().startswith(("- ", "* ")):
             if not in_list:
                 out.append('<ul class="md-ul">'); in_list = True
-            out.append(f"<li>{html.escape(line.lstrip()[2:])}</li>")
-            continue
+            out.append(f"<li>{_md_inline(html.escape(line.lstrip()[2:]))}</li>")
+            i += 1; continue
         if in_list:
             out.append("</ul>"); in_list = False
-        out.append(f"<p>{html.escape(line)}</p>" if line.strip() else "")
+        out.append(f"<p>{_md_inline(html.escape(line))}</p>" if line.strip() else "")
+        i += 1
     if in_list:
         out.append("</ul>")
     if in_code:
@@ -382,6 +417,10 @@ code{{background:var(--panel2);padding:1px 6px;border-radius:5px;font:12.5px ui-
 .toc .toc-l2{{padding-left:14px}} .toc .toc-l3{{padding-left:28px}} .toc .toc-l4{{padding-left:42px}}
 .md-body{{font-size:14px;line-height:1.6;overflow-wrap:anywhere}} .md-body .md-h{{color:#fff;margin:14px 0 6px;border-bottom:1px solid var(--line);padding-bottom:3px}}
 .md-body p{{margin:6px 0}} .md-ul{{margin:6px 0;padding-left:20px}} .md-ul li{{margin:3px 0}}
+.md-body strong{{color:#fff}}
+.md-body table.md-tbl{{border-collapse:collapse;margin:9px 0;font-size:13px;display:block;overflow-x:auto}}
+.md-body .md-tbl th,.md-body .md-tbl td{{border:1px solid var(--line);padding:5px 9px;text-align:left;vertical-align:top}}
+.md-body .md-tbl th{{background:var(--panel2);color:#fff;white-space:nowrap}}
 .md-pre{{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px ui-monospace,Menlo,monospace;color:#a9b1d6}}
 .allfiles{{max-height:60vh;overflow-y:auto;font:12.5px ui-monospace,Menlo,monospace;color:#a9b1d6}}
 /* diff-stat charts */

@@ -79,11 +79,17 @@ def main() -> int:
     check("compare traversal rejected", "cannot render" in gen(
         repo, [{"mode": "compare", "old": "a.txt", "new": "../../etc/passwd", "label": "c", "why": "x"}]))
 
-    # plan mode: markdown headings -> TOC, content escaped
-    open(os.path.join(repo, "plan.md"), "w").write("# Title\n\nsome <b>text</b>\n\n## Sub\n- item\n")
+    # plan mode: markdown headings -> TOC, content escaped, inline (bold/code) + tables rendered
+    open(os.path.join(repo, "plan.md"), "w").write(
+        "# Title\n\nsome <b>text</b> with **bold** and `code`\n\n## Sub\n- item\n\n"
+        "| A | B |\n|---|---|\n| **x** | `y` |\n\nrisky **<script>** done\n")
     h = gen(repo, [{"mode": "plan", "file": "plan.md", "label": "plan", "why": "x"}])
     check("plan builds TOC", 'class="toc"' in h)
     check("plan escapes body", "<b>text</b>" not in h and "&lt;b&gt;text&lt;/b&gt;" in h)
+    check("plan renders bold", "<strong>bold</strong>" in h)
+    check("plan renders inline code", "<code>code</code>" in h)
+    check("plan renders tables", '<table class="md-tbl">' in h and "<th>A</th>" in h and "<td><strong>x</strong></td>" in h)
+    check("plan inline stays injection-safe", "<strong><script></strong>" not in h and "<strong>&lt;script&gt;</strong>" in h)
 
     # all-files mode: lists tracked files, no traversal
     h = gen(repo, [{"mode": "all-files", "label": "files", "why": "x"}])
