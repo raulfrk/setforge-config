@@ -40,7 +40,8 @@ packages:
     tag: v0.75.0
     asset: worktrunk-x86_64-unknown-linux-musl.tar.xz
     checksum: sha256:9ca16c77245c01edb079620a4375a8a49046fded4d4e571dd21930fd0235eca3
-    binary: wt
+    binary: worktrunk-x86_64-unknown-linux-musl/wt
+    rename: wt
     install: ~/.local/bin
     chmod: "755"
 
