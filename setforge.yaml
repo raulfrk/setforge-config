@@ -1,12 +1,20 @@
 version: 1
 
 tracked_files:
-  codex_global_agents_v2:
+  codex_global_agents:
     src: codex/AGENTS.md
     dst: ~/.codex/AGENTS.md
 
+  codex_skill_setforge:
+    src: codex/skills/setforge/SKILL.md
+    dst: ~/.codex/skills/setforge/SKILL.md
+
+  codex_skill_herdr:
+    src: codex/skills/herdr/SKILL.md
+    dst: ~/.codex/skills/herdr/SKILL.md
+
 packages:
-  beads-bin:
+  beads:
     type: github_release
     repo: gastownhall/beads
     tag: v1.1.2
@@ -16,12 +24,36 @@ packages:
     install: ~/.local/bin
     chmod: "755"
 
+  revdiff:
+    type: github_release
+    repo: umputun/revdiff
+    tag: v1.12.0
+    asset: revdiff_1.12.0_linux_amd64.tar.gz
+    checksum: sha256:3b36478c3b9d6c6f5557515fed876e88ce1c3d14564714a3ed5aefb903cc7154
+    binary: revdiff
+    install: ~/.local/bin
+    chmod: "755"
+
+  worktrunk:
+    type: github_release
+    repo: max-sixty/worktrunk
+    tag: v0.75.0
+    asset: worktrunk-x86_64-unknown-linux-musl.tar.xz
+    checksum: sha256:9ca16c77245c01edb079620a4375a8a49046fded4d4e571dd21930fd0235eca3
+    binary: wt
+    install: ~/.local/bin
+    chmod: "755"
+
 profiles:
   codex:
     tracked_files:
-      - codex_global_agents_v2
+      - codex_global_agents
+      - codex_skill_setforge
+      - codex_skill_herdr
     packages:
-      - beads-bin
+      - beads
+      - revdiff
+      - worktrunk
 
 schema_version: '6.5'
 minimum_version: '6.0'
