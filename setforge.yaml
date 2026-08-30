@@ -1,0 +1,27 @@
+version: 1
+
+tracked_files:
+  codex_global_agents_v2:
+    src: codex/AGENTS.md
+    dst: ~/.codex/AGENTS.md
+
+packages:
+  beads-bin:
+    type: github_release
+    repo: gastownhall/beads
+    tag: v1.1.2
+    asset: beads_1.1.2_linux_amd64.tar.gz
+    checksum: sha256:a72d71ed374955dc9f83a0f90b54bd7b6a0016709dd1676ae2e368651ed401c2
+    binary: bd
+    install: ~/.local/bin
+    chmod: "755"
+
+profiles:
+  codex:
+    tracked_files:
+      - codex_global_agents_v2
+    packages:
+      - beads-bin
+
+schema_version: '6.5'
+minimum_version: '6.0'

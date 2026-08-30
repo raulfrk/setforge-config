@@ -1,0 +1,10 @@
+version = 2
+
+[[package]]
+type = "github_release"
+key = "gastownhall/beads"
+version = "v1.1.2"
+profiles = [
+    "codex",
+]
+checksum = "sha256:a72d71ed374955dc9f83a0f90b54bd7b6a0016709dd1676ae2e368651ed401c2"
