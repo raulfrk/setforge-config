@@ -53,6 +53,15 @@ packages:
     install: ~/.local/bin
     chmod: "755"
 
+codex:
+  marketplaces:
+    personal:
+      source: github
+      repo: raulfrk/setforge-config
+  plugins:
+    revdiff-herdr:
+      marketplace: personal
+
 profiles:
   codex:
     tracked_files:
@@ -65,6 +74,9 @@ profiles:
       - beads
       - revdiff
       - worktrunk
+    codex:
+      plugins:
+        - revdiff-herdr
 
 schema_version: '6.5'
-minimum_version: '6.0'
+minimum_version: '6.5'

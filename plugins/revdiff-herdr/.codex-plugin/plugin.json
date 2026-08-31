@@ -1,0 +1,35 @@
+{
+  "name": "revdiff-herdr",
+  "version": "0.1.0",
+  "description": "Review Codex plans, diffs, and Markdown in a dedicated Herdr tab",
+  "author": {
+    "name": "Raul"
+  },
+  "homepage": "https://revdiff.com",
+  "repository": "https://github.com/raulfrk/setforge-config",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "herdr",
+    "plan-review",
+    "revdiff"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "RevDiff for Herdr",
+    "shortDescription": "Review plans and diffs in a dedicated Herdr tab.",
+    "longDescription": "Opens completed Codex plans and manual RevDiff reviews in a focused tab within the caller's Herdr workspace, returning inline annotations to Codex.",
+    "developerName": "Raul",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://revdiff.com",
+    "defaultPrompt": [
+      "Review my completed plan in RevDiff.",
+      "Open the current diff in RevDiff."
+    ]
+  }
+}
