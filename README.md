@@ -23,3 +23,9 @@ behavior and value are reviewed.
 Plugin tests live only in the repository's top-level `tests/` directory. They
 are not a SetForge tracked resource and are not part of the installed plugin
 payload.
+
+On a new host, SetForge 1.2.0 can falsely report the first Codex 0.151
+marketplace/plugin mutation as unsuccessful after Codex has installed it. Check
+`codex plugin marketplace list --json` and `codex plugin list --json`; when the
+requested state is present, rerun the same SetForge install and it should be a
+no-op. The tracked SetForge skill records the exact compatibility check.

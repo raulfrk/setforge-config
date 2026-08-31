@@ -124,6 +124,24 @@ Verify pinned executables independently with `command -v`, `type -a`, version,
 and digest where applicable. Run a second identical dry install when
 idempotence matters; it should report no planned work.
 
+### Codex 0.151 plugin mutation compatibility
+
+SetForge 1.2.0 expects Codex plugin mutation JSON to contain
+`"success": true`, while Codex CLI 0.151 returns an operation-specific success
+object instead. A first marketplace or plugin reconciliation can therefore
+report failure after the mutation actually succeeded. Do not immediately undo
+the operation. Inspect both native states:
+
+```bash
+codex plugin marketplace list --json
+codex plugin list --json
+```
+
+If the requested marketplace and plugin are installed and enabled, rerun the
+same SetForge install; the converged second pass should be a no-op. Treat any
+different state as a real failure. Recheck this note against the installed
+versions and remove it once SetForge accepts Codex's current mutation payloads.
+
 ## Ownership and project profiles
 
 Ownership claims are durable and exist independently of whether a manifest can
