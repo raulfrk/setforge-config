@@ -21,6 +21,7 @@ BACKEND_ENV = {
     "AGTERM_SESSION_ID",
     "AGTERM_SOCKET",
     "HERDR_ENV",
+    "HERDR_TAB_ID",
     "HERDR_WORKSPACE_ID",
     "TMUX",
     "TMUX_PANE",
@@ -92,6 +93,11 @@ class RevDiffHerdrTests(unittest.TestCase):
                     sh -c "${4:?missing pane command}"
                     ;;
                 'tab close') ;;
+                'tab focus')
+                    if [[ ${TEST_HERDR_FOCUS_FAIL:-0} == 1 ]]; then
+                        exit 12
+                    fi
+                    ;;
                 *) exit 8 ;;
             esac
             """,
@@ -147,6 +153,7 @@ class RevDiffHerdrTests(unittest.TestCase):
     def _mixed_herdr_env(self, **overrides: str) -> dict[str, str]:
         values = {
             "HERDR_ENV": "1",
+            "HERDR_TAB_ID": "w-test:t-caller",
             "HERDR_WORKSPACE_ID": "w-test",
             "TMUX": "/tmp/fake-tmux,1,0",
             "TMUX_PANE": "%9",
@@ -180,8 +187,14 @@ class RevDiffHerdrTests(unittest.TestCase):
         self.assertIn("--workspace w-test", calls)
         self.assertIn("--focus", calls)
         self.assertIn("herdr tab close w-test:t1", calls)
+        self.assertIn("herdr tab focus w-test:t-caller", calls)
         self.assertIn(f"--only={self.plan}", calls)
         self.assertNotRegex(calls, r"(?m)^(tmux|agtermctl|zellij) ")
+        lines = calls.splitlines()
+        self.assertLess(
+            lines.index("herdr tab close w-test:t1"),
+            lines.index("herdr tab focus w-test:t-caller"),
+        )
 
     def test_plan_compare_mode_keeps_markdown_and_collapses_revision_diff(self) -> None:
         result = subprocess.run(
@@ -213,6 +226,7 @@ class RevDiffHerdrTests(unittest.TestCase):
         self.assertIn("herdr tab create", calls)
         self.assertIn("herdr pane run w-test:p1", calls)
         self.assertIn("herdr tab close w-test:t1", calls)
+        self.assertIn("herdr tab focus w-test:t-caller", calls)
         self.assertNotRegex(calls, r"(?m)^(tmux|agtermctl|zellij) ")
 
     def test_non_herdr_session_preserves_upstream_tmux_selection(self) -> None:
@@ -240,7 +254,9 @@ class RevDiffHerdrTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1)
         self.assertIn("did not return pane/tab ids", result.stderr)
-        self.assertNotRegex(self._calls(), r"(?m)^tmux ")
+        calls = self._calls()
+        self.assertIn("herdr tab focus w-test:t-caller", calls)
+        self.assertNotRegex(calls, r"(?m)^tmux ")
 
     def test_pane_run_failure_closes_created_tab(self) -> None:
         result = subprocess.run(
@@ -253,7 +269,38 @@ class RevDiffHerdrTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1)
         self.assertIn("pane run failed", result.stderr)
-        self.assertIn("herdr tab close w-test:t1", self._calls())
+        calls = self._calls()
+        self.assertIn("herdr tab close w-test:t1", calls)
+        self.assertIn("herdr tab focus w-test:t-caller", calls)
+
+    def test_focus_failure_does_not_replace_annotations_or_exit_status(self) -> None:
+        result = subprocess.run(
+            [str(PLAN_LAUNCHER), str(self.plan)],
+            env=self._mixed_herdr_env(
+                TEST_ANNOTATIONS="keep this annotation",
+                TEST_HERDR_FOCUS_FAIL="1",
+                TEST_REVDIFF_RC="10",
+            ),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 10, result.stderr)
+        self.assertEqual(result.stdout, "keep this annotation")
+        self.assertIn("herdr tab focus w-test:t-caller", self._calls())
+
+    def test_missing_caller_tab_id_skips_focus_restoration(self) -> None:
+        result = subprocess.run(
+            [str(PLAN_LAUNCHER), str(self.plan)],
+            env=self._mixed_herdr_env(HERDR_TAB_ID=""),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("herdr tab focus", self._calls())
 
     def test_stop_hook_extracts_markdown_and_blocks_with_annotations(self) -> None:
         event = {

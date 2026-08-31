@@ -8,14 +8,15 @@ license retained in [`LICENSE`](LICENSE).
 - RevDiff release: `v1.12.0`
 - Manual Codex plugin: `0.8.23`
 - Planning plugin: `0.3.9`
-- Local plugin: `0.1.0`
+- Local plugin: `0.1.1`
 - Synchronized: `2026-08-31`
 
 The `*.upstream.sh`, hook, helper, reference, and skill files originate from
 that revision. The two `launch-*.sh` dispatchers are local: inside Herdr they
-remove competing multiplexer selectors and then execute the preserved upstream
-launcher. The skill path-resolution paragraphs are adapted for Codex's
-versioned plugin cache.
+remove competing multiplexer selectors, execute the preserved upstream
+launcher, and restore the caller's tab without changing the launcher result.
+The skill path-resolution paragraphs are adapted for Codex's versioned plugin
+cache.
 
 Refresh with:
 

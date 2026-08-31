@@ -176,9 +176,10 @@ license retained in [\`LICENSE\`](LICENSE).
 
 The \`*.upstream.sh\`, hook, helper, reference, and skill files originate from
 that revision. The two \`launch-*.sh\` dispatchers are local: inside Herdr they
-remove competing multiplexer selectors and then execute the preserved upstream
-launcher. The skill path-resolution paragraphs are adapted for Codex's
-versioned plugin cache.
+remove competing multiplexer selectors, execute the preserved upstream
+launcher, and restore the caller's tab without changing the launcher result.
+The skill path-resolution paragraphs are adapted for Codex's versioned plugin
+cache.
 
 Refresh with:
 

@@ -8,7 +8,8 @@ The profile intentionally starts small:
 - practical SetForge and Herdr usage skills;
 - pinned `bd`, `revdiff`, and `wt` executables;
 - a tracked `revdiff-herdr` Codex plugin that opens automatic Plan reviews and
-  manual RevDiff sessions in a dedicated tab in the caller's Herdr workspace.
+  manual RevDiff sessions in a dedicated tab in the caller's Herdr workspace,
+  then returns focus to the originating tab.
 
 Repository-specific instructions and Beads configuration remain in their owning
 repositories. OpenAI system skills and plugin-provided skills remain externally
