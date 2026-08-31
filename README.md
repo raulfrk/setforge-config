@@ -19,3 +19,7 @@ Codex is in Plan Mode. The profile contains no workflow controller, audit
 scheduler, recovery timer, build coordinator, automatic cleanup, or unrelated
 background plugin activation. New components should be added only after their
 behavior and value are reviewed.
+
+Plugin tests live only in the repository's top-level `tests/` directory. They
+are not a SetForge tracked resource and are not part of the installed plugin
+payload.

@@ -12,3 +12,10 @@ resume_cwd = "session"
 
 [features]
 hooks = true
+
+[marketplaces.personal]
+source_type = "git"
+source = "https://github.com/raulfrk/setforge-config.git"
+
+[plugins."revdiff-herdr@personal"]
+enabled = true
