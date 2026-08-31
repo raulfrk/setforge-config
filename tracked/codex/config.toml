@@ -9,3 +9,6 @@ terminal_title = ["thread-id"]
 status_line = ["model-with-reasoning", "current-dir", "weekly-limit", "context-remaining"]
 status_line_use_colors = true
 resume_cwd = "session"
+
+[features]
+hooks = true
