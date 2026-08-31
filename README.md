@@ -4,7 +4,8 @@ This repository defines Raul's main Codex profile.
 
 The profile intentionally starts small:
 
-- an empty global `AGENTS.md`;
+- a compact global `AGENTS.md` that favors proportional, evidence-backed
+  project work and disposable feasibility spikes over speculative architecture;
 - practical SetForge and Herdr usage skills;
 - pinned `bd`, `revdiff`, and `wt` executables;
 - a tracked `revdiff-herdr` Codex plugin that opens automatic Plan reviews and
@@ -22,6 +23,21 @@ Codex is in Plan Mode. The profile contains no workflow controller, audit
 scheduler, recovery timer, build coordinator, automatic cleanup, or unrelated
 background plugin activation. New components should be added only after their
 behavior and value are reviewed.
+
+The global project principles are checked before deployment with a small,
+single-sample behavioral smoke evaluation. It installs the candidate profile
+into an isolated XDG home, runs representative Codex tasks, and combines
+deterministic checks with a separate agent review. The evaluation code and
+fixtures are not part of the installed profile. Offline and fixture tests use
+pytest:
+
+```sh
+python3 -m pytest -q
+python3 evals/project_principles.py
+```
+
+The second command makes Codex model calls and reports the retained artifact
+path only when passed `--keep-artifacts`.
 
 Plugin tests live only in the repository's top-level `tests/` directory. They
 are not a SetForge tracked resource and are not part of the installed plugin
