@@ -148,6 +148,21 @@ marketplace plugins load from a versioned Codex cache. Use `$SCRIPT_DIR` and
 `$LAUNCHER_DIR` throughout this skill.''',
 )
 
+hook = root / "scripts/codex-plan-review-hook.py"
+replace_exact(
+    hook,
+    '''    if event.get("permission_mode") != "plan":
+        respond()
+        return
+
+''',
+    '''
+    # Codex permission_mode describes approval behavior, not collaboration
+    # mode. A complete proposed_plan block is the stable plan-review signal.
+
+''',
+)
+
 manifest_path = root / ".codex-plugin/plugin.json"
 manifest = json.loads(manifest_path.read_text())
 manifest["version"] = local_version
@@ -179,7 +194,8 @@ that revision. The two \`launch-*.sh\` dispatchers are local: inside Herdr they
 remove competing multiplexer selectors, execute the preserved upstream
 launcher, and restore the caller's tab without changing the launcher result.
 The skill path-resolution paragraphs are adapted for Codex's versioned plugin
-cache.
+cache. The planning hook detects complete \`<proposed_plan>\` blocks instead of
+assuming that Codex's approval-oriented \`permission_mode\` identifies Plan mode.
 
 Refresh with:
 
@@ -188,9 +204,9 @@ Refresh with:
 \`\`\`
 
 The command requires an explicit upstream revision and local version, imports
-only the allowlisted files, reapplies the cache-path adaptations, and leaves the
-Herdr dispatchers intact. Review the resulting diff and run the full test suite
-before publishing the new marketplace version.
+only the allowlisted files, reapplies the Codex cache-path and plan-trigger
+adaptations, and leaves the Herdr dispatchers intact. Review the resulting diff
+and run the full test suite before publishing the new marketplace version.
 EOF
 
 echo "synchronized RevDiff $upstream_commit as local plugin $local_version"

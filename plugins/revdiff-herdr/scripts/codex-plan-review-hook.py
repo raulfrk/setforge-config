@@ -147,9 +147,9 @@ def main() -> None:
     if event.get("hook_event_name") != "Stop":
         respond()
         return
-    if event.get("permission_mode") != "plan":
-        respond()
-        return
+
+    # Codex permission_mode describes approval behavior, not collaboration
+    # mode. A complete proposed_plan block is the stable plan-review signal.
 
     message = event.get("last_assistant_message")
     plan = extract_plan(message) if isinstance(message, str) else None

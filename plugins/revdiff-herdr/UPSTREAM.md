@@ -8,7 +8,7 @@ license retained in [`LICENSE`](LICENSE).
 - RevDiff release: `v1.12.0`
 - Manual Codex plugin: `0.8.23`
 - Planning plugin: `0.3.9`
-- Local plugin: `0.1.1`
+- Local plugin: `0.1.2`
 - Synchronized: `2026-08-31`
 
 The `*.upstream.sh`, hook, helper, reference, and skill files originate from
@@ -16,7 +16,8 @@ that revision. The two `launch-*.sh` dispatchers are local: inside Herdr they
 remove competing multiplexer selectors, execute the preserved upstream
 launcher, and restore the caller's tab without changing the launcher result.
 The skill path-resolution paragraphs are adapted for Codex's versioned plugin
-cache.
+cache. The planning hook detects complete `<proposed_plan>` blocks instead of
+assuming that Codex's approval-oriented `permission_mode` identifies Plan mode.
 
 Refresh with:
 
@@ -25,6 +26,6 @@ Refresh with:
 ```
 
 The command requires an explicit upstream revision and local version, imports
-only the allowlisted files, reapplies the cache-path adaptations, and leaves the
-Herdr dispatchers intact. Review the resulting diff and run the full test suite
-before publishing the new marketplace version.
+only the allowlisted files, reapplies the Codex cache-path and plan-trigger
+adaptations, and leaves the Herdr dispatchers intact. Review the resulting diff
+and run the full test suite before publishing the new marketplace version.

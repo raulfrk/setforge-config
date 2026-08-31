@@ -305,7 +305,7 @@ class RevDiffHerdrTests(unittest.TestCase):
     def test_stop_hook_extracts_markdown_and_blocks_with_annotations(self) -> None:
         event = {
             "hook_event_name": "Stop",
-            "permission_mode": "plan",
+            "permission_mode": "bypassPermissions",
             "cwd": str(REPO_ROOT),
             "last_assistant_message": (
                 "<proposed_plan># Hook plan\n\nMarkdown body.</proposed_plan>"
@@ -337,6 +337,134 @@ class RevDiffHerdrTests(unittest.TestCase):
         finally:
             snapshot.unlink(missing_ok=True)
         self.assertNotRegex(self._calls(), r"(?m)^tmux ")
+
+    def test_stop_hook_accepts_tagged_plan_in_default_permission_mode(self) -> None:
+        event = {
+            "hook_event_name": "Stop",
+            "permission_mode": "default",
+            "cwd": str(REPO_ROOT),
+            "last_assistant_message": "<proposed_plan># Default plan</proposed_plan>",
+        }
+        result = subprocess.run(
+            ["python3", str(HOOK)],
+            input=json.dumps(event),
+            env=self._mixed_herdr_env(PLUGIN_ROOT=str(PLUGIN_ROOT)),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {})
+        self.assertRegex(self._calls(), r"(?m)^revdiff ")
+
+    def test_stop_hook_does_not_launch_without_completed_plan(self) -> None:
+        cases = (
+            (
+                "ordinary reply",
+                {
+                    "hook_event_name": "Stop",
+                    "permission_mode": "bypassPermissions",
+                    "last_assistant_message": "No completed plan here.",
+                },
+            ),
+            (
+                "incomplete plan",
+                {
+                    "hook_event_name": "Stop",
+                    "permission_mode": "bypassPermissions",
+                    "last_assistant_message": "<proposed_plan># Still drafting",
+                },
+            ),
+            (
+                "non-Stop event",
+                {
+                    "hook_event_name": "UserPromptSubmit",
+                    "permission_mode": "bypassPermissions",
+                    "last_assistant_message": (
+                        "<proposed_plan># Wrong event</proposed_plan>"
+                    ),
+                },
+            ),
+        )
+        for label, event in cases:
+            with self.subTest(label=label):
+                self.log.write_text("")
+                result = subprocess.run(
+                    ["python3", str(HOOK)],
+                    input=json.dumps(event),
+                    env=self._mixed_herdr_env(PLUGIN_ROOT=str(PLUGIN_ROOT)),
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotRegex(self._calls(), r"(?m)^revdiff ")
+
+    def test_stop_hook_uses_current_turn_transcript_fallback(self) -> None:
+        session_id = "session-test"
+        turn_id = "turn-test"
+        transcript = self.temp / f"rollout-{session_id}.jsonl"
+        transcript.write_text(
+            json.dumps(
+                {
+                    "type": "response_item",
+                    "payload": {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": (
+                                    "<proposed_plan># Transcript plan\n\n"
+                                    "Fallback Markdown.</proposed_plan>"
+                                ),
+                            }
+                        ],
+                        "internal_chat_message_metadata_passthrough": {
+                            "turn_id": turn_id
+                        },
+                    },
+                }
+            )
+            + "\n"
+        )
+        event = {
+            "hook_event_name": "Stop",
+            "permission_mode": "bypassPermissions",
+            "cwd": str(REPO_ROOT),
+            "session_id": session_id,
+            "turn_id": turn_id,
+            "transcript_path": str(transcript),
+            "last_assistant_message": None,
+        }
+        result = subprocess.run(
+            ["python3", str(HOOK)],
+            input=json.dumps(event),
+            env=self._mixed_herdr_env(
+                PLUGIN_ROOT=str(PLUGIN_ROOT),
+                TEST_ANNOTATIONS="check transcript fallback",
+                TEST_REVDIFF_RC="10",
+            ),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["decision"], "block")
+        marker = re.search(r"previous revision: (.+?) -->", payload["reason"])
+        self.assertIsNotNone(marker)
+        snapshot = Path(marker.group(1))
+        try:
+            self.assertEqual(
+                snapshot.read_text(),
+                "# Transcript plan\n\nFallback Markdown.",
+            )
+        finally:
+            snapshot.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

@@ -19,3 +19,8 @@ source = "https://github.com/raulfrk/setforge-config.git"
 
 [plugins."revdiff-herdr@personal"]
 enabled = true
+
+[hooks.state]
+
+[hooks.state."revdiff-herdr@personal:hooks/hooks.json:stop:0:0"]
+trusted_hash = "sha256:15dd2fab1de96a58d9e688e4131b990aeb70b98411c3351687478838114b9b06"
