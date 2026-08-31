@@ -1,0 +1,11 @@
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+default_permissions = ":danger-full-access"
+approval_policy = "never"
+personality = "pragmatic"
+
+[tui]
+terminal_title = ["thread-id"]
+status_line = ["model-with-reasoning", "current-dir", "weekly-limit", "context-remaining"]
+status_line_use_colors = true
+resume_cwd = "session"

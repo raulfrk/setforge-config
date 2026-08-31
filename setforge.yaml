@@ -1,6 +1,10 @@
 version: 1
 
 tracked_files:
+  codex_config:
+    src: codex/config.toml
+    dst: ~/.codex/config.toml
+
   codex_global_agents:
     src: codex/AGENTS.md
     dst: ~/.codex/AGENTS.md
@@ -12,6 +16,10 @@ tracked_files:
   codex_skill_herdr:
     src: codex/skills/herdr/SKILL.md
     dst: ~/.codex/skills/herdr/SKILL.md
+
+  herdr_config:
+    src: herdr/config.toml
+    dst: ~/.config/herdr/config.toml
 
 packages:
   beads:
@@ -48,9 +56,11 @@ packages:
 profiles:
   codex:
     tracked_files:
+      - codex_config
       - codex_global_agents
       - codex_skill_setforge
       - codex_skill_herdr
+      - herdr_config
     packages:
       - beads
       - revdiff
