@@ -46,3 +46,14 @@ Verify observable behavior and inspect the final diff for unused scaffolding,
 speculative options, unnecessary indirection, and unrelated changes. Preserve
 complexity demonstrably required for correctness, security, reliability,
 performance, or compatibility.
+
+Use pytest for new and modified Python tests. Do not add `unittest` imports,
+`unittest.TestCase` suites, or `self.assert*` calls. When modifying an existing
+unittest-based module, convert the affected tests to pytest; broaden the
+conversion only when needed to keep that module coherent.
+
+Before presenting a decision-complete implementation plan, run the
+`review-gate` skill in plan mode. After completing file-changing work and its
+deterministic checks, run the skill in implementation mode before handoff,
+commit, or push. If changes result from a completed RevDiff review, run the
+corresponding gate again before presenting or offering another review.

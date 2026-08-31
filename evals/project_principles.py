@@ -17,8 +17,11 @@ from typing import Any, Mapping, Sequence
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "setforge.yaml"
 CANDIDATE_AGENTS = ROOT / "tracked/codex/AGENTS.md"
+REVIEW_GATE_SKILL = ROOT / "tracked/codex/skills/review-gate/SKILL.md"
+REVIEW_CRITICAL_AGENT = ROOT / "tracked/codex/agents/review-critical.toml"
+REVIEW_GENERAL_AGENT = ROOT / "tracked/codex/agents/review-general.toml"
 DEFAULT_MODEL = "gpt-5.6-luna"
-DEFAULT_EFFORT = "medium"
+DEFAULT_EFFORT = "low"
 DEFAULT_GRADER_MODEL = "gpt-5.6-sol"
 class EvaluationError(RuntimeError):
     pass
@@ -274,6 +277,43 @@ def run(
     )
 
 
+def run_codex(
+    command: Sequence[str],
+    *,
+    cwd: Path,
+    env: Mapping[str, str],
+    stdout_path: Path,
+    stderr_path: Path,
+    timeout: float,
+) -> subprocess.CompletedProcess[str]:
+    """Run Codex while retaining incremental JSONL and stderr on timeout."""
+    with stdout_path.open("w", encoding="utf-8") as stdout_file, stderr_path.open(
+        "w", encoding="utf-8"
+    ) as stderr_file:
+        process = subprocess.Popen(
+            list(command),
+            cwd=cwd,
+            env=dict(env),
+            text=True,
+            stdout=stdout_file,
+            stderr=stderr_file,
+        )
+        try:
+            returncode = process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            process.kill()
+            process.wait()
+            raise EvaluationError(
+                f"Codex timed out after {timeout:g}s; partial events: {stdout_path}"
+            ) from exc
+    return subprocess.CompletedProcess(
+        list(command),
+        returncode,
+        stdout_path.read_text(encoding="utf-8"),
+        stderr_path.read_text(encoding="utf-8"),
+    )
+
+
 def isolated_environment(home: Path) -> dict[str, str]:
     locations = {
         "HOME": home,
@@ -374,6 +414,9 @@ def deploy_candidate(env: Mapping[str, str]) -> str:
     tracked = (
         (ROOT / "tracked/codex/config.toml", home / ".codex/config.toml"),
         (CANDIDATE_AGENTS, home / ".codex/AGENTS.md"),
+        (REVIEW_CRITICAL_AGENT, home / ".codex/agents/review-critical.toml"),
+        (REVIEW_GENERAL_AGENT, home / ".codex/agents/review-general.toml"),
+        (REVIEW_GATE_SKILL, home / ".codex/skills/review-gate/SKILL.md"),
         (ROOT / "tracked/codex/skills/setforge/SKILL.md", home / ".codex/skills/setforge/SKILL.md"),
         (ROOT / "tracked/codex/skills/herdr/SKILL.md", home / ".codex/skills/herdr/SKILL.md"),
         (ROOT / "tracked/herdr/config.toml", home / ".config/herdr/config.toml"),
@@ -460,7 +503,7 @@ def activity_timeline(jsonl: str) -> list[dict[str, Any]]:
     timeline: list[dict[str, Any]] = []
     seen: set[str] = set()
 
-    def visit(value: Any) -> None:
+    def visit(value: Any, event_index: int) -> None:
         if isinstance(value, dict):
             if isinstance(value.get("command"), (str, list)):
                 item = {
@@ -470,6 +513,7 @@ def activity_timeline(jsonl: str) -> list[dict[str, Any]]:
                     "output": str(value.get("aggregated_output", value.get("output", "")))[
                         -1200:
                     ],
+                    "event_index": event_index,
                 }
                 key = json.dumps(item, sort_keys=True)
                 if key not in seen:
@@ -478,7 +522,10 @@ def activity_timeline(jsonl: str) -> list[dict[str, Any]]:
             elif value.get("type") == "agent_message" and isinstance(
                 value.get("text"), str
             ):
-                item = {"agent_message": value["text"][-1200:]}
+                item = {
+                    "agent_message": value["text"][-1200:],
+                    "event_index": event_index,
+                }
                 key = json.dumps(item, sort_keys=True)
                 if key not in seen:
                     seen.add(key)
@@ -491,18 +538,19 @@ def activity_timeline(jsonl: str) -> list[dict[str, Any]]:
                         {"path": change.get("path"), "kind": change.get("kind")}
                         for change in value["changes"]
                         if isinstance(change, dict)
-                    ]
+                    ],
+                    "event_index": event_index,
                 }
                 timeline.append(item)
             for child in value.values():
-                visit(child)
+                visit(child, event_index)
         elif isinstance(value, list):
             for child in value:
-                visit(child)
+                visit(child, event_index)
 
-    for line in jsonl.splitlines():
+    for event_index, line in enumerate(jsonl.splitlines()):
         try:
-            visit(json.loads(line))
+            visit(json.loads(line), event_index)
         except json.JSONDecodeError:
             pass
     return timeline
@@ -792,6 +840,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--grader-model", default=DEFAULT_GRADER_MODEL)
     parser.add_argument("--effort", default=DEFAULT_EFFORT)
     parser.add_argument("--keep-artifacts", action="store_true")
+    parser.add_argument(
+        "--case",
+        action="append",
+        choices=[case.id for case in CASES],
+        help="Run only the named case; repeat to select multiple cases.",
+    )
     args = parser.parse_args(argv)
     source_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
     source_auth = source_home / "auth.json"
@@ -806,18 +860,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         "evaluation_kind": "single-sample behavioral smoke test",
         "runtime": str(runtime) if args.keep_artifacts else None,
     }
+    selected = set(args.case or (case.id for case in CASES))
     exit_code = 2
+    retain_runtime = args.keep_artifacts
     try:
         profile_auth = copy_auth(source_auth, profile_home / ".codex")
         report["setforge"] = deploy_candidate(env)
         results = []
-        for case in CASES:
+        for case in (case for case in CASES if case.id in selected):
             workspace = runtime / "cases" / case.id
             initial_head = initialize_fixture(case, workspace)
             run_dir = runtime / "runs" / case.id
             run_dir.mkdir(parents=True)
             final_path = run_dir / "final.txt"
-            subject = run(
+            subject = run_codex(
                 codex_command(
                     workspace,
                     final_path,
@@ -826,27 +882,36 @@ def main(argv: Sequence[str] | None = None) -> int:
                     effort=args.effort,
                     read_only=case.kind == "plan",
                 ),
+                cwd=workspace,
                 env=env,
+                stdout_path=run_dir / "events.jsonl",
+                stderr_path=run_dir / "stderr.txt",
+                timeout=300,
             )
-            (run_dir / "events.jsonl").write_text(subject.stdout, encoding="utf-8")
-            (run_dir / "stderr.txt").write_text(subject.stderr, encoding="utf-8")
             final = final_path.read_text(encoding="utf-8") if final_path.exists() else ""
             results.append(grade_case(case, workspace, initial_head, subject, final))
         report["static_results"] = results
-        report["agent_grade"] = run_agent_grader(
-            results, runtime, source_auth, model=args.grader_model, effort=args.effort
+        report["agent_grade"] = (
+            run_agent_grader(
+                results, runtime, source_auth, model=args.grader_model, effort=args.effort
+            )
+            if results
+            else None
         )
-        report["passed"] = all(result["passed"] for result in results) and report[
-            "agent_grade"
-        ]["overall_pass"]
+        report["passed"] = (
+            all(result["passed"] for result in results)
+            and (not results or report["agent_grade"]["overall_pass"])
+        )
         exit_code = 0 if report["passed"] else 1
     except (EvaluationError, OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+        retain_runtime = True
+        report["runtime"] = str(runtime)
         report.update(passed=False, error=str(exc))
     finally:
         if profile_auth:
             remove_auth(profile_home / ".codex")
         print(json.dumps(report, indent=2, sort_keys=True))
-        if not args.keep_artifacts:
+        if not retain_runtime:
             shutil.rmtree(runtime)
             try:
                 runtime_parent.rmdir()

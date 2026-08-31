@@ -6,10 +6,16 @@ import os
 from pathlib import Path
 import re
 import shutil
+import struct
 import subprocess
+import sys
 import tempfile
+import termios
 import textwrap
-import unittest
+import time
+import fcntl
+
+import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +24,13 @@ PLAN_LAUNCHER = PLUGIN_ROOT / "scripts/launch-plan-review.sh"
 MANUAL_LAUNCHER = PLUGIN_ROOT / "skills/revdiff/scripts/launch-revdiff.sh"
 HOOK = PLUGIN_ROOT / "scripts/codex-plan-review-hook.py"
 FORMATTER = PLUGIN_ROOT / "scripts/plan_review_format.py"
+RUNTIME = PLUGIN_ROOT / "scripts/plan-review-runtime.py"
+sys.path.insert(0, str(FORMATTER.parent))
+from plan_review_format import (  # noqa: E402
+    project_annotations,
+    remap_annotations,
+    review_width,
+)
 BACKEND_ENV = {
     "AGTERM_SESSION_ID",
     "AGTERM_SOCKET",
@@ -31,8 +44,8 @@ BACKEND_ENV = {
 }
 
 
-class RevDiffHerdrTests(unittest.TestCase):
-    def setUp(self) -> None:
+class TestRevDiffHerdr:
+    def setup_method(self) -> None:
         self.temp = Path(tempfile.mkdtemp(prefix="revdiff-herdr-test-"))
         self.fake_bin = self.temp / "bin"
         self.fake_bin.mkdir()
@@ -44,7 +57,7 @@ class RevDiffHerdrTests(unittest.TestCase):
         self.old_plan.write_text("# Plan\n\nOld text.\n")
         self._write_fakes()
 
-    def tearDown(self) -> None:
+    def teardown_method(self) -> None:
         shutil.rmtree(self.temp)
 
     def _write_executable(self, name: str, body: str) -> None:
@@ -62,32 +75,67 @@ class RevDiffHerdrTests(unittest.TestCase):
             printf ' %q' "$@" >> "$TEST_LOG"
             printf '\n' >> "$TEST_LOG"
             output=''
-            stdin_mode=0
-            compare_old=''
-            compare_new=''
+            only=''
+            preload=''
+            post_flush=''
             for arg in "$@"; do
                 case "$arg" in
                     --output=*) output=${arg#--output=} ;;
-                    --stdin) stdin_mode=1 ;;
-                    --compare-old=*) compare_old=${arg#--compare-old=} ;;
-                    --compare-new=*) compare_new=${arg#--compare-new=} ;;
+                    --only=*) only=${arg#--only=} ;;
+                    --annotations=*) preload=${arg#--annotations=} ;;
+                    --post-flush-command=*) post_flush=${arg#--post-flush-command=} ;;
                 esac
             done
-            if [[ $stdin_mode == 1 ]]; then
-                if [[ -n ${TEST_STDIN_CAPTURE:-} ]]; then
-                    cat > "$TEST_STDIN_CAPTURE"
-                else
-                    cat >/dev/null
+            if [[ -n $only && -n ${TEST_ONLY_CAPTURE:-} ]]; then
+                cp "$only" "$TEST_ONLY_CAPTURE"
+            fi
+            if [[ -n ${TEST_OLD_CAPTURE:-} && -d .git ]]; then
+                git show HEAD:codex-plan.txt > "$TEST_OLD_CAPTURE"
+            fi
+            if [[ -n $only && -n ${TEST_NEW_CAPTURE:-} && -d .git ]]; then
+                cp "$only" "$TEST_NEW_CAPTURE"
+            fi
+            if [[ -n $preload && -n ${TEST_PRELOAD_CAPTURE:-} ]]; then
+                cp "$preload" "$TEST_PRELOAD_CAPTURE"
+            fi
+            if [[ -n ${TEST_RESIZE_SIGNAL:-} ]]; then
+                count_file=${TEST_REFLOW_COUNT:?}
+                count=0
+                [[ -f $count_file ]] && count=$(cat "$count_file")
+                printf '%s' "$((count + 1))" > "$count_file"
+                cp "$only" "${TEST_GENERATION_DIR:?}/generation-$((count + 1)).txt"
+                if [[ $count -eq 0 ]]; then
+                    while [[ ! -f $TEST_RESIZE_SIGNAL ]]; do sleep 0.05; done
+                    annotations=${TEST_REFLOW_ANNOTATIONS:-}
+                    if [[ -n $annotations ]]; then
+                        printf '%s' "$annotations" > "$output"
+                        printf '%s' "$annotations" | sh -c "$post_flush"
+                    else
+                        while [[ ! -f ${TEST_QUIT_SIGNAL:?} ]]; do sleep 0.05; done
+                    fi
+                    exit 0
                 fi
             fi
-            if [[ -n $compare_old && -n ${TEST_OLD_CAPTURE:-} ]]; then
-                cp "$compare_old" "$TEST_OLD_CAPTURE"
-            fi
-            if [[ -n $compare_new && -n ${TEST_NEW_CAPTURE:-} ]]; then
-                cp "$compare_new" "$TEST_NEW_CAPTURE"
+            if [[ -n ${TEST_REFLOW_ONCE:-} ]]; then
+                count_file=${TEST_REFLOW_COUNT:?}
+                count=0
+                [[ -f $count_file ]] && count=$(cat "$count_file")
+                printf '%s' "$((count + 1))" > "$count_file"
+                if [[ $count -lt ${TEST_REFLOW_TIMES:-1} ]]; then
+                    annotations=${TEST_REFLOW_ANNOTATIONS:?}
+                    if [[ -n ${TEST_REFLOW_DELAY:-} ]]; then
+                        sleep "$TEST_REFLOW_DELAY"
+                    fi
+                    printf '%s' "$annotations" > "$output"
+                    printf '%s' "$annotations" | sh -c "$post_flush"
+                    if [[ -n ${TEST_DELETE_AFTER_HANDOFF:-} ]]; then
+                        rm -f -- "$TEST_DELETE_AFTER_HANDOFF"
+                    fi
+                    exit 0
+                fi
             fi
             if [[ -n $output ]]; then
-                printf '%s' "${TEST_ANNOTATIONS:-}" > "$output"
+                printf '%s' "${TEST_FINAL_ANNOTATIONS:-${TEST_ANNOTATIONS:-}}" > "$output"
             fi
             if [[ -n ${TEST_REVDIFF_SLEEP:-} ]]; then
                 sleep "$TEST_REVDIFF_SLEEP"
@@ -115,12 +163,19 @@ class RevDiffHerdrTests(unittest.TestCase):
                     if [[ ${TEST_HERDR_PANE_FAIL:-0} == 1 ]]; then
                         exit 7
                     fi
-                    sh -c "${4:?missing pane command}"
+                    sh -c "${4:?missing pane command}" &
                     ;;
                 'pane process-info')
                     printf '%s\n' '{"result":{"process_info":{"foreground_processes":[{"name":"revdiff"}]}}}'
                     ;;
-                'pane send-keys') ;;
+                'pane send-keys')
+                    if [[ ${4:-} == O && -n ${TEST_RESIZE_SIGNAL:-} ]]; then
+                        : > "$TEST_RESIZE_SIGNAL"
+                    fi
+                    if [[ ${4:-} == q && -n ${TEST_QUIT_SIGNAL:-} ]]; then
+                        : > "$TEST_QUIT_SIGNAL"
+                    fi
+                    ;;
                 'tab close') ;;
                 'tab focus')
                     if [[ ${TEST_HERDR_FOCUS_FAIL:-0} == 1 ]]; then
@@ -206,36 +261,31 @@ class RevDiffHerdrTests(unittest.TestCase):
             env=self._mixed_herdr_env(
                 TEST_ANNOTATIONS="tighten the test plan",
                 TEST_REVDIFF_RC="10",
-                TEST_STDIN_CAPTURE=str(capture),
+                TEST_ONLY_CAPTURE=str(capture),
             ),
             text=True,
             capture_output=True,
             check=False,
         )
 
-        self.assertEqual(result.returncode, 10, result.stderr)
-        self.assertEqual(result.stdout, "tighten the test plan")
+        assert result.returncode == 10, result.stderr
+        assert result.stdout == "tighten the test plan"
         calls = self._calls()
-        self.assertIn("herdr tab create", calls)
-        self.assertIn("--workspace w-test", calls)
-        self.assertIn("--focus", calls)
-        self.assertIn("herdr tab close w-test:t1", calls)
-        self.assertIn("herdr tab focus w-test:t-caller", calls)
-        self.assertIn("--stdin", calls)
-        self.assertIn("--stdin-name=codex-plan.md", calls)
-        self.assertNotIn("--only=", calls)
-        self.assertEqual(
-            capture.read_text(),
-            "Plan\n====\n\nReview this Markdown plan.\n",
-        )
-        self.assertNotRegex(calls, r"(?m)^(tmux|agtermctl|zellij) ")
+        assert "herdr tab create" in calls
+        assert "--workspace w-test" in calls
+        assert "--focus" in calls
+        assert "herdr tab close w-test:t1" in calls
+        assert "herdr tab focus w-test:t-caller" in calls
+        assert "--only=" in calls
+        assert "--stdin" not in calls
+        assert capture.read_text() == "Plan\n====\n\nReview this Markdown plan.\n"
+        assert not re.search(r"(?m)^(tmux|agtermctl|zellij) ", calls)
         lines = calls.splitlines()
-        self.assertLess(
-            lines.index("herdr tab close w-test:t1"),
-            lines.index("herdr tab focus w-test:t-caller"),
+        assert lines.index("herdr tab close w-test:t1") < lines.index(
+            "herdr tab focus w-test:t-caller"
         )
 
-    def test_plan_compare_mode_keeps_markdown_and_collapses_revision_diff(self) -> None:
+    def test_plan_compare_mode_uses_a_native_git_diff(self) -> None:
         old_capture = self.temp / "old-review.md"
         new_capture = self.temp / "new-review.md"
         result = subprocess.run(
@@ -249,15 +299,14 @@ class RevDiffHerdrTests(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(result.returncode, 0, result.stderr)
+        assert result.returncode == 0, result.stderr
         calls = self._calls()
-        self.assertRegex(calls, r"--compare-old=.*/previous-plan\.md")
-        self.assertRegex(calls, r"--compare-new=.*/codex-plan\.md")
-        self.assertIn("--collapsed", calls)
-        self.assertEqual(old_capture.read_text(), "Plan\n====\n\nOld text.\n")
-        self.assertEqual(
-            new_capture.read_text(),
-            "Plan\n====\n\nReview this Markdown plan.\n",
+        assert "--only=codex-plan.txt" in calls
+        assert "--compare-old" not in calls
+        assert old_capture.read_text() == "Plan\n====\n\nOld text.\n"
+        assert (
+            new_capture.read_text()
+            == "Plan\n====\n\nReview this Markdown plan.\n"
         )
 
     def test_narrow_plan_review_wraps_naturally_and_hides_tree(self) -> None:
@@ -271,7 +320,7 @@ class RevDiffHerdrTests(unittest.TestCase):
             [str(PLAN_LAUNCHER), str(self.plan)],
             env=self._mixed_herdr_env(
                 COLUMNS="69",
-                TEST_STDIN_CAPTURE=str(capture),
+                TEST_ONLY_CAPTURE=str(capture),
                 TEST_REVDIFF_SLEEP="0.4",
             ),
             text=True,
@@ -279,12 +328,39 @@ class RevDiffHerdrTests(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(result.returncode, 0, result.stderr)
+        assert result.returncode == 0, result.stderr
         rendered = capture.read_text()
-        self.assertIn("• Review this deliberately long list item at natural", rendered)
-        self.assertIn("  word boundaries without losing its hanging", rendered)
-        self.assertTrue(all(len(line) <= 56 for line in rendered.splitlines()))
-        self.assertIn("herdr pane send-keys w-test:p1 t", self._calls())
+        assert "• Review this deliberately long list item at natural" in rendered
+        assert "  word boundaries without losing its hanging" in rendered
+        assert all(len(line) <= 56 for line in rendered.splitlines())
+        assert "herdr pane send-keys w-test:p1 t" in self._calls()
+
+    @pytest.mark.parametrize(
+        ("columns", "expected"),
+        [(70, 57), (89, 76), (90, 80), (120, 80), (180, 80)],
+    )
+    def test_review_width(self, columns: int, expected: int) -> None:
+        assert review_width(columns) == expected
+
+    def test_desktop_plan_is_centered_at_an_80_column_reading_width(self) -> None:
+        capture = self.temp / "desktop-review.txt"
+        result = subprocess.run(
+            [str(PLAN_LAUNCHER), str(self.plan)],
+            env=self._mixed_herdr_env(
+                COLUMNS="120",
+                TEST_ONLY_CAPTURE=str(capture),
+            ),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stderr
+        lines = capture.read_text().splitlines()
+        assert lines[0] == " " * 16 + "Plan"
+        assert lines[1] == " " * 16 + "===="
+        assert lines[2] == ""
+        assert lines[3] == " " * 16 + "Review this Markdown plan."
 
     def test_projection_preserves_code_tables_links_and_inline_markdown(self) -> None:
         source = self.temp / "structures.md"
@@ -312,19 +388,15 @@ class RevDiffHerdrTests(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(result.returncode, 0, result.stderr)
+        assert result.returncode == 0, result.stderr
         rendered = output.read_text()
-        self.assertIn("Details\n-------", rendered)
-        self.assertIn("`inline_code()`", rendered)
-        self.assertIn(
-            "print('a very long code line that must remain exactly intact')", rendered
-        )
-        self.assertIn("| Name | Value |", rendered)
-        self.assertIn(
-            "[docs]: https://example.test/a-very-long-unbreakable-token", rendered
-        )
+        assert "Details\n-------" in rendered
+        assert "`inline_code()`" in rendered
+        assert "print('a very long code line that must remain exactly intact')" in rendered
+        assert "| Name | Value |" in rendered
+        assert "[docs]: https://example.test/a-very-long-unbreakable-token" in rendered
         payload = json.loads(mapping.read_text())
-        self.assertEqual(len(payload["line_map"]), len(rendered.splitlines()))
+        assert len(payload["line_map"]) == len(rendered.splitlines())
 
     def test_projection_annotations_map_back_to_canonical_plan_lines(self) -> None:
         result = subprocess.run(
@@ -338,11 +410,8 @@ class RevDiffHerdrTests(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(result.returncode, 10, result.stderr)
-        self.assertEqual(
-            result.stdout,
-            f"## {self.plan.name}:1 ( )\nclarify the heading",
-        )
+        assert result.returncode == 10, result.stderr
+        assert result.stdout == f"## {self.plan.name}:1 ( )\nclarify the heading"
 
     def test_compare_annotations_use_the_matching_canonical_revision(self) -> None:
         result = subprocess.run(
@@ -359,12 +428,296 @@ class RevDiffHerdrTests(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(result.returncode, 10, result.stderr)
-        self.assertEqual(
-            result.stdout,
+        assert result.returncode == 10, result.stderr
+        assert result.stdout == (
             f"## {self.old_plan.name}:1 (-)\nold heading note\n\n"
-            f"## {self.plan.name}:1 (+)\nnew heading note",
+            f"## {self.plan.name}:1 (+)\nnew heading note"
         )
+
+    def test_shared_comparison_path_round_trips_current_and_deletion_lines(self) -> None:
+        new_map = {
+            "source": str(self.plan),
+            "projected": "codex-plan.txt",
+            "line_map": [1, 1, 2, 3],
+        }
+        old_map = {
+            "source": str(self.old_plan),
+            "projected": "codex-plan.txt",
+            "line_map": [1, 1, 2, 3],
+        }
+        projected = (
+            "## codex-plan.txt:1-2 ( )\ncurrent\n\n"
+            "## codex-plan.txt:1-2 (-)\ndeleted"
+        )
+
+        canonical = remap_annotations(projected, new_map, old_map)
+        assert canonical == (
+            f"## {self.plan.name}:1 ( )\ncurrent\n\n"
+            f"## {self.old_plan.name}:1 (-)\ndeleted"
+        )
+        reprojected = project_annotations(
+            canonical, new_map, old_map, "codex-plan.txt"
+        )
+        assert reprojected == (
+            "## codex-plan.txt:1 ( )\ncurrent\n\n"
+            "## codex-plan.txt:1 (-)\ndeleted"
+        )
+
+    def test_ranges_and_file_annotations_round_trip(self) -> None:
+        mapping = {
+            "source": str(self.plan),
+            "projected": "codex-plan.txt",
+            "line_map": [1, 2, 3, 4],
+        }
+        projected = (
+            "## codex-plan.txt:1-3 (+)\nrange\n\n"
+            "## codex-plan.txt (file-level)\nwhole file"
+        )
+
+        canonical = remap_annotations(projected, mapping)
+        assert canonical == (
+            f"## {self.plan.name}:1-3 (+)\nrange\n\n"
+            f"## {self.plan.name} (file-level)\nwhole file"
+        )
+        assert project_annotations(
+            canonical, mapping, projected_name="codex-plan.txt"
+        ) == projected
+
+    def test_annotated_reflow_restarts_and_preloads_without_losing_output(self) -> None:
+        count = self.temp / "reflow-count"
+        preload = self.temp / "preload.md"
+        annotation = "## codex-plan.txt:2 ( )\nkeep this"
+        result = subprocess.run(
+            [str(PLAN_LAUNCHER), str(self.plan)],
+            env=self._mixed_herdr_env(
+                TEST_REFLOW_ONCE="1",
+                TEST_REFLOW_COUNT=str(count),
+                TEST_REFLOW_ANNOTATIONS=annotation,
+                TEST_FINAL_ANNOTATIONS=annotation,
+                TEST_PRELOAD_CAPTURE=str(preload),
+                TEST_REVDIFF_RC="10",
+                TEST_REFLOW_DELAY="0.4",
+                TEST_REVDIFF_SLEEP="0.4",
+            ),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 10, result.stderr
+        assert result.stdout == f"## {self.plan.name}:1 ( )\nkeep this"
+        assert count.read_text() == "2"
+        assert preload.read_text().endswith(":1 ( )\nkeep this")
+        calls = self._calls().splitlines()
+        assert sum(line.startswith("revdiff ") for line in calls) == 2
+        assert sum("pane send-keys w-test:p1 t" in line for line in calls) == 2
+
+    def test_comparison_reflow_uses_temp_git_and_preserves_deletion_side(self) -> None:
+        count = self.temp / "comparison-count"
+        preload = self.temp / "comparison-preload.md"
+        annotation = "## codex-plan.txt:2 (-)\nkeep deletion"
+        before = subprocess.run(
+            ["git", "status", "--porcelain=v1"],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout
+        result = subprocess.run(
+            [str(PLAN_LAUNCHER), str(self.plan), str(self.old_plan)],
+            env=self._mixed_herdr_env(
+                TEST_REFLOW_ONCE="1",
+                TEST_REFLOW_COUNT=str(count),
+                TEST_REFLOW_ANNOTATIONS=annotation,
+                TEST_FINAL_ANNOTATIONS=annotation,
+                TEST_PRELOAD_CAPTURE=str(preload),
+                TEST_REVDIFF_RC="10",
+            ),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        after = subprocess.run(
+            ["git", "status", "--porcelain=v1"],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout
+
+        assert result.returncode == 10, result.stderr
+        assert result.stdout == f"## {self.old_plan.name}:1 (-)\nkeep deletion"
+        assert count.read_text() == "2"
+        assert "## codex-plan.txt:1 (-)" in preload.read_text()
+        assert after == before
+
+    def test_comparison_ignores_host_git_hooks(self) -> None:
+        hooks = self.temp / "hooks"
+        hooks.mkdir()
+        marker = self.temp / "hook-ran"
+        self._write_executable(
+            "host-pre-commit",
+            f"""
+            #!/usr/bin/env bash
+            : > {marker}
+            exit 93
+            """,
+        )
+        (hooks / "pre-commit").symlink_to(self.fake_bin / "host-pre-commit")
+
+        result = subprocess.run(
+            [str(PLAN_LAUNCHER), str(self.plan), str(self.old_plan)],
+            env=self._mixed_herdr_env(
+                GIT_CONFIG_COUNT="1",
+                GIT_CONFIG_KEY_0="core.hooksPath",
+                GIT_CONFIG_VALUE_0=str(hooks),
+            ),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert not marker.exists()
+
+    @pytest.mark.parametrize(
+        ("annotation", "expected"),
+        [
+            ("", ""),
+            (
+                "## codex-plan.txt:4 ( )\nkeep after resize",
+                "## plan.md:3 ( )\nkeep after resize",
+            ),
+        ],
+    )
+    def test_automatic_resize_reflows_and_preserves_annotations(
+        self, annotation: str, expected: str
+    ) -> None:
+        self.plan.write_text(
+            "# Plan\n\n"
+            "Review this deliberately long paragraph across desktop and narrow "
+            "layouts while keeping an annotation attached to this source line.\n"
+        )
+        ready = self.temp / "runtime-ready.json"
+        output = self.temp / "runtime-output.md"
+        count = self.temp / "runtime-count"
+        signal = self.temp / "resize-signal"
+        quit_signal = self.temp / "quit-signal"
+        generations = self.temp / "generations"
+        generations.mkdir()
+        master, slave = os.openpty()
+        env = self._mixed_herdr_env(
+            HERDR_PANE_ID="w-test:p1",
+            TEST_RESIZE_SIGNAL=str(signal),
+            TEST_QUIT_SIGNAL=str(quit_signal),
+            TEST_REFLOW_COUNT=str(count),
+            TEST_GENERATION_DIR=str(generations),
+            TEST_REFLOW_ANNOTATIONS=annotation,
+            TEST_FINAL_ANNOTATIONS=annotation,
+            TEST_REVDIFF_RC="10" if annotation else "0",
+        )
+        env.pop("COLUMNS", None)
+        env.pop("LINES", None)
+        try:
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 120, 0, 0))
+            process = subprocess.Popen(
+                [
+                    "python3",
+                    str(RUNTIME),
+                    f"--revdiff={self.fake_bin / 'revdiff'}",
+                    f"--new={self.plan}",
+                    f"--output={output}",
+                    f"--ready={ready}",
+                ],
+                env=env,
+                stdin=slave,
+                stdout=slave,
+                stderr=slave,
+            )
+            deadline = time.monotonic() + 5
+            while not ready.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            assert ready.exists(), "initial runtime generation was not published"
+            fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 69, 0, 0))
+            assert process.wait(timeout=8) == (10 if annotation else 0)
+        finally:
+            os.close(slave)
+            os.close(master)
+
+        desktop = (generations / "generation-1.txt").read_text()
+        narrow = (generations / "generation-2.txt").read_text()
+        assert desktop != narrow
+        assert desktop.startswith(" " * 16 + "Plan")
+        assert narrow.startswith("Plan")
+        assert count.read_text() == "2"
+        assert output.read_text() == expected
+        assert "herdr pane send-keys w-test:p1 O" in self._calls()
+        assert "herdr pane send-keys w-test:p1 q" in self._calls()
+
+    def test_repeated_handoffs_keep_preloading_the_same_annotation(self) -> None:
+        count = self.temp / "repeated-count"
+        preload = self.temp / "repeated-preload.md"
+        annotation = "## codex-plan.txt:2 ( )\nstill here"
+        result = subprocess.run(
+            [str(PLAN_LAUNCHER), str(self.plan)],
+            env=self._mixed_herdr_env(
+                TEST_REFLOW_ONCE="1",
+                TEST_REFLOW_TIMES="2",
+                TEST_REFLOW_COUNT=str(count),
+                TEST_REFLOW_ANNOTATIONS=annotation,
+                TEST_FINAL_ANNOTATIONS=annotation,
+                TEST_PRELOAD_CAPTURE=str(preload),
+                TEST_REVDIFF_RC="10",
+                TEST_REFLOW_DELAY="0.3",
+                TEST_REVDIFF_SLEEP="0.3",
+            ),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 10, result.stderr
+        assert result.stdout == f"## {self.plan.name}:1 ( )\nstill here"
+        assert count.read_text() == "3"
+        assert preload.read_text().endswith(":1 ( )\nstill here")
+        calls = self._calls().splitlines()
+        assert sum(line.startswith("revdiff ") for line in calls) == 3
+        assert sum("pane send-keys w-test:p1 t" in line for line in calls) == 3
+
+    def test_reflow_failure_returns_the_last_canonical_flush(self) -> None:
+        count = self.temp / "failure-count"
+        annotation = "## codex-plan.txt:2 ( )\nrecover me"
+        result = subprocess.run(
+            [str(PLAN_LAUNCHER), str(self.plan)],
+            env=self._mixed_herdr_env(
+                TEST_REFLOW_ONCE="1",
+                TEST_REFLOW_COUNT=str(count),
+                TEST_REFLOW_ANNOTATIONS=annotation,
+                TEST_DELETE_AFTER_HANDOFF=str(self.plan),
+            ),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 10
+        assert result.stdout == f"## {self.plan.name}:1 ( )\nrecover me"
+        assert "returning the last flush" in result.stderr
+
+    def test_annotation_free_review_does_not_restart_or_invent_output(self) -> None:
+        result = subprocess.run(
+            [str(PLAN_LAUNCHER), str(self.plan)],
+            env=self._mixed_herdr_env(),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == ""
+        assert sum(
+            line.startswith("revdiff ") for line in self._calls().splitlines()
+        ) == 1
 
     def test_manual_review_prefers_herdr(self) -> None:
         result = subprocess.run(
@@ -375,13 +728,13 @@ class RevDiffHerdrTests(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(result.returncode, 0, result.stderr)
+        assert result.returncode == 0, result.stderr
         calls = self._calls()
-        self.assertIn("herdr tab create", calls)
-        self.assertIn("herdr pane run w-test:p1", calls)
-        self.assertIn("herdr tab close w-test:t1", calls)
-        self.assertIn("herdr tab focus w-test:t-caller", calls)
-        self.assertNotRegex(calls, r"(?m)^(tmux|agtermctl|zellij) ")
+        assert "herdr tab create" in calls
+        assert "herdr pane run w-test:p1" in calls
+        assert "herdr tab close w-test:t1" in calls
+        assert "herdr tab focus w-test:t-caller" in calls
+        assert not re.search(r"(?m)^(tmux|agtermctl|zellij) ", calls)
 
     def test_non_herdr_session_preserves_upstream_tmux_selection(self) -> None:
         result = subprocess.run(
@@ -392,10 +745,10 @@ class RevDiffHerdrTests(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(result.returncode, 0, result.stderr)
+        assert result.returncode == 0, result.stderr
         calls = self._calls()
-        self.assertRegex(calls, r"(?m)^tmux display-popup ")
-        self.assertNotRegex(calls, r"(?m)^herdr ")
+        assert re.search(r"(?m)^tmux display-popup ", calls)
+        assert not re.search(r"(?m)^herdr ", calls)
 
     def test_malformed_herdr_create_fails_without_falling_back_to_tmux(self) -> None:
         result = subprocess.run(
@@ -406,11 +759,11 @@ class RevDiffHerdrTests(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("did not return pane/tab ids", result.stderr)
+        assert result.returncode == 1
+        assert "did not return pane/tab ids" in result.stderr
         calls = self._calls()
-        self.assertIn("herdr tab focus w-test:t-caller", calls)
-        self.assertNotRegex(calls, r"(?m)^tmux ")
+        assert "herdr tab focus w-test:t-caller" in calls
+        assert not re.search(r"(?m)^tmux ", calls)
 
     def test_pane_run_failure_closes_created_tab(self) -> None:
         result = subprocess.run(
@@ -421,11 +774,11 @@ class RevDiffHerdrTests(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("pane run failed", result.stderr)
+        assert result.returncode == 1
+        assert "pane run failed" in result.stderr
         calls = self._calls()
-        self.assertIn("herdr tab close w-test:t1", calls)
-        self.assertIn("herdr tab focus w-test:t-caller", calls)
+        assert "herdr tab close w-test:t1" in calls
+        assert "herdr tab focus w-test:t-caller" in calls
 
     def test_focus_failure_does_not_replace_annotations_or_exit_status(self) -> None:
         result = subprocess.run(
@@ -440,9 +793,9 @@ class RevDiffHerdrTests(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(result.returncode, 10, result.stderr)
-        self.assertEqual(result.stdout, "keep this annotation")
-        self.assertIn("herdr tab focus w-test:t-caller", self._calls())
+        assert result.returncode == 10, result.stderr
+        assert result.stdout == "keep this annotation"
+        assert "herdr tab focus w-test:t-caller" in self._calls()
 
     def test_missing_caller_tab_id_skips_focus_restoration(self) -> None:
         result = subprocess.run(
@@ -453,8 +806,8 @@ class RevDiffHerdrTests(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertNotIn("herdr tab focus", self._calls())
+        assert result.returncode == 0, result.stderr
+        assert "herdr tab focus" not in self._calls()
 
     def test_stop_hook_extracts_markdown_and_blocks_with_annotations(self) -> None:
         event = {
@@ -478,19 +831,19 @@ class RevDiffHerdrTests(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(result.returncode, 0, result.stderr)
+        assert result.returncode == 0, result.stderr
         payload = json.loads(result.stdout)
-        self.assertEqual(payload["decision"], "block")
-        self.assertIn("add a rollback check", payload["reason"])
+        assert payload["decision"] == "block"
+        assert "add a rollback check" in payload["reason"]
         marker = re.search(r"previous revision: (.+?) -->", payload["reason"])
-        self.assertIsNotNone(marker)
+        assert marker is not None
         snapshot = Path(marker.group(1))
         try:
-            self.assertEqual(snapshot.suffix, ".md")
-            self.assertEqual(snapshot.read_text(), "# Hook plan\n\nMarkdown body.")
+            assert snapshot.suffix == ".md"
+            assert snapshot.read_text() == "# Hook plan\n\nMarkdown body."
         finally:
             snapshot.unlink(missing_ok=True)
-        self.assertNotRegex(self._calls(), r"(?m)^tmux ")
+        assert not re.search(r"(?m)^tmux ", self._calls())
 
     def test_stop_hook_accepts_tagged_plan_in_default_permission_mode(self) -> None:
         event = {
@@ -508,9 +861,9 @@ class RevDiffHerdrTests(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout), {})
-        self.assertRegex(self._calls(), r"(?m)^revdiff ")
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout) == {}
+        assert re.search(r"(?m)^revdiff ", self._calls())
 
     def test_stop_hook_does_not_launch_without_completed_plan(self) -> None:
         cases = (
@@ -542,19 +895,18 @@ class RevDiffHerdrTests(unittest.TestCase):
             ),
         )
         for label, event in cases:
-            with self.subTest(label=label):
-                self.log.write_text("")
-                result = subprocess.run(
-                    ["python3", str(HOOK)],
-                    input=json.dumps(event),
-                    env=self._mixed_herdr_env(PLUGIN_ROOT=str(PLUGIN_ROOT)),
-                    text=True,
-                    capture_output=True,
-                    check=False,
-                )
+            self.log.write_text("")
+            result = subprocess.run(
+                ["python3", str(HOOK)],
+                input=json.dumps(event),
+                env=self._mixed_herdr_env(PLUGIN_ROOT=str(PLUGIN_ROOT)),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
 
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertNotRegex(self._calls(), r"(?m)^revdiff ")
+            assert result.returncode == 0, f"{label}: {result.stderr}"
+            assert not re.search(r"(?m)^revdiff ", self._calls()), label
 
     def test_stop_hook_uses_current_turn_transcript_fallback(self) -> None:
         session_id = "session-test"
@@ -606,20 +958,13 @@ class RevDiffHerdrTests(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(result.returncode, 0, result.stderr)
+        assert result.returncode == 0, result.stderr
         payload = json.loads(result.stdout)
-        self.assertEqual(payload["decision"], "block")
+        assert payload["decision"] == "block"
         marker = re.search(r"previous revision: (.+?) -->", payload["reason"])
-        self.assertIsNotNone(marker)
+        assert marker is not None
         snapshot = Path(marker.group(1))
         try:
-            self.assertEqual(
-                snapshot.read_text(),
-                "# Transcript plan\n\nFallback Markdown.",
-            )
+            assert snapshot.read_text() == "# Transcript plan\n\nFallback Markdown."
         finally:
             snapshot.unlink(missing_ok=True)
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -54,6 +54,7 @@ fi
 
 tmpbase=${TMPDIR:-/tmp}
 output_file=$(mktemp "$tmpbase/plan-review-output-XXXXXX")
+error_file=$(mktemp "$tmpbase/plan-review-error-XXXXXX")
 ready_file=$(mktemp "$tmpbase/plan-review-ready-XXXXXX")
 sentinel=$(mktemp "$tmpbase/plan-review-done-XXXXXX")
 launch_script=$(mktemp "$tmpbase/plan-review-launch-XXXXXX")
@@ -68,7 +69,7 @@ cleanup() {
     if [[ -n $created_tab_id ]]; then
         herdr tab close "$created_tab_id" >/dev/null 2>&1 || true
     fi
-    rm -f "$output_file" "$ready_file" "$sentinel" "$sentinel.tmp" "$launch_script"
+    rm -f "$output_file" "$error_file" "$ready_file" "$sentinel" "$sentinel.tmp" "$launch_script"
     exit "$cleanup_rc"
 }
 trap cleanup EXIT
@@ -80,7 +81,7 @@ fi
 
 cat > "$launch_script" <<LAUNCHER
 #!/bin/sh
-$runtime_command; rc=\$?; printf "%s" "\$rc" > $(sq "$sentinel").tmp && mv -f $(sq "$sentinel").tmp $(sq "$sentinel")
+$runtime_command 2> $(sq "$error_file"); rc=\$?; printf "%s" "\$rc" > $(sq "$sentinel").tmp && mv -f $(sq "$sentinel").tmp $(sq "$sentinel")
 LAUNCHER
 chmod +x "$launch_script"
 
@@ -109,37 +110,37 @@ if [[ -z $created_tab_id || -z $pane_id ]]; then
     exit 1
 fi
 
-if ! herdr pane run "$pane_id" "sh $(sq "$launch_script")" >/dev/null 2>&1; then
+if ! herdr pane run "$pane_id" "HERDR_PANE_ID=$(sq "$pane_id") sh $(sq "$launch_script")" >/dev/null 2>&1; then
     echo "error: herdr pane run failed for pane $pane_id" >&2
     exit 1
 fi
 
-# The runtime measures the target pty, then writes its width just before
-# RevDiff starts. Hide the file tree below 90 columns once RevDiff is the
-# foreground process; users can still toggle it with `t`.
-for _ in $(seq 1 50); do
+# Each runtime generation is a new RevDiff process. Hide its initial TOC once;
+# users may still toggle it manually for the rest of that process.
+handled_generation=0
+while :; do
+    generation=
     if [[ -f $ready_file ]]; then
-        columns=$(sed -n 's/.*"columns":[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$ready_file" | head -1)
-        if [[ -n $columns && $columns -lt 90 ]]; then
-            for _ in $(seq 1 50); do
-                if herdr pane process-info --pane "$pane_id" 2>/dev/null \
-                        | grep -Eq '"name"[[:space:]]*:[[:space:]]*"revdiff"'; then
-                    sleep 0.1
-                    herdr pane send-keys "$pane_id" t >/dev/null 2>&1 || true
-                    break
-                fi
-                [[ -f $sentinel ]] && break
-                sleep 0.1
-            done
-        fi
-        break
+        generation=$(sed -n 's/.*"generation":[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$ready_file" | head -1)
     fi
-    [[ -f $sentinel ]] && break
+    if [[ -n $generation && $generation -gt $handled_generation ]]; then
+        for _ in $(seq 1 50); do
+            if herdr pane process-info --pane "$pane_id" 2>/dev/null \
+                    | grep -Eq '"name"[[:space:]]*:[[:space:]]*"revdiff"'; then
+                sleep 0.1
+                herdr pane send-keys "$pane_id" t >/dev/null 2>&1 || true
+                handled_generation=$generation
+                break
+            fi
+            sleep 0.1
+        done
+        if [[ -f $sentinel && $handled_generation -lt $generation ]]; then
+            # RevDiff exited before it could be observed in the foreground.
+            handled_generation=$generation
+        fi
+    fi
+    [[ -f $sentinel && $handled_generation -ge ${generation:-0} ]] && break
     sleep 0.1
-done
-
-while [[ ! -f $sentinel ]]; do
-    sleep 0.3
 done
 review_rc=$(cat "$sentinel" 2>/dev/null || echo 1)
 case $review_rc in
@@ -148,5 +149,6 @@ esac
 
 herdr tab close "$created_tab_id" >/dev/null 2>&1 || true
 created_tab_id=
+cat "$error_file" >&2
 cat "$output_file"
 exit "$review_rc"

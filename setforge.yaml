@@ -9,6 +9,18 @@ tracked_files:
     src: codex/AGENTS.md
     dst: ~/.codex/AGENTS.md
 
+  codex_agent_review_critical:
+    src: codex/agents/review-critical.toml
+    dst: ~/.codex/agents/review-critical.toml
+
+  codex_agent_review_general:
+    src: codex/agents/review-general.toml
+    dst: ~/.codex/agents/review-general.toml
+
+  codex_skill_review_gate:
+    src: codex/skills/review-gate/SKILL.md
+    dst: ~/.codex/skills/review-gate/SKILL.md
+
   codex_skill_setforge:
     src: codex/skills/setforge/SKILL.md
     dst: ~/.codex/skills/setforge/SKILL.md
@@ -67,6 +79,9 @@ profiles:
     tracked_files:
       - codex_config
       - codex_global_agents
+      - codex_agent_review_critical
+      - codex_agent_review_general
+      - codex_skill_review_gate
       - codex_skill_setforge
       - codex_skill_herdr
       - herdr_config

@@ -32,17 +32,22 @@ The bundled Stop hook is the primary flow for Plan mode:
 1. It detects a complete `<proposed_plan>...</proposed_plan>` block in the
    current assistant turn.
 2. It stores the canonical Markdown in an ephemeral `plan-rev-*.md` snapshot.
-3. The first review is presented as formatted Markdown through RevDiff stdin,
-   with no artificial additions.
-4. On a narrow Herdr pane, the presentation width is calculated from the live
-   pane and the file tree starts hidden. `t` toggles the tree.
+3. The first review is presented as a mapped file-backed text projection. On
+   desktop it uses a centered 80-column reading width; on narrow panes it
+   reserves RevDiff chrome and uses the remaining width without centering.
+4. The Markdown TOC starts hidden for every RevDiff process. `t` toggles it.
 5. If the user annotates, the hook blocks the turn and asks Codex to emit the
    complete revised plan with the exact previous-revision marker it provides.
-6. The next review compares responsive projections of the immediately previous
-   and current canonical plans in collapsed mode. `v` toggles the diff view.
+6. The next review presents the immediately previous and current projections as
+   a native one-file diff in an ephemeral Git repository.
 7. Projection line numbers are translated back to canonical Markdown lines
    before Codex receives the annotations.
 8. Quitting without annotations accepts the plan and removes its snapshot.
+
+When the terminal width stabilizes after a resize or client switch, the review
+automatically reopens at the new width. Existing annotations, including an
+empty annotation set, are preserved without returning control to Codex. Press
+`q` to finish the review.
 
 Never invent, reuse, or substitute a `plan-rev-*.md` marker. Copy only the
 marker emitted for the current review loop.
@@ -109,9 +114,10 @@ CURRENT_PLAN=$(mktemp "$TMPBASE/revdiff-plan-XXXXXX.md")
 $PLAN_LAUNCHER "$CURRENT_PLAN" "$PREVIOUS_PLAN"
 ```
 
-The launcher renders both inputs at the same current width and opens a
-collapsed comparison. Each new iteration compares only with the immediately
-preceding iteration. Continue until the launcher returns no annotations.
+The launcher renders both inputs at the same current width and opens a native
+one-file comparison. Each iteration compares only with the immediately
+preceding plan. The same `O` reflow and `q` completion controls apply. Continue
+until the launcher returns no annotations.
 
 ### 5. Clean up and report
 

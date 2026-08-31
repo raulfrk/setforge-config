@@ -4,6 +4,17 @@ default_permissions = ":danger-full-access"
 approval_policy = "never"
 personality = "pragmatic"
 
+[agents]
+max_threads = 12
+
+[agents.review_critical]
+description = "Run a dynamically scoped correctness, compliance, or high-risk review."
+config_file = "agents/review-critical.toml"
+
+[agents.review_general]
+description = "Run a dynamically scoped verification, simplicity, or domain review."
+config_file = "agents/review-general.toml"
+
 [tui]
 terminal_title = ["thread-id"]
 status_line = ["model-with-reasoning", "current-dir", "weekly-limit", "context-remaining"]

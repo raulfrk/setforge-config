@@ -4,11 +4,20 @@ import json
 import os
 import stat
 import subprocess
+import tomllib
 from pathlib import Path
 
+import pytest
+
+from evals import project_principles as evaluator
 from evals.project_principles import (
     CASES,
     CANDIDATE_AGENTS,
+    DEFAULT_MODEL,
+    EvaluationError,
+    REVIEW_CRITICAL_AGENT,
+    REVIEW_GATE_SKILL,
+    REVIEW_GENERAL_AGENT,
     changed_paths,
     codex_command,
     copy_auth,
@@ -20,6 +29,7 @@ from evals.project_principles import (
     observed_success_probe,
     plan_has_representative_snippets,
     remove_auth,
+    run_codex,
     setforge_install_command,
     valid_success_probe,
     validate_agent_grade,
@@ -36,6 +46,33 @@ def test_policy_contains_approved_principles() -> None:
         "include representative snippets",
     ):
         assert phrase in policy
+
+
+def test_review_gate_requires_complete_evidence_and_independent_validation() -> None:
+    skill = " ".join(REVIEW_GATE_SKILL.read_text(encoding="utf-8").split())
+    for phrase in (
+        "complete draft—not a placeholder, outline, or summary",
+        "credential exposure across logs and exceptions",
+        "always require one such lane",
+        "command run only by a reviewer is not primary-agent validation",
+        "reviewer suggestion is evidence to evaluate, not a new requirement",
+        "Hypothetical alternate implementations",
+        "Do not replace core lanes with freshly spawned reviewers",
+        "Record each lane's role and thread ID",
+        "Never call `spawn_agent` for an already-known lane",
+        "some event streams call it `send_input`",
+        "dispatch output is stale lifecycle state",
+        "not treat completion of the current review gate as a",
+        'use `fork_turns="none"`',
+        "repeating that lane's recorded role",
+        "Every rerun includes every current lane",
+        "never short-circuits the batch",
+        "explicitly offer RevDiff review by name",
+        "defer reading its contents until the initial gate is complete",
+        "explicitly tell every initial reviewer",
+        "rather than referring to prior content as unchanged",
+    ):
+        assert phrase in skill
 
 
 def test_isolated_home_and_auth_permissions(tmp_path: Path, monkeypatch) -> None:
@@ -105,6 +142,25 @@ def test_fixtures_start_clean_and_use_pytest(tmp_path: Path) -> None:
             assert os.access(workspace / case.executable, os.X_OK)
 
 
+def test_review_runner_config_is_statically_observable() -> None:
+    assert DEFAULT_MODEL == "gpt-5.6-luna"
+    config = tomllib.loads(
+        (CANDIDATE_AGENTS.parent / "config.toml").read_text(encoding="utf-8")
+    )
+    assert config["agents"]["max_threads"] == 12
+    expected = {
+        "review_critical": (REVIEW_CRITICAL_AGENT, "gpt-5.6-sol"),
+        "review_general": (REVIEW_GENERAL_AGENT, "gpt-5.6-terra"),
+    }
+    for name, (path, model) in expected.items():
+        registration = config["agents"][name]
+        assert (CANDIDATE_AGENTS.parent / registration["config_file"]).resolve() == path
+        runner = tomllib.loads(path.read_text(encoding="utf-8"))
+        assert runner["model"] == model
+        assert runner["model_reasoning_effort"] == "low"
+        assert runner["sandbox_mode"] == "read-only"
+
+
 def test_spike_fixture_records_order_without_git_drift(tmp_path: Path) -> None:
     case = next(case for case in CASES if case.probe_expectation == "success")
     workspace = tmp_path / case.id
@@ -153,6 +209,45 @@ def test_codex_command_is_ephemeral_and_bounded(tmp_path: Path) -> None:
     assert command[:4] == ["codex", "-a", "never", "exec"]
     for option in ("--ephemeral", "workspace-write", "hooks", "apps", "plugins"):
         assert option in command
+
+
+def test_run_codex_retains_partial_output_on_timeout(tmp_path: Path) -> None:
+    stdout_path = tmp_path / "events.jsonl"
+    stderr_path = tmp_path / "stderr.txt"
+    command = [
+        "python3",
+        "-c",
+        "import sys, time; print('partial', flush=True); "
+        "print('diagnostic', file=sys.stderr, flush=True); time.sleep(10)",
+    ]
+    with pytest.raises(EvaluationError, match="partial events"):
+        run_codex(
+            command,
+            cwd=tmp_path,
+            env=os.environ,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            timeout=1,
+        )
+    assert stdout_path.read_text(encoding="utf-8") == "partial\n"
+    assert stderr_path.read_text(encoding="utf-8") == "diagnostic\n"
+
+
+def test_main_retains_runtime_artifacts_after_evaluation_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    monkeypatch.setattr(evaluator, "create_runtime", lambda: (runtime, tmp_path))
+
+    def fail_auth(*_args: object, **_kwargs: object) -> Path:
+        raise EvaluationError("auth unavailable")
+
+    monkeypatch.setattr(evaluator, "copy_auth", fail_auth)
+    assert evaluator.main(["--case", CASES[0].id]) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert report["runtime"] == str(runtime)
+    assert runtime.exists()
 
 
 def test_plan_snippet_check_accepts_typed_multiline_signature() -> None:

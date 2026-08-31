@@ -29,7 +29,9 @@ class Projection:
 
 def review_width(columns: int) -> int:
     """Reserve RevDiff chrome while keeping narrow screens usable."""
-    return max(32, min(88, columns - 13))
+    if columns < 90:
+        return max(32, columns - 13)
+    return max(48, min(80, columns - 8))
 
 
 def _is_table_line(lines: list[str], index: int) -> bool:
@@ -213,6 +215,9 @@ def remap_annotations(
 ) -> str:
     """Translate projection line references back to canonical Markdown."""
     new_source = Path(str(new_mapping.get("source", "plan.md"))).name
+    new_projected = Path(
+        str(new_mapping.get("projected", "codex-plan.txt"))
+    ).name
     old_projected = (
         Path(str(old_mapping.get("projected", "previous-plan.md"))).name
         if old_mapping
@@ -231,7 +236,11 @@ def remap_annotations(
             continue
         prefix, filename, start, end, kind = match.groups()
         use_old = old_mapping is not None and (
-            Path(filename).name == old_projected or kind.strip() == "-"
+            kind.strip() == "-"
+            or (
+                old_projected != new_projected
+                and Path(filename).name == old_projected
+            )
         )
         mapping = old_mapping if use_old and old_mapping is not None else new_mapping
         canonical_name = old_source if use_old else new_source
@@ -245,6 +254,65 @@ def remap_annotations(
             if mapped_end != mapped_start:
                 suffix = f"-{mapped_end}"
         result.append(f"{prefix}{canonical_name}:{mapped_start}{suffix} ({kind})")
+    trailing = "\n" if annotations.endswith("\n") else ""
+    return "\n".join(result) + trailing
+
+
+def _projected_line(
+    mapping: dict[str, object], source_line: int, *, last: bool = False
+) -> int:
+    values = mapping.get("line_map")
+    if not isinstance(values, list) or not values:
+        return source_line
+    matches = [
+        index + 1 for index, value in enumerate(values) if value == source_line
+    ]
+    if matches:
+        return matches[-1] if last else matches[0]
+    return min(
+        range(1, len(values) + 1),
+        key=lambda projected: (
+            abs(int(values[projected - 1]) - source_line)
+            if isinstance(values[projected - 1], int)
+            else len(values)
+        ),
+    )
+
+
+def project_annotations(
+    annotations: str,
+    new_mapping: dict[str, object],
+    old_mapping: dict[str, object] | None = None,
+    projected_name: str | None = None,
+) -> str:
+    """Translate canonical line references into the current projection."""
+    target_name = projected_name or str(
+        new_mapping.get("projected", "codex-plan.txt")
+    )
+    result: list[str] = []
+    for line in annotations.splitlines():
+        match = ANNOTATION_RE.match(line)
+        if not match:
+            result.append(line)
+            continue
+        prefix, _filename, start, end, kind = match.groups()
+        mapping = (
+            old_mapping
+            if old_mapping is not None and kind.strip() == "-"
+            else new_mapping
+        )
+        if start is None:
+            result.append(f"{prefix}{target_name} ({kind})")
+            continue
+        projected_start = _projected_line(mapping, int(start))
+        suffix = ""
+        if end is not None:
+            projected_end = _projected_line(mapping, int(end), last=True)
+            if projected_end != projected_start:
+                suffix = f"-{projected_end}"
+        result.append(
+            f"{prefix}{target_name}:{projected_start}{suffix} ({kind})"
+        )
     trailing = "\n" if annotations.endswith("\n") else ""
     return "\n".join(result) + trailing
 
