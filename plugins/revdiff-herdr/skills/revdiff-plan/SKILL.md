@@ -1,174 +1,124 @@
 ---
 name: revdiff-plan
-description: Review the last Codex assistant message (plan, analysis, or proposal) with inline annotations in a TUI overlay. Extracts the most recent response from Codex rollout files and opens it in revdiff for review and annotation. Activates on "revdiff-plan", "review plan with revdiff", "annotate plan", "review last response", "annotate codex output".
-argument-hint: 'none'
+description: Review the last Codex assistant message or proposed plan with inline RevDiff annotations in a dedicated Herdr tab. Use for "revdiff-plan", "review plan with revdiff", "annotate plan", "review last response", or "annotate codex output". Completed proposed-plan blocks are also reviewed automatically by the bundled Stop hook.
 allowed-tools: [Bash, Read, Edit, Write, Grep, Glob]
 ---
 
-# revdiff-plan - Review Codex Output
+# RevDiff Plan Review
 
-Review the last Codex assistant message with inline annotations using revdiff TUI in a terminal overlay.
+Review Codex output as readable Markdown in RevDiff and address every returned
+annotation. Inside Herdr, the review opens in a focused tab in the caller's
+workspace and returns focus to the caller afterward.
 
-## Script Path Resolution
+## Resolve bundled paths
 
-Codex supplies the absolute path of this loaded `SKILL.md` in the skill metadata.
-Resolve the directory containing that exact file:
+Codex supplies the absolute path of this loaded `SKILL.md` in the skill
+metadata. Resolve the directory containing that exact file:
 
 ```bash
 SKILL_DIR="<absolute directory containing this loaded SKILL.md>"
 SCRIPT_DIR="$SKILL_DIR/scripts"
-```
-
-Resolve the sibling `revdiff` skill launcher from the same plugin root:
-
-```bash
 PLUGIN_ROOT="$(cd "$SKILL_DIR/../.." && pwd)"
-LAUNCHER_DIR="$PLUGIN_ROOT/skills/revdiff/scripts"
+PLAN_LAUNCHER="$PLUGIN_ROOT/scripts/launch-plan-review.sh"
 ```
 
-Do not guess a config-repository path or fall back to `~/.codex/skills`:
-marketplace plugins load from a versioned Codex cache. Use `$SCRIPT_DIR` and
-`$LAUNCHER_DIR` throughout this skill.
+Do not guess a checkout path or fall back to `~/.codex/skills`. Marketplace
+plugins load from a versioned Codex cache.
 
-## Activation Triggers
+## Automatic completed-plan flow
 
-- "revdiff-plan", "review plan with revdiff", "annotate plan"
-- "review last response", "annotate codex output"
+The bundled Stop hook is the primary flow for Plan mode:
 
-## How It Works
+1. It detects a complete `<proposed_plan>...</proposed_plan>` block in the
+   current assistant turn.
+2. It stores the canonical Markdown in an ephemeral `plan-rev-*.md` snapshot.
+3. The first review is presented as formatted Markdown through RevDiff stdin,
+   with no artificial additions.
+4. On a narrow Herdr pane, the presentation width is calculated from the live
+   pane and the file tree starts hidden. `t` toggles the tree.
+5. If the user annotates, the hook blocks the turn and asks Codex to emit the
+   complete revised plan with the exact previous-revision marker it provides.
+6. The next review compares responsive projections of the immediately previous
+   and current canonical plans in collapsed mode. `v` toggles the diff view.
+7. Projection line numbers are translated back to canonical Markdown lines
+   before Codex receives the annotations.
+8. Quitting without annotations accepts the plan and removes its snapshot.
 
-1. Extract the last Codex assistant message from rollout files
-2. Write it to a temp markdown file
-3. Launch revdiff with `--only=<tempfile>` in a terminal overlay
-4. User reads the plan, adds annotations on specific lines
-5. On quit, annotations are captured from stdout
-6. Codex reads annotations and addresses each one (refine plan, answer questions, fix issues)
-7. Loop: re-launch revdiff to verify changes, user can add more annotations
-8. Done when user quits without annotations; clean up temp file
+Never invent, reuse, or substitute a `plan-rev-*.md` marker. Copy only the
+marker emitted for the current review loop.
 
-## Workflow
+## Manual review flow
 
-### Step 1: Extract Last Assistant Message
+Use this when the user explicitly requests a review of the last response and
+the Stop hook did not open one.
 
-Run the extraction script with `--skip-current` to avoid picking up this session's own output:
+### 1. Extract the last response
+
+Run:
 
 ```bash
 $SCRIPT_DIR/extract-last-message.sh --skip-current
 ```
 
-The script:
-- Uses a best-effort heuristic: picks the second most recent rollout JSONL file by modification time from `~/.codex/sessions/`
-- This assumes the newest file belongs to the active session; if concurrent Codex sessions exist, the wrong file may be selected
-- Falls back to the newest file if only one session exists
-- Extracts the last assistant message text using jq
-- Outputs raw markdown to stdout
-- Accepts an explicit rollout file path as an argument to bypass auto-detection when precision matters
+The extractor uses a best-effort session-file heuristic. If it selects the
+wrong session, use the explicit rollout path supplied by the user:
 
-If the script fails (no sessions, no messages), inform the user and stop.
-If the user reports that the wrong content was extracted, ask them to provide the rollout file path
-explicitly: `$SCRIPT_DIR/extract-last-message.sh /path/to/rollout.jsonl`
+```bash
+$SCRIPT_DIR/extract-last-message.sh /path/to/rollout.jsonl
+```
 
-Capture the output and write it to a temp file:
+Write the output to a canonical Markdown snapshot:
 
 ```bash
 TMPBASE="${TMPDIR:-/tmp}"
-PLAN_FILE=$(mktemp "$TMPBASE/revdiff-plan-XXXXXX")
-mv "$PLAN_FILE" "${PLAN_FILE}.md"
-PLAN_FILE="${PLAN_FILE}.md"
-$SCRIPT_DIR/extract-last-message.sh --skip-current > "$PLAN_FILE"
+CURRENT_PLAN=$(mktemp "$TMPBASE/revdiff-plan-XXXXXX.md")
+$SCRIPT_DIR/extract-last-message.sh --skip-current > "$CURRENT_PLAN"
 ```
 
-### Step 2: Launch Review
+### 2. Open the first review
 
-Run the launcher script with `--only=<tempfile>`:
+Run the dedicated plan launcher, not the generic `--only` file flow:
 
 ```bash
-$LAUNCHER_DIR/launch-revdiff.sh --only="$PLAN_FILE"
+$PLAN_LAUNCHER "$CURRENT_PLAN"
 ```
 
-The launcher sets `REVDIFF_EXIT_CODE_ON_ANNOTATIONS`; exit `10` means annotations were captured and is not a launcher failure. Treat other nonzero statuses as failures.
+The launcher blocks until the TUI exits. Give the command the maximum timeout
+the harness supports and do not background it. Exit `10` means annotations were
+captured and is a successful review result; exit `0` with no output means the
+review is accepted. Treat other nonzero exits as launcher failures.
 
-**IMPORTANT -- long-running command**: The launcher blocks until the user finishes reviewing in the TUI overlay. Set the bash timeout parameter to the **maximum your harness allows** (e.g. 1800000 or higher). Do NOT use `run_in_background`.
+### 3. Address annotations
 
-If the bash tool reports a timeout, use the same fallback as the revdiff skill:
+Annotation headers identify the canonical file and line, followed by the
+comment. Classify comments as follows:
 
-1. Tell the user: "The bash tool timed out, but revdiff may still be open. Let me know when you're done reviewing."
-2. Wait for the user to reply.
-3. Read the most recent output file:
-   ```bash
-   output_file="$(ls -t "${TMPDIR:-/tmp}"/revdiff-output-* 2>/dev/null | head -1)"
-   if [ -n "$output_file" ] && [ -f "$output_file" ]; then
-     cat "$output_file"
-   fi
-   ```
+- Explanation request: contains `??`, or begins with `explain`, `remind`,
+  `describe`, `what is`, `what are`, `how does`, `how do`, or `clarify`.
+- Plan-change directive: everything else.
 
-### Step 3: Process Annotations
+Answer explanation requests directly. Apply every plan-change directive to a
+new canonical Markdown file; do not edit the reviewed snapshot in place.
 
-If the bash tool reports exit `10`, read stdout and process it as annotations; do not call it a failure. If the launcher produces output, the user made annotations. The output format is:
-
-```
-## plan-XXXXXX.md:12 ( )
-this section needs more detail about error handling
-
-## plan-XXXXXX.md:25 ( )
-explain why we chose this approach over alternatives
-```
-
-Each annotation block has:
-- `## filename:line (type)` -- which file and line
-- Comment text below -- what the user wants changed or clarified
-
-### Step 3.5: Classify Annotations
-
-Split annotations into two categories:
-
-**Explanation requests** -- annotation matches either rule (case-insensitive):
-- contains two or more consecutive question marks anywhere in the text (`??`, `???`, etc.) -- a language-neutral shortcut for "please explain"
-- OR starts with one of: `explain`, `remind`, `describe`, `what is`, `what are`, `how does`, `how do`, `clarify`
-
-These are questions the user wants answered, not plan changes.
-
-**Plan-change directives** -- everything else. These are instructions to modify the plan content.
-
-**If explanation requests are found:**
-
-1. Answer each explanation request directly
-2. If there are also plan-change directives, note them as pending
-3. Enter the **explanation loop**:
-
-   a. Write the explanation to a temp markdown file
-   b. Launch revdiff with `--only=<explanation-file>` via the launcher script
-   c. If user quits without annotations -- explanation accepted, proceed to pending directives or Step 5
-   d. If user annotates -- refine explanation, loop back to (b)
-
-**If no explanation requests** -- proceed directly to Step 4.
-
-### Step 4: Address Annotations
-
-For plan-change directives:
-- Update the temp plan file with the requested changes
-- Rewrite `$PLAN_FILE` with the updated content
-
-### Step 5: Loop
-
-After addressing annotations, re-launch revdiff with the updated plan:
+### 4. Review each revision against the preceding one
 
 ```bash
-$LAUNCHER_DIR/launch-revdiff.sh --only="$PLAN_FILE"
+PREVIOUS_PLAN="$CURRENT_PLAN"
+CURRENT_PLAN=$(mktemp "$TMPBASE/revdiff-plan-XXXXXX.md")
+# Write the complete revised Markdown to "$CURRENT_PLAN".
+$PLAN_LAUNCHER "$CURRENT_PLAN" "$PREVIOUS_PLAN"
 ```
 
-The user can:
-- Add more annotations -- go back to Step 3
-- Quit without annotations -- review complete
+The launcher renders both inputs at the same current width and opens a
+collapsed comparison. Each new iteration compares only with the immediately
+preceding iteration. Continue until the launcher returns no annotations.
 
-### Step 6: Done
+### 5. Clean up and report
 
-When the launcher produces no output, the review is complete.
+Remove every manual temp snapshot after the review completes, then present the
+final plan if it changed. Preserve snapshots while a review is still active so
+the next comparison has the correct baseline.
 
-Clean up the temp file:
-
-```bash
-rm -f "$PLAN_FILE"
-```
-
-Inform the user that the plan review is complete. If the plan was modified during the review, present the final version.
+If a launcher command times out but the RevDiff tab remains open, tell the user
+that the review may still be active and wait for them to finish before checking
+the launcher output. Do not launch a duplicate review.

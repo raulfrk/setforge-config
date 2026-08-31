@@ -1,6 +1,6 @@
 {
   "name": "revdiff-herdr",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Review Codex plans, diffs, and Markdown in a dedicated Herdr tab",
   "author": {
     "name": "Raul"
@@ -18,7 +18,7 @@
   "interface": {
     "displayName": "RevDiff for Herdr",
     "shortDescription": "Review plans and diffs in a dedicated Herdr tab.",
-    "longDescription": "Opens completed Codex plans and manual RevDiff reviews in a focused tab within the caller's Herdr workspace, returning inline annotations to Codex.",
+    "longDescription": "Opens completed Codex plans and manual RevDiff reviews in a focused tab within the caller's Herdr workspace. Plans are formatted for the live pane width, revisions compare against the preceding plan, and inline annotations map back to canonical Markdown.",
     "developerName": "Raul",
     "category": "Developer Tools",
     "capabilities": [

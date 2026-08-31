@@ -41,7 +41,6 @@ manual_src="$worktree/source/plugins/codex/skills"
 planning_src="$worktree/source/plugins/revdiff-planning"
 
 cp "$manual_src/revdiff/SKILL.md" "$plugin_root/skills/revdiff/SKILL.md"
-cp "$manual_src/revdiff-plan/SKILL.md" "$plugin_root/skills/revdiff-plan/SKILL.md"
 cp -a "$manual_src/revdiff/references/." "$plugin_root/skills/revdiff/references/"
 cp "$manual_src/revdiff/scripts/agentdeck-window.sh" "$plugin_root/skills/revdiff/scripts/agentdeck-window.sh"
 cp "$manual_src/revdiff/scripts/detect-ref.sh" "$plugin_root/skills/revdiff/scripts/detect-ref.sh"
@@ -66,6 +65,10 @@ def replace_exact(path: pathlib.Path, old: str, new: str) -> None:
     if old not in text:
         raise SystemExit(f"error: upstream text changed; adapt manually: {path}")
     path.write_text(text.replace(old, new, 1))
+
+def remove_frontmatter_field(path: pathlib.Path, field: str) -> None:
+    lines = path.read_text().splitlines(keepends=True)
+    path.write_text("".join(line for line in lines if not line.startswith(f"{field}:")))
 
 revdiff = root / "skills/revdiff/SKILL.md"
 replace_exact(
@@ -105,48 +108,11 @@ replace_exact(
     "- Detects available terminal (agterm → tmux → Zellij → herdr → kitty → wezterm/Kaku → cmux → ghostty → iTerm2 → Emacs vterm)",
     "- Selects Herdr first when `HERDR_ENV=1`; otherwise preserves the upstream backend order",
 )
+remove_frontmatter_field(revdiff, "argument-hint")
+replace_exact(revdiff, '"revdiff <file>"', '"revdiff FILE"')
 
 plan = root / "skills/revdiff-plan/SKILL.md"
-replace_exact(
-    plan,
-    '''Resolve the script directory using repo root first, then fall back to Codex home:
-
-```bash
-SCRIPT_DIR="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/codex/skills/revdiff-plan/scripts"
-if [ ! -d "$SCRIPT_DIR" ]; then
-    SCRIPT_DIR="${CODEX_HOME:-$HOME/.codex}/skills/revdiff-plan/scripts"
-fi
-```
-
-Also resolve the launcher script from the revdiff skill:
-
-```bash
-LAUNCHER_DIR="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/codex/skills/revdiff/scripts"
-if [ ! -d "$LAUNCHER_DIR" ]; then
-    LAUNCHER_DIR="${CODEX_HOME:-$HOME/.codex}/skills/revdiff/scripts"
-fi
-```
-
-Use `$SCRIPT_DIR` and `$LAUNCHER_DIR` in place of script paths throughout this skill.''',
-    '''Codex supplies the absolute path of this loaded `SKILL.md` in the skill metadata.
-Resolve the directory containing that exact file:
-
-```bash
-SKILL_DIR="<absolute directory containing this loaded SKILL.md>"
-SCRIPT_DIR="$SKILL_DIR/scripts"
-```
-
-Resolve the sibling `revdiff` skill launcher from the same plugin root:
-
-```bash
-PLUGIN_ROOT="$(cd "$SKILL_DIR/../.." && pwd)"
-LAUNCHER_DIR="$PLUGIN_ROOT/skills/revdiff/scripts"
-```
-
-Do not guess a config-repository path or fall back to `~/.codex/skills`:
-marketplace plugins load from a versioned Codex cache. Use `$SCRIPT_DIR` and
-`$LAUNCHER_DIR` throughout this skill.''',
-)
+remove_frontmatter_field(plan, "argument-hint")
 
 hook = root / "scripts/codex-plan-review-hook.py"
 replace_exact(
@@ -189,13 +155,14 @@ license retained in [\`LICENSE\`](LICENSE).
 - Local plugin: \`$local_version\`
 - Synchronized: \`$(date -u +%F)\`
 
-The \`*.upstream.sh\`, hook, helper, reference, and skill files originate from
-that revision. The two \`launch-*.sh\` dispatchers are local: inside Herdr they
-remove competing multiplexer selectors, execute the preserved upstream
-launcher, and restore the caller's tab without changing the launcher result.
-The skill path-resolution paragraphs are adapted for Codex's versioned plugin
-cache. The planning hook detects complete \`<proposed_plan>\` blocks instead of
-assuming that Codex's approval-oriented \`permission_mode\` identifies Plan mode.
+The \`*.upstream.sh\`, hook, extractor, reference, and manual-review skill files
+originate from that revision. The \`launch-*.sh\` dispatchers, responsive plan
+launcher, formatter/runtime helpers, and plan-review skill are local. Inside
+Herdr they remove competing multiplexer selectors, open a dedicated tab, format
+the plan for the live pane width, map annotations back to canonical Markdown,
+and restore the caller's tab without changing the review result. The planning
+hook detects complete \`<proposed_plan>\` blocks instead of assuming that
+Codex's approval-oriented \`permission_mode\` identifies Plan mode.
 
 Refresh with:
 
@@ -204,9 +171,10 @@ Refresh with:
 \`\`\`
 
 The command requires an explicit upstream revision and local version, imports
-only the allowlisted files, reapplies the Codex cache-path and plan-trigger
-adaptations, and leaves the Herdr dispatchers intact. Review the resulting diff
-and run the full test suite before publishing the new marketplace version.
+only the allowlisted upstream files, reapplies the Codex cache-path and
+plan-trigger adaptations, and leaves the local responsive formatter, plan
+skill, and Herdr launchers intact. Review the resulting diff and run the full
+test suite before publishing the new marketplace version.
 EOF
 
 echo "synchronized RevDiff $upstream_commit as local plugin $local_version"

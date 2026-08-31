@@ -9,7 +9,9 @@ The profile intentionally starts small:
 - pinned `bd`, `revdiff`, and `wt` executables;
 - a tracked `revdiff-herdr` Codex plugin that opens automatic Plan reviews and
   manual RevDiff sessions in a dedicated tab in the caller's Herdr workspace,
-  then returns focus to the originating tab.
+  formats plans for the live pane width, compares each revision with the
+  preceding one, maps annotations back to canonical Markdown, and then returns
+  focus to the originating tab.
 
 Repository-specific instructions and Beads configuration remain in their owning
 repositories. OpenAI system skills and plugin-provided skills remain externally

@@ -19,7 +19,7 @@ fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ ${HERDR_ENV:-} == 1 ]]; then
-    "$script_dir/launch-plan-review.upstream.sh" "$@"
+    "$script_dir/launch-plan-review-herdr.sh" "$@"
 else
     exec "$script_dir/launch-plan-review.upstream.sh" "$@"
 fi

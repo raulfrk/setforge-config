@@ -17,6 +17,7 @@ PLUGIN_ROOT = REPO_ROOT / "plugins/revdiff-herdr"
 PLAN_LAUNCHER = PLUGIN_ROOT / "scripts/launch-plan-review.sh"
 MANUAL_LAUNCHER = PLUGIN_ROOT / "skills/revdiff/scripts/launch-revdiff.sh"
 HOOK = PLUGIN_ROOT / "scripts/codex-plan-review-hook.py"
+FORMATTER = PLUGIN_ROOT / "scripts/plan_review_format.py"
 BACKEND_ENV = {
     "AGTERM_SESSION_ID",
     "AGTERM_SOCKET",
@@ -61,11 +62,35 @@ class RevDiffHerdrTests(unittest.TestCase):
             printf ' %q' "$@" >> "$TEST_LOG"
             printf '\n' >> "$TEST_LOG"
             output=''
+            stdin_mode=0
+            compare_old=''
+            compare_new=''
             for arg in "$@"; do
-                case "$arg" in --output=*) output=${arg#--output=} ;; esac
+                case "$arg" in
+                    --output=*) output=${arg#--output=} ;;
+                    --stdin) stdin_mode=1 ;;
+                    --compare-old=*) compare_old=${arg#--compare-old=} ;;
+                    --compare-new=*) compare_new=${arg#--compare-new=} ;;
+                esac
             done
+            if [[ $stdin_mode == 1 ]]; then
+                if [[ -n ${TEST_STDIN_CAPTURE:-} ]]; then
+                    cat > "$TEST_STDIN_CAPTURE"
+                else
+                    cat >/dev/null
+                fi
+            fi
+            if [[ -n $compare_old && -n ${TEST_OLD_CAPTURE:-} ]]; then
+                cp "$compare_old" "$TEST_OLD_CAPTURE"
+            fi
+            if [[ -n $compare_new && -n ${TEST_NEW_CAPTURE:-} ]]; then
+                cp "$compare_new" "$TEST_NEW_CAPTURE"
+            fi
             if [[ -n $output ]]; then
                 printf '%s' "${TEST_ANNOTATIONS:-}" > "$output"
+            fi
+            if [[ -n ${TEST_REVDIFF_SLEEP:-} ]]; then
+                sleep "$TEST_REVDIFF_SLEEP"
             fi
             exit "${TEST_REVDIFF_RC:-0}"
             """,
@@ -92,6 +117,10 @@ class RevDiffHerdrTests(unittest.TestCase):
                     fi
                     sh -c "${4:?missing pane command}"
                     ;;
+                'pane process-info')
+                    printf '%s\n' '{"result":{"process_info":{"foreground_processes":[{"name":"revdiff"}]}}}'
+                    ;;
+                'pane send-keys') ;;
                 'tab close') ;;
                 'tab focus')
                     if [[ ${TEST_HERDR_FOCUS_FAIL:-0} == 1 ]]; then
@@ -168,12 +197,16 @@ class RevDiffHerdrTests(unittest.TestCase):
     def _calls(self) -> str:
         return self.log.read_text()
 
-    def test_plan_review_prefers_focused_herdr_tab_and_returns_annotations(self) -> None:
+    def test_plan_review_prefers_focused_herdr_tab_and_returns_annotations(
+        self,
+    ) -> None:
+        capture = self.temp / "first-review.md"
         result = subprocess.run(
             [str(PLAN_LAUNCHER), str(self.plan)],
             env=self._mixed_herdr_env(
                 TEST_ANNOTATIONS="tighten the test plan",
                 TEST_REVDIFF_RC="10",
+                TEST_STDIN_CAPTURE=str(capture),
             ),
             text=True,
             capture_output=True,
@@ -188,7 +221,13 @@ class RevDiffHerdrTests(unittest.TestCase):
         self.assertIn("--focus", calls)
         self.assertIn("herdr tab close w-test:t1", calls)
         self.assertIn("herdr tab focus w-test:t-caller", calls)
-        self.assertIn(f"--only={self.plan}", calls)
+        self.assertIn("--stdin", calls)
+        self.assertIn("--stdin-name=codex-plan.md", calls)
+        self.assertNotIn("--only=", calls)
+        self.assertEqual(
+            capture.read_text(),
+            "Plan\n====\n\nReview this Markdown plan.\n",
+        )
         self.assertNotRegex(calls, r"(?m)^(tmux|agtermctl|zellij) ")
         lines = calls.splitlines()
         self.assertLess(
@@ -197,9 +236,14 @@ class RevDiffHerdrTests(unittest.TestCase):
         )
 
     def test_plan_compare_mode_keeps_markdown_and_collapses_revision_diff(self) -> None:
+        old_capture = self.temp / "old-review.md"
+        new_capture = self.temp / "new-review.md"
         result = subprocess.run(
             [str(PLAN_LAUNCHER), str(self.plan), str(self.old_plan)],
-            env=self._mixed_herdr_env(),
+            env=self._mixed_herdr_env(
+                TEST_OLD_CAPTURE=str(old_capture),
+                TEST_NEW_CAPTURE=str(new_capture),
+            ),
             text=True,
             capture_output=True,
             check=False,
@@ -207,10 +251,120 @@ class RevDiffHerdrTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         calls = self._calls()
-        self.assertIn(f"--compare-old={self.old_plan}", calls)
-        self.assertIn(f"--compare-new={self.plan}", calls)
+        self.assertRegex(calls, r"--compare-old=.*/previous-plan\.md")
+        self.assertRegex(calls, r"--compare-new=.*/codex-plan\.md")
         self.assertIn("--collapsed", calls)
-        self.assertTrue(self.plan.name.endswith(".md"))
+        self.assertEqual(old_capture.read_text(), "Plan\n====\n\nOld text.\n")
+        self.assertEqual(
+            new_capture.read_text(),
+            "Plan\n====\n\nReview this Markdown plan.\n",
+        )
+
+    def test_narrow_plan_review_wraps_naturally_and_hides_tree(self) -> None:
+        self.plan.write_text(
+            "# Phone plan\n\n"
+            "- Review this deliberately long list item at natural word boundaries "
+            "without losing its hanging indentation.\n"
+        )
+        capture = self.temp / "phone-review.md"
+        result = subprocess.run(
+            [str(PLAN_LAUNCHER), str(self.plan)],
+            env=self._mixed_herdr_env(
+                COLUMNS="69",
+                TEST_STDIN_CAPTURE=str(capture),
+                TEST_REVDIFF_SLEEP="0.4",
+            ),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rendered = capture.read_text()
+        self.assertIn("• Review this deliberately long list item at natural", rendered)
+        self.assertIn("  word boundaries without losing its hanging", rendered)
+        self.assertTrue(all(len(line) <= 56 for line in rendered.splitlines()))
+        self.assertIn("herdr pane send-keys w-test:p1 t", self._calls())
+
+    def test_projection_preserves_code_tables_links_and_inline_markdown(self) -> None:
+        source = self.temp / "structures.md"
+        output = self.temp / "structures-view.md"
+        mapping = self.temp / "structures-map.json"
+        source.write_text(
+            "## Details\n\n"
+            "Use `inline_code()` and **emphasis** while wrapping this paragraph cleanly.\n\n"
+            "```python\nprint('a very long code line that must remain exactly intact')\n```\n\n"
+            "| Name | Value |\n| --- | --- |\n| long | untouched |\n\n"
+            "[docs]: https://example.test/a-very-long-unbreakable-token\n"
+        )
+        result = subprocess.run(
+            [
+                "python3",
+                str(FORMATTER),
+                "render",
+                f"--source={source}",
+                f"--output={output}",
+                f"--map={mapping}",
+                "--width=32",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rendered = output.read_text()
+        self.assertIn("Details\n-------", rendered)
+        self.assertIn("`inline_code()`", rendered)
+        self.assertIn(
+            "print('a very long code line that must remain exactly intact')", rendered
+        )
+        self.assertIn("| Name | Value |", rendered)
+        self.assertIn(
+            "[docs]: https://example.test/a-very-long-unbreakable-token", rendered
+        )
+        payload = json.loads(mapping.read_text())
+        self.assertEqual(len(payload["line_map"]), len(rendered.splitlines()))
+
+    def test_projection_annotations_map_back_to_canonical_plan_lines(self) -> None:
+        result = subprocess.run(
+            [str(PLAN_LAUNCHER), str(self.plan)],
+            env=self._mixed_herdr_env(
+                TEST_ANNOTATIONS="## codex-plan.md:2 ( )\nclarify the heading",
+                TEST_REVDIFF_RC="10",
+            ),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 10, result.stderr)
+        self.assertEqual(
+            result.stdout,
+            f"## {self.plan.name}:1 ( )\nclarify the heading",
+        )
+
+    def test_compare_annotations_use_the_matching_canonical_revision(self) -> None:
+        result = subprocess.run(
+            [str(PLAN_LAUNCHER), str(self.plan), str(self.old_plan)],
+            env=self._mixed_herdr_env(
+                TEST_ANNOTATIONS=(
+                    "## previous-plan.md:2 (-)\nold heading note\n\n"
+                    "## codex-plan.md:2 (+)\nnew heading note"
+                ),
+                TEST_REVDIFF_RC="10",
+            ),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 10, result.stderr)
+        self.assertEqual(
+            result.stdout,
+            f"## {self.old_plan.name}:1 (-)\nold heading note\n\n"
+            f"## {self.plan.name}:1 (+)\nnew heading note",
+        )
 
     def test_manual_review_prefers_herdr(self) -> None:
         result = subprocess.run(
