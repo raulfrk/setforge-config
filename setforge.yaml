@@ -41,6 +41,10 @@ tracked_files:
     src: codex/skills/beads-bootstrap/SKILL.md
     dst: ~/.codex/skills/beads-bootstrap/SKILL.md
 
+  codex_skill_beads_adapt:
+    src: codex/skills/beads-adapt/SKILL.md
+    dst: ~/.codex/skills/beads-adapt/SKILL.md
+
   herdr_config:
     src: herdr/config.toml
     dst: ~/.config/herdr/config.toml
@@ -99,6 +103,7 @@ profiles:
       - codex_skill_beads
       - codex_skill_beads_reference_project_config
       - codex_skill_beads_bootstrap
+      - codex_skill_beads_adapt
       - herdr_config
     packages:
       - beads
