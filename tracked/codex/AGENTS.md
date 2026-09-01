@@ -57,6 +57,13 @@ Use pytest for new and modified Python tests. Do not add `unittest` imports,
 unittest-based module, convert the affected tests to pytest; broaden the
 conversion only when needed to keep that module coherent.
 
+Before planning or implementing material tracked work in a Git checkout,
+resolve its canonical Git root and run `bd where --json` from that root. If it
+succeeds, load the `beads` skill only when the returned canonical `path` equals
+`<git-root>/.beads`; stop and report any location mismatch before proceeding.
+If it reports no Beads project, continue normally without initializing or
+proposing Beads.
+
 Before presenting a decision-complete implementation plan, run the
 `review-gate` skill in plan mode. After completing file-changing work and its
 deterministic checks, run the skill in implementation mode before handoff,

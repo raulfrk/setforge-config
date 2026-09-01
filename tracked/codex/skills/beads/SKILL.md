@@ -1,6 +1,6 @@
 ---
 name: beads
-description: Manage private Beads project work and configuration with explicit creation approval, stealth initialization, reviewer-friendly decomposition, and a claim-verify-close lifecycle. Use when the user mentions Beads, bd, Beads issues or epics, or Beads project configuration.
+description: Manage private Beads project work and configuration with explicit creation approval, stealth initialization, repository adaptation, reviewer-friendly decomposition, and a claim-verify-close lifecycle. Use when the user mentions Beads, bd, Beads issues or epics, Beads project configuration, bootstrapping Beads, or adapting an existing Beads repository.
 ---
 
 # Beads
@@ -11,19 +11,25 @@ framework.
 
 ## Establish the active project
 
-Before any mutation, inspect the Git root, active Beads location, database, and
-issue prefix with native commands such as:
+Before any mutation, resolve the Git root and active Beads location:
 
 ```sh
 git rev-parse --show-toplevel
-bd where
-bd info --json
+bd where --json
 bd config show
 ```
 
-Confirm they describe the checkout the user selected. Stop on a mismatch. Use
-native `bd` commands and consult `bd <command> --help` for exact syntax; never
-use raw SQL or `bd edit`.
+Canonicalize both paths and require the returned Beads `path` to equal
+`<git-root>/.beads`. Stop and report a mismatch. Treat the recognized
+`no beads project found` result as normal absence, not permission to initialize.
+Do not parse `bd info --json`; in Beads 1.1.2 it emits human-readable output.
+Use native `bd` commands and consult `bd <command> --help` for exact syntax;
+never use raw SQL or `bd edit`.
+
+For configuration meaning, provenance, and the sole approved command, read
+[the project configuration reference](references/project-config.md). For a new
+repository use the `beads-bootstrap` skill. For conversion of existing state
+use the `beads-adapt` skill.
 
 ## Authorization
 
@@ -59,29 +65,21 @@ database.
 
 ## Configure the project
 
-Inspect effective values and provenance before proposing configuration. For the
-reviewer-friendly workflow, use only these project-policy values:
+Inspect effective values and provenance before proposing configuration. Read
+[the project configuration reference](references/project-config.md), present
+its canonical command exactly as shown, and wait for approval before applying
+it. Do not reproduce the command here or invent additional policy keys. Leave
+Beads-generated metadata and compaction values untouched.
 
-```text
-epic.mode = milestone
-commit.mode = per-bead
-commit.format = type-prefix
-custom.workflow.decomposition = reviewer-friendly
+When preservation matters, capture the complete issue graph with:
+
+```sh
+bd --readonly list --all --limit 0 \
+  --include-gates --include-infra --include-templates --json
 ```
 
-Operational safeguards are separate:
-
-```text
-dolt.local-only = true
-dolt.auto-commit = on
-no-git-ops = true
-```
-
-Preview the exact `bd config set-many` command before applying a requested
-configuration change. Do not invent hierarchy, disclosure, linkage,
-parallelism, review, authorization, handoff, workspace, repository-kind, or
-execution-strategy keys. Leave Beads-generated metadata and compaction values
-untouched.
+Normalize issues by issue ID and dependencies by dependency ID before comparing
+snapshots.
 
 ## Work an existing Bead
 
