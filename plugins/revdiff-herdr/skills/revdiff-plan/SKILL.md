@@ -19,7 +19,7 @@ metadata. Resolve the directory containing that exact file:
 SKILL_DIR="<absolute directory containing this loaded SKILL.md>"
 SCRIPT_DIR="$SKILL_DIR/scripts"
 PLUGIN_ROOT="$(cd "$SKILL_DIR/../.." && pwd)"
-PLAN_LAUNCHER="$PLUGIN_ROOT/scripts/launch-plan-review.sh"
+PLAN_LAUNCHER="$PLUGIN_ROOT/skills/revdiff/scripts/launch-revdiff.sh"
 ```
 
 Do not guess a checkout path or fall back to `~/.codex/skills`. Marketplace
@@ -82,10 +82,11 @@ $SCRIPT_DIR/extract-last-message.sh --skip-current > "$CURRENT_PLAN"
 
 ### 2. Open the first review
 
-Run the dedicated plan launcher, not the generic `--only` file flow:
+Run the plugin's public launcher. Markdown routing selects the responsive
+document flow automatically:
 
 ```bash
-$PLAN_LAUNCHER "$CURRENT_PLAN"
+$PLAN_LAUNCHER "--only=$CURRENT_PLAN"
 ```
 
 The launcher blocks until the TUI exits. Give the command the maximum timeout
@@ -111,7 +112,9 @@ new canonical Markdown file; do not edit the reviewed snapshot in place.
 PREVIOUS_PLAN="$CURRENT_PLAN"
 CURRENT_PLAN=$(mktemp "$TMPBASE/revdiff-plan-XXXXXX.md")
 # Write the complete revised Markdown to "$CURRENT_PLAN".
-$PLAN_LAUNCHER "$CURRENT_PLAN" "$PREVIOUS_PLAN"
+$PLAN_LAUNCHER \
+  "--compare-old=$PREVIOUS_PLAN" \
+  "--compare-new=$CURRENT_PLAN"
 ```
 
 The launcher renders both inputs at the same current width and opens a native

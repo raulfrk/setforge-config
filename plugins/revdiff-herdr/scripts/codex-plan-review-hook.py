@@ -125,7 +125,7 @@ def resolve_launcher(plugin_root: Path, data_dir: str, cwd: object) -> Path | No
     working_dir = cwd if isinstance(cwd, str) and Path(cwd).is_dir() else None
     try:
         result = subprocess.run(
-            [str(resolver), "launch-plan-review.sh", data_dir],
+            [str(resolver), "launch-revdiff.sh", data_dir],
             capture_output=True,
             text=True,
             timeout=10,
@@ -177,7 +177,7 @@ def main() -> None:
     data_dir = os.environ.get("PLUGIN_DATA") or os.environ.get("CLAUDE_PLUGIN_DATA", "")
     launcher = resolve_launcher(plugin_root, data_dir, event.get("cwd"))
     if launcher is None:
-        warn("no executable launch-plan-review.sh was found")
+        warn("no executable launch-revdiff.sh was found")
         return
 
     first_line, separator, rest = plan.partition("\n")
@@ -197,9 +197,13 @@ def main() -> None:
             new_snapshot = Path(tmp.name)
             tmp.write(plan)
         operation = "launcher"
-        args = [str(launcher), str(new_snapshot)]
+        args = [str(launcher), f"--only={new_snapshot}"]
         if old_snapshot is not None:
-            args.append(str(old_snapshot))
+            args = [
+                str(launcher),
+                f"--compare-old={old_snapshot}",
+                f"--compare-new={new_snapshot}",
+            ]
         result = subprocess.run(
             args,
             capture_output=True,

@@ -63,6 +63,14 @@ When `--only` specifies a file that has no VCS changes (or when no repo exists),
 - **Inside a repo (git/hg/jj)**: `--only` files not in the diff are read from disk alongside changed files
 - **Outside a repo**: `--only` is required; files are read directly from disk
 
+The bundled `launch-revdiff.sh` is the plugin's single public entry point. A
+single `.md`/`.markdown` `--only` input uses the responsive document view, and
+an old/new pair of Markdown files uses the responsive comparison view. These
+routes reflow ordinary soft-wrapped prose for the live pane width, preserve
+Markdown syntax highlighting and annotation mapping, and reproject after a
+resize. Source files, refs, staged changes, and other argument combinations
+continue through RevDiff's normal review path unchanged.
+
 ## Review Description
 
 When launching revdiff for a user (auto-open after a refactor, code review, etc.), include `--description` (or `--description-file=path.md`) to attach prose context to the review. The description appears at the top of the info popup (`i` key) and is rendered as markdown:

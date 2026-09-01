@@ -29,5 +29,10 @@ if [ -f "$SCRIPT_DIR/$name" ] && [ -x "$SCRIPT_DIR/$name" ]; then
     abspath "$SCRIPT_DIR/$name"
     exit 0
 fi
+if [ "$name" = "launch-revdiff.sh" ] && \
+        [ -x "$SCRIPT_DIR/../skills/revdiff/scripts/launch-revdiff.sh" ]; then
+    abspath "$SCRIPT_DIR/../skills/revdiff/scripts/launch-revdiff.sh"
+    exit 0
+fi
 echo "error: launcher not found in override chain: $name" >&2
 exit 1

@@ -4,14 +4,38 @@ set -euo pipefail
 
 sq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
-if [[ $# == 1 ]]; then
-    new_file=$1
-    old_file=
-elif [[ $# == 2 ]]; then
-    new_file=$1
-    old_file=$2
-else
-    echo "usage: launch-plan-review.sh <plan-file-path> | <new-path> <old-path>" >&2
+if [[ $# -lt 1 ]]; then
+    echo "usage: launch-plan-review.sh <new-path> [old-path] [--description=...|--description-file=...]" >&2
+    exit 1
+fi
+new_file=$1
+shift
+old_file=
+if [[ $# -gt 0 && $1 != --description=* && $1 != --description-file=* ]]; then
+    old_file=$1
+    shift
+fi
+description_args=()
+for arg in "$@"; do
+    case "$arg" in
+        --description=*) description_args+=("$arg") ;;
+        --description-file=*)
+            description_file=${arg#--description-file=}
+            if [[ ! -f $description_file ]]; then
+                echo "error: description file not found: $description_file" >&2
+                exit 1
+            fi
+            description_abs=$(cd "$(dirname "$description_file")" && echo "$(pwd)/$(basename "$description_file")")
+            description_args+=("--description-file=$description_abs")
+            ;;
+        *)
+            echo "error: unsupported responsive review argument: $arg" >&2
+            exit 1
+            ;;
+    esac
+done
+if [[ ${#description_args[@]} -gt 1 ]]; then
+    echo "error: --description and --description-file are mutually exclusive" >&2
     exit 1
 fi
 
@@ -78,6 +102,9 @@ runtime_command="PYTHONDONTWRITEBYTECODE=1 $(sq "$python_bin") $(sq "$runtime") 
 if [[ -n $old_abs ]]; then
     runtime_command="$runtime_command $(sq "--old=$old_abs")"
 fi
+for arg in "${description_args[@]}"; do
+    runtime_command="$runtime_command $(sq "$arg")"
+done
 
 cat > "$launch_script" <<LAUNCHER
 #!/bin/sh

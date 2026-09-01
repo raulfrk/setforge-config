@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # launch revdiff for plan file review via terminal overlay.
 # usage:
-#   launch-plan-review.sh <plan-file-path>           # --only mode
-#   launch-plan-review.sh <new-path> <old-path>      # --compare-old/--compare-new mode
+#   launch-plan-review.sh <new-path> [old-path] [description option]
 #
 # arg order in compare mode is (new, old), NOT (old, new): a stale 1-arg
 # launcher (pre-compare-mode user override copied from master before this
@@ -18,17 +17,44 @@ set -euo pipefail
 # REVDIFF_CMD template assembles the full shell command line.
 sq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
-if [ $# -eq 1 ]; then
-    PLAN_FILE="$1"
+if [ $# -lt 1 ]; then
+    echo "usage: launch-plan-review.sh <new-path> [old-path] [--description=...|--description-file=...]" >&2
+    exit 1
+fi
+
+PLAN_FILE="$1"
+shift
+OLD_FILE=
+if [ $# -gt 0 ] && [ "${1#--description=}" = "$1" ] && [ "${1#--description-file=}" = "$1" ]; then
+    OLD_FILE="$1"
+    shift
+fi
+DESCRIPTION_ARG=
+for arg in "$@"; do
+    case "$arg" in
+        --description=*|--description-file=*)
+            if [ -n "$DESCRIPTION_ARG" ]; then
+                echo "error: --description and --description-file are mutually exclusive" >&2
+                exit 1
+            fi
+            DESCRIPTION_ARG="$arg"
+            ;;
+        *)
+            echo "error: unsupported responsive review argument: $arg" >&2
+            exit 1
+            ;;
+    esac
+done
+
+if [ -z "$OLD_FILE" ]; then
     if [ ! -f "$PLAN_FILE" ]; then
         echo "error: file not found: $PLAN_FILE" >&2
         exit 1
     fi
     PLAN_ABS=$(cd "$(dirname "$PLAN_FILE")" && echo "$(pwd)/$(basename "$PLAN_FILE")")
     REVDIFF_ARGS="$(sq "--only=$PLAN_ABS")"
-elif [ $# -eq 2 ]; then
-    NEW_FILE="$1"
-    OLD_FILE="$2"
+else
+    NEW_FILE="$PLAN_FILE"
     if [ ! -f "$NEW_FILE" ]; then
         echo "error: file not found: $NEW_FILE" >&2
         exit 1
@@ -42,9 +68,9 @@ elif [ $# -eq 2 ]; then
     REVDIFF_ARGS="$(sq "--compare-old=$OLD_ABS") $(sq "--compare-new=$NEW_ABS")"
     PLAN_FILE="$NEW_FILE"
     COMPARE_MODE=1
-else
-    echo "usage: launch-plan-review.sh <plan-file-path> | <new-path> <old-path>" >&2
-    exit 1
+fi
+if [ -n "$DESCRIPTION_ARG" ]; then
+    REVDIFF_ARGS="$REVDIFF_ARGS $(sq "$DESCRIPTION_ARG")"
 fi
 COMPARE_MODE="${COMPARE_MODE:-0}"
 

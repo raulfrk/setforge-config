@@ -12,12 +12,13 @@ from pathlib import Path
 
 
 ATX_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
-BULLET_RE = re.compile(r"^(\s*)[-+*]\s+(.*)$")
+BULLET_RE = re.compile(r"^(\s*)([-+*])\s+(.*)$")
 ORDERED_RE = re.compile(r"^(\s*)(\d+[.)])\s+(.*)$")
 QUOTE_RE = re.compile(r"^(\s*>\s?)(.*)$")
 FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
 LINK_DEFINITION_RE = re.compile(r"^\s{0,3}\[[^]]+\]:\s*\S+")
 TABLE_DELIMITER_RE = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$")
+SETEXT_UNDERLINE_RE = re.compile(r"^\s{0,3}(?:=+|-+)\s*$")
 ANNOTATION_RE = re.compile(r"^(##\s+)(.+?)(?::(\d+)(?:-(\d+))?)?\s+\(([^)]*)\)\s*$")
 
 
@@ -49,6 +50,97 @@ def _is_table_line(lines: list[str], index: int) -> bool:
     return previous_is_delimiter or next_is_delimiter or line.lstrip().startswith("|")
 
 
+def _is_plain_paragraph_line(lines: list[str], index: int) -> bool:
+    line = lines[index]
+    return bool(line.strip()) and not any(
+        (
+            FENCE_RE.match(line),
+            ATX_HEADING_RE.match(line),
+            line.startswith("    "),
+            line.startswith("\t"),
+            LINK_DEFINITION_RE.match(line),
+            _is_table_line(lines, index),
+            re.match(r"^\s{0,3}(?:---+|___+|\*\*\*+)\s*$", line),
+            BULLET_RE.match(line),
+            ORDERED_RE.match(line),
+            QUOTE_RE.match(line),
+        )
+    )
+
+
+def _has_hard_break(line: str) -> bool:
+    return line.endswith("  ") or line.rstrip().endswith("\\")
+
+
+def _starts_setext_heading(lines: list[str], index: int) -> bool:
+    return (
+        bool(lines[index].strip())
+        and index + 1 < len(lines)
+        and bool(SETEXT_UNDERLINE_RE.match(lines[index + 1]))
+    )
+
+
+def _coalesce_soft_wrapped_paragraphs(source_lines: list[str]) -> tuple[list[str], list[int]]:
+    """Join ordinary Markdown soft wraps while retaining canonical line origins."""
+    logical: list[str] = []
+    origins: list[int] = []
+    index = 0
+    in_fence = False
+    fence_marker = ""
+    while index < len(source_lines):
+        line = source_lines[index]
+        fence = FENCE_RE.match(line)
+        if in_fence:
+            logical.append(line)
+            origins.append(index + 1)
+            if (
+                fence
+                and fence.group(1).startswith(fence_marker[0])
+                and len(fence.group(1)) >= len(fence_marker)
+            ):
+                in_fence = False
+                fence_marker = ""
+            index += 1
+            continue
+        if fence:
+            in_fence = True
+            fence_marker = fence.group(1)
+            logical.append(line)
+            origins.append(index + 1)
+            index += 1
+            continue
+        if _starts_setext_heading(source_lines, index):
+            logical.extend((line, source_lines[index + 1]))
+            origins.extend((index + 1, index + 2))
+            index += 2
+            continue
+        if not _is_plain_paragraph_line(source_lines, index):
+            logical.append(line)
+            origins.append(index + 1)
+            index += 1
+            continue
+
+        origin = index + 1
+        parts = [line.strip()]
+        hard_spaces = line.endswith("  ")
+        while (
+            not _has_hard_break(source_lines[index])
+            and index + 1 < len(source_lines)
+            and _is_plain_paragraph_line(source_lines, index + 1)
+            and not _starts_setext_heading(source_lines, index + 1)
+        ):
+            index += 1
+            parts.append(source_lines[index].strip())
+            hard_spaces = source_lines[index].endswith("  ")
+        paragraph = " ".join(parts)
+        if hard_spaces:
+            paragraph = paragraph.rstrip() + "  "
+        logical.append(paragraph)
+        origins.append(origin)
+        index += 1
+    return logical, origins
+
+
 def _wrapped(text: str, width: int, first: str = "", rest: str = "") -> list[str]:
     available = max(1, width - len(first))
     continuation = max(1, width - len(rest))
@@ -70,14 +162,16 @@ def _wrapped(text: str, width: int, first: str = "", rest: str = "") -> list[str
 
 def render_markdown(source: str, width: int) -> Projection:
     """Return a spacious review projection and its projected-to-source map."""
-    source_lines = source.splitlines()
+    source_lines, source_origins = _coalesce_soft_wrapped_paragraphs(
+        source.splitlines()
+    )
     output: list[str] = []
     line_map: list[int] = []
     in_fence = False
     fence_marker = ""
 
-    def emit(value: str, source_line: int) -> None:
-        output.append(value.rstrip())
+    def emit(value: str, source_line: int, *, preserve_trailing: bool = False) -> None:
+        output.append(value if preserve_trailing else value.rstrip())
         line_map.append(source_line)
 
     def blank(source_line: int) -> None:
@@ -85,7 +179,7 @@ def render_markdown(source: str, width: int) -> Projection:
             emit("", source_line)
 
     for index, line in enumerate(source_lines):
-        source_line = index + 1
+        source_line = source_origins[index]
         fence = FENCE_RE.match(line)
         if in_fence:
             emit(line, source_line)
@@ -112,15 +206,11 @@ def render_markdown(source: str, width: int) -> Projection:
         heading = ATX_HEADING_RE.match(line)
         if heading:
             blank(source_line)
-            title = heading.group(2)
-            title_lines = _wrapped(title, width)
-            for rendered in title_lines:
+            prefix = f"{heading.group(1)} "
+            for rendered in _wrapped(
+                heading.group(2), width, prefix, " " * len(prefix)
+            ):
                 emit(rendered, source_line)
-            depth = len(heading.group(1))
-            underline = "=" if depth == 1 else "-" if depth == 2 else "·"
-            emit(
-                underline * min(width, max(3, max(map(len, title_lines)))), source_line
-            )
             blank(source_line)
             continue
 
@@ -139,13 +229,7 @@ def render_markdown(source: str, width: int) -> Projection:
 
         bullet = BULLET_RE.match(line)
         if bullet:
-            indent, body = bullet.groups()
-            level = max(0, len(indent.expandtabs(2)) // 2)
-            marker = "•" if level == 0 else "◦"
-            checkbox = re.match(r"^\[([ xX])\]\s+(.*)$", body)
-            if checkbox:
-                marker = "☑" if checkbox.group(1).lower() == "x" else "☐"
-                body = checkbox.group(2)
+            indent, marker, body = bullet.groups()
             prefix = f"{indent}{marker} "
             for rendered in _wrapped(body, width, prefix, " " * len(prefix)):
                 emit(rendered, source_line)
@@ -169,8 +253,13 @@ def render_markdown(source: str, width: int) -> Projection:
             blank(source_line)
             continue
 
-        for rendered in _wrapped(line, width):
-            emit(rendered, source_line)
+        hard_spaces = line.endswith("  ")
+        body = line[:-2] if hard_spaces else line
+        rendered_lines = _wrapped(body, width)
+        if hard_spaces:
+            rendered_lines[-1] += "  "
+        for rendered in rendered_lines:
+            emit(rendered, source_line, preserve_trailing=hard_spaces)
 
     while output and output[-1] == "":
         output.pop()
@@ -216,7 +305,7 @@ def remap_annotations(
     """Translate projection line references back to canonical Markdown."""
     new_source = Path(str(new_mapping.get("source", "plan.md"))).name
     new_projected = Path(
-        str(new_mapping.get("projected", "codex-plan.txt"))
+        str(new_mapping.get("projected", "codex-plan.md"))
     ).name
     old_projected = (
         Path(str(old_mapping.get("projected", "previous-plan.md"))).name
@@ -287,7 +376,7 @@ def project_annotations(
 ) -> str:
     """Translate canonical line references into the current projection."""
     target_name = projected_name or str(
-        new_mapping.get("projected", "codex-plan.txt")
+        new_mapping.get("projected", "codex-plan.md")
     )
     result: list[str] = []
     for line in annotations.splitlines():

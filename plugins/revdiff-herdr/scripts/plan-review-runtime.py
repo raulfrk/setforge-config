@@ -66,23 +66,20 @@ def render_single(
     center_projection(view, columns, width)
 
 
-def render_comparison(
-    new: Path,
-    old: Path,
-    temp: Path,
-    generation: int,
-    new_mapping: Path,
-    old_mapping: Path,
+def create_baseline_repo(
+    repo: Path,
+    source: Path,
+    mapping: Path,
     columns: int,
     width: int,
-) -> tuple[Path, Path]:
-    """Represent responsive projections as a normal one-file Git diff."""
-    repo = temp / f"comparison-{generation}"
+    message: str,
+) -> Path:
+    """Create the clean tracked Markdown file required by RevDiff context mode."""
     repo.mkdir()
-    review_file = repo / "codex-plan.txt"
-    render_single(old, review_file, old_mapping, columns, width)
+    review_file = repo / "codex-plan.md"
+    render_single(source, review_file, mapping, columns, width)
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-    subprocess.run(["git", "add", "codex-plan.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "codex-plan.md"], cwd=repo, check=True)
     subprocess.run(
         [
             "git",
@@ -96,12 +93,46 @@ def render_comparison(
             "core.hooksPath=/dev/null",
             "commit",
             "-qm",
-            "previous plan",
+            message,
         ],
         cwd=repo,
         check=True,
     )
+    return review_file
+
+
+def render_comparison(
+    new: Path,
+    old: Path,
+    temp: Path,
+    generation: int,
+    new_mapping: Path,
+    old_mapping: Path,
+    columns: int,
+    width: int,
+) -> tuple[Path, Path]:
+    """Represent responsive projections as a normal one-file Git diff."""
+    repo = temp / f"comparison-{generation}"
+    review_file = create_baseline_repo(
+        repo, old, old_mapping, columns, width, "previous plan"
+    )
     render_single(new, review_file, new_mapping, columns, width)
+    return repo, review_file
+
+
+def render_context(
+    source: Path,
+    temp: Path,
+    generation: int,
+    mapping: Path,
+    columns: int,
+    width: int,
+) -> tuple[Path, Path]:
+    """Represent a clean Markdown document as repository-backed context."""
+    repo = temp / f"context-{generation}"
+    review_file = create_baseline_repo(
+        repo, source, mapping, columns, width, "plan context"
+    )
     return repo, review_file
 
 
@@ -166,13 +197,16 @@ def main() -> int:
     parser.add_argument("--old", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--ready", type=Path, required=True)
+    descriptions = parser.add_mutually_exclusive_group()
+    descriptions.add_argument("--description")
+    descriptions.add_argument("--description-file", type=Path)
     args = parser.parse_args()
 
     args.ready.parent.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix="plan-review-view-") as temp_value:
         temp = Path(temp_value)
-        new_view = temp / "codex-plan.txt"
+        new_view = temp / "codex-plan.md"
         new_map = temp / "codex-plan.map.json"
         old_map: Path | None = None
         if args.old is not None:
@@ -197,12 +231,16 @@ def main() -> int:
                 width = review_width(columns)
                 try:
                     if args.old is None:
-                        render_single(
-                            args.new, new_view, new_map, columns, width
+                        run_cwd, new_view = render_context(
+                            args.new,
+                            temp,
+                            generation,
+                            new_map,
+                            columns,
+                            width,
                         )
-                        run_cwd = None
-                        only_path = str(new_view)
-                        projected_name = str(new_view)
+                        only_path = "codex-plan.md"
+                        projected_name = only_path
                     else:
                         assert old_map is not None
                         run_cwd, new_view = render_comparison(
@@ -215,7 +253,7 @@ def main() -> int:
                             columns,
                             width,
                         )
-                        only_path = "codex-plan.txt"
+                        only_path = "codex-plan.md"
                         projected_name = only_path
                     if pending_flush is not None:
                         preload.write_text(
@@ -250,6 +288,10 @@ def main() -> int:
                     f"--output={args.output}",
                     f"--post-flush-command={handoff_command}",
                 ]
+                if args.description is not None:
+                    command.append(f"--description={args.description}")
+                elif args.description_file is not None:
+                    command.append(f"--description-file={args.description_file}")
                 if preload.is_file() and preload.stat().st_size:
                     command.append(f"--annotations={preload}")
                 result = run_revdiff(

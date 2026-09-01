@@ -36,6 +36,11 @@ is justified.
 Keep adjacent cleanup out of scope unless required for the requested change;
 report worthwhile broader improvements separately.
 
+Use one primary agent to own each coherent change. Delegate only bounded,
+independent workstreams or independent review; keep sequential work and shared
+mutable state with the primary owner. Choose concurrency from the actual
+decomposition, never from the number of available agent slots.
+
 When producing an implementation plan, including in Plan Mode, include
 representative snippets whenever they materially clarify the intended
 result—for example exact policy text, interface signatures, schemas, critical

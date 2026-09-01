@@ -29,6 +29,10 @@ tracked_files:
     src: codex/skills/herdr/SKILL.md
     dst: ~/.codex/skills/herdr/SKILL.md
 
+  codex_skill_beads:
+    src: codex/skills/beads/SKILL.md
+    dst: ~/.codex/skills/beads/SKILL.md
+
   herdr_config:
     src: herdr/config.toml
     dst: ~/.config/herdr/config.toml
@@ -84,6 +88,7 @@ profiles:
       - codex_skill_review_gate
       - codex_skill_setforge
       - codex_skill_herdr
+      - codex_skill_beads
       - herdr_config
     packages:
       - beads

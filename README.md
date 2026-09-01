@@ -5,8 +5,9 @@ This repository defines Raul's main Codex profile.
 The profile intentionally starts small:
 
 - a compact global `AGENTS.md` that favors proportional, evidence-backed
-  project work and disposable feasibility spikes over speculative architecture;
-- practical SetForge and Herdr usage skills;
+  project work, selective delegation, and disposable feasibility spikes over
+  speculative architecture;
+- practical SetForge, Herdr, and private Beads usage skills;
 - pinned `bd`, `revdiff`, and `wt` executables;
 - a tracked `revdiff-herdr` Codex plugin that opens automatic Plan reviews and
   manual RevDiff sessions in a dedicated tab in the caller's Herdr workspace,
@@ -15,8 +16,12 @@ The profile intentionally starts small:
   focus to the originating tab.
 
 Repository-specific instructions and Beads configuration remain in their owning
-repositories. OpenAI system skills and plugin-provided skills remain externally
-owned except for the explicitly vendored `revdiff-herdr` bundle.
+repositories. The profile's Beads skill requires user approval before database
+initialization or issue creation, always initializes in stealth mode, favors
+reviewer-friendly shallow decomposition, and keeps tracking details out of the
+project artifacts and Git metadata it manages. OpenAI system skills and
+plugin-provided skills remain externally owned except for the explicitly
+vendored `revdiff-herdr` bundle.
 
 The RevDiff Plan hook runs only for a complete `<proposed_plan>` response while
 Codex is in Plan Mode. The profile contains no workflow controller, audit
