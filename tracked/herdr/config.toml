@@ -1,1 +1,10 @@
 onboarding = false
+
+[keys]
+prefix = "ctrl+a"
+goto = ["prefix+g", "ctrl+g"]
+
+[ui]
+mobile_width_threshold = 100
+sidebar_collapsed_mode = "hidden"
+agent_panel_sort = "priority"

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -31,6 +32,18 @@ from plan_review_format import (  # noqa: E402
     remap_annotations,
     review_width,
 )
+
+
+def _load_plan_runtime():
+    spec = importlib.util.spec_from_file_location("plan_review_runtime", RUNTIME)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+PLAN_RUNTIME = _load_plan_runtime()
 BACKEND_ENV = {
     "AGTERM_SESSION_ID",
     "AGTERM_SOCKET",
@@ -77,15 +90,21 @@ class TestRevDiffHerdr:
             output=''
             only=''
             preload=''
-            post_flush=''
+            history_dir=''
             for arg in "$@"; do
                 case "$arg" in
                     --output=*) output=${arg#--output=} ;;
                     --only=*) only=${arg#--only=} ;;
                     --annotations=*) preload=${arg#--annotations=} ;;
-                    --post-flush-command=*) post_flush=${arg#--post-flush-command=} ;;
+                    --history-dir=*) history_dir=${arg#--history-dir=} ;;
                 esac
             done
+            printf '%s' "$$" > "${TEST_REVDIFF_PID_FILE:?}"
+            count=0
+            if [[ -n ${TEST_REFLOW_COUNT:-} ]]; then
+                [[ -f $TEST_REFLOW_COUNT ]] && count=$(cat "$TEST_REFLOW_COUNT")
+                printf '%s' "$((count + 1))" > "$TEST_REFLOW_COUNT"
+            fi
             if [[ -n $only && -n ${TEST_ONLY_CAPTURE:-} ]]; then
                 cp "$only" "$TEST_ONLY_CAPTURE"
             fi
@@ -98,41 +117,29 @@ class TestRevDiffHerdr:
             if [[ -n $preload && -n ${TEST_PRELOAD_CAPTURE:-} ]]; then
                 cp "$preload" "$TEST_PRELOAD_CAPTURE"
             fi
-            if [[ -n ${TEST_RESIZE_SIGNAL:-} ]]; then
-                count_file=${TEST_REFLOW_COUNT:?}
-                count=0
-                [[ -f $count_file ]] && count=$(cat "$count_file")
-                printf '%s' "$((count + 1))" > "$count_file"
+            if [[ -n ${TEST_GENERATION_DIR:-} ]]; then
                 cp "$only" "${TEST_GENERATION_DIR:?}/generation-$((count + 1)).txt"
-                if [[ $count -eq 0 ]]; then
-                    while [[ ! -f $TEST_RESIZE_SIGNAL ]]; do sleep 0.05; done
+            fi
+            on_term() {
+                if [[ -n $history_dir ]]; then
                     annotations=${TEST_REFLOW_ANNOTATIONS:-}
                     if [[ -n $annotations ]]; then
-                        printf '%s' "$annotations" > "$output"
-                        printf '%s' "$annotations" | sh -c "$post_flush"
-                    else
-                        while [[ ! -f ${TEST_QUIT_SIGNAL:?} ]]; do sleep 0.05; done
+                        repo=$(basename "$PWD")
+                        mkdir -p "$history_dir/$repo"
+                        {
+                            printf '# Review: now\npath: %s\n\n## Annotations\n\n' "$PWD"
+                            printf '%s\n' "$annotations"
+                        } > "$history_dir/$repo/review.md"
                     fi
-                    exit 0
                 fi
-            fi
-            if [[ -n ${TEST_REFLOW_ONCE:-} ]]; then
-                count_file=${TEST_REFLOW_COUNT:?}
-                count=0
-                [[ -f $count_file ]] && count=$(cat "$count_file")
-                printf '%s' "$((count + 1))" > "$count_file"
-                if [[ $count -lt ${TEST_REFLOW_TIMES:-1} ]]; then
-                    annotations=${TEST_REFLOW_ANNOTATIONS:?}
-                    if [[ -n ${TEST_REFLOW_DELAY:-} ]]; then
-                        sleep "$TEST_REFLOW_DELAY"
-                    fi
-                    printf '%s' "$annotations" > "$output"
-                    printf '%s' "$annotations" | sh -c "$post_flush"
-                    if [[ -n ${TEST_DELETE_AFTER_HANDOFF:-} ]]; then
-                        rm -f -- "$TEST_DELETE_AFTER_HANDOFF"
-                    fi
-                    exit 0
+                if [[ -n ${TEST_DELETE_AFTER_HANDOFF:-} ]]; then
+                    rm -f -- "$TEST_DELETE_AFTER_HANDOFF"
                 fi
+                exit 0
+            }
+            trap on_term TERM
+            if [[ -n ${TEST_WAIT_FOR_REFLOW:-} && $count -eq 0 ]]; then
+                while :; do sleep 0.05; done
             fi
             if [[ -n $output ]]; then
                 printf '%s' "${TEST_FINAL_ANNOTATIONS:-${TEST_ANNOTATIONS:-}}" > "$output"
@@ -166,14 +173,23 @@ class TestRevDiffHerdr:
                     sh -c "${4:?missing pane command}" &
                     ;;
                 'pane process-info')
-                    printf '%s\n' '{"result":{"process_info":{"foreground_processes":[{"name":"revdiff"}]}}}'
-                    ;;
-                'pane send-keys')
-                    if [[ ${4:-} == O && -n ${TEST_RESIZE_SIGNAL:-} ]]; then
-                        : > "$TEST_RESIZE_SIGNAL"
+                    if [[ ${TEST_PROCESS_INFO_FAIL:-0} == 1 ]]; then
+                        exit 9
                     fi
-                    if [[ ${4:-} == q && -n ${TEST_QUIT_SIGNAL:-} ]]; then
-                        : > "$TEST_QUIT_SIGNAL"
+                    pid=$(cat "${TEST_REVDIFF_PID_FILE:?}")
+                    if [[ -n ${TEST_FOREGROUND_PID_OFFSET:-} ]]; then
+                        pid=$((pid + TEST_FOREGROUND_PID_OFFSET))
+                    fi
+                    printf '{"result":{"process_info":{"foreground_processes":[{"name":"%s","pid":%s}]}}}\n' "${TEST_FOREGROUND_NAME:-revdiff}" "$pid"
+                    ;;
+                'pane read')
+                    if [[ ${TEST_PANE_READ_FAIL:-0} == 1 ]]; then
+                        exit 10
+                    fi
+                    if [[ -n ${TEST_MODAL_FILE:-} && -f $TEST_MODAL_FILE ]]; then
+                        printf '%s\n' '[enter] save' '[esc] cancel'
+                    else
+                        printf '%s\n' 'ordinary revdiff status'
                     fi
                     ;;
                 'tab close') ;;
@@ -229,6 +245,7 @@ class TestRevDiffHerdr:
                 "PATH": f"{self.fake_bin}:/usr/bin:/bin",
                 "TEST_LOG": str(self.log),
                 "TMPDIR": str(self.temp),
+                "TEST_REVDIFF_PID_FILE": str(self.temp / "revdiff.pid"),
             }
         )
         env.update(overrides)
@@ -251,6 +268,88 @@ class TestRevDiffHerdr:
 
     def _calls(self) -> str:
         return self.log.read_text()
+
+    def _run_resize_runtime(
+        self,
+        annotation: str,
+        *,
+        old: Path | None = None,
+        initial_columns: int = 120,
+        resize_columns: tuple[int, ...] = (69,),
+        modal: bool = False,
+        expect_reflow: bool = True,
+        **overrides: str,
+    ) -> tuple[int, Path, Path, Path]:
+        output = self.temp / "runtime-output.md"
+        count = self.temp / "runtime-count"
+        generations = self.temp / "generations"
+        generations.mkdir()
+        modal_file = self.temp / "annotation-modal"
+        if modal:
+            modal_file.touch()
+        master, slave = os.openpty()
+        env = self._mixed_herdr_env(
+            HERDR_PANE_ID="w-test:p1",
+            TEST_WAIT_FOR_REFLOW="1",
+            TEST_REFLOW_COUNT=str(count),
+            TEST_GENERATION_DIR=str(generations),
+            TEST_REFLOW_ANNOTATIONS=annotation,
+            TEST_FINAL_ANNOTATIONS=annotation,
+            TEST_REVDIFF_RC="10" if annotation else "0",
+            TEST_MODAL_FILE=str(modal_file),
+            **overrides,
+        )
+        env.pop("COLUMNS", None)
+        env.pop("LINES", None)
+        command = [
+            "python3",
+            str(RUNTIME),
+            f"--revdiff={self.fake_bin / 'revdiff'}",
+            f"--new={self.plan}",
+            f"--output={output}",
+        ]
+        if old is not None:
+            command.append(f"--old={old}")
+        try:
+            fcntl.ioctl(
+                slave,
+                termios.TIOCSWINSZ,
+                struct.pack("HHHH", 24, initial_columns, 0, 0),
+            )
+            process = subprocess.Popen(
+                command,
+                env=env,
+                stdin=slave,
+                stdout=slave,
+                stderr=slave,
+            )
+            deadline = time.monotonic() + 5
+            while (
+                (not count.exists() or count.read_text() != "1")
+                and time.monotonic() < deadline
+            ):
+                time.sleep(0.05)
+            assert count.exists() and count.read_text() == "1"
+            for columns in resize_columns:
+                fcntl.ioctl(
+                    master,
+                    termios.TIOCSWINSZ,
+                    struct.pack("HHHH", 24, columns, 0, 0),
+                )
+                time.sleep(0.15)
+
+            if modal or not expect_reflow:
+                time.sleep(1.0)
+                assert count.read_text() == "1"
+            if modal:
+                modal_file.unlink()
+            if not expect_reflow:
+                os.kill(int((self.temp / "revdiff.pid").read_text()), 15)
+
+            return process.wait(timeout=10), output, count, generations
+        finally:
+            os.close(slave)
+            os.close(master)
 
     def test_plan_review_prefers_focused_herdr_tab_and_returns_annotations(
         self,
@@ -309,7 +408,7 @@ class TestRevDiffHerdr:
             == "# Plan\n\nReview this Markdown plan.\n"
         )
 
-    def test_narrow_plan_review_wraps_naturally_and_hides_tree(self) -> None:
+    def test_narrow_plan_review_wraps_naturally_and_keeps_markdown_toc(self) -> None:
         self.plan.write_text(
             "# Phone plan\n\n"
             "- Review this deliberately long list item at natural word boundaries "
@@ -333,7 +432,7 @@ class TestRevDiffHerdr:
         assert "- Review this deliberately long list item at natural" in rendered
         assert "  word boundaries without losing its hanging" in rendered
         assert all(len(line) <= 56 for line in rendered.splitlines())
-        assert "herdr pane send-keys w-test:p1 t" in self._calls()
+        assert "pane send-keys" not in self._calls()
 
     @pytest.mark.parametrize(
         ("columns", "expected"),
@@ -341,6 +440,127 @@ class TestRevDiffHerdr:
     )
     def test_review_width(self, columns: int, expected: int) -> None:
         assert review_width(columns) == expected
+
+    @pytest.mark.parametrize(
+        ("columns", "expected"),
+        [
+            (30, (32, 0)),
+            (70, (57, 0)),
+            (89, (76, 0)),
+            (90, (80, 1)),
+            (120, (80, 16)),
+            (180, (80, 46)),
+        ],
+    )
+    def test_projection_geometry_captures_all_render_dimensions(
+        self, columns: int, expected: tuple[int, int]
+    ) -> None:
+        assert PLAN_RUNTIME.projection_geometry(columns) == expected
+
+    @pytest.mark.parametrize(
+        ("screen", "expected"),
+        [
+            ("[enter] save  [esc] cancel", True),
+            ("[enter] save\n[esc] cancel", True),
+            ("[enter] save", False),
+            ("ordinary status", False),
+        ],
+    )
+    def test_annotation_input_detection_handles_wrapped_status(
+        self, screen: str, expected: bool
+    ) -> None:
+        assert PLAN_RUNTIME.annotation_input_active(screen) is expected
+
+    def test_history_annotation_extraction_ignores_metadata_and_diff(self) -> None:
+        history = (
+            "# Review: now\n"
+            "path: /tmp/repo\n"
+            "commit: abc123\n\n"
+            "## Annotations\n\n"
+            "## codex-plan.md:2 (+)\nkeep this\n\n"
+            "---\n\n## Diff\n\ndiff --git a/codex-plan.md b/codex-plan.md\n"
+        )
+
+        assert PLAN_RUNTIME.extract_history_annotations(history) == (
+            "## codex-plan.md:2 (+)\nkeep this"
+        )
+
+    def test_normal_empty_exit_clears_stale_canonical_output(self) -> None:
+        output = self.temp / "canonical-output.md"
+        output.write_text("stale annotation")
+
+        result = subprocess.run(
+            [
+                "python3",
+                str(RUNTIME),
+                f"--revdiff={self.fake_bin / 'revdiff'}",
+                f"--new={self.plan}",
+                f"--output={output}",
+            ],
+            env=self._mixed_herdr_env(HERDR_PANE_ID="w-test:p1"),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert not output.exists()
+
+    def test_normal_annotated_exit_replaces_stale_canonical_output(self) -> None:
+        output = self.temp / "canonical-output.md"
+        output.write_text("stale annotation")
+
+        result = subprocess.run(
+            [
+                "python3",
+                str(RUNTIME),
+                f"--revdiff={self.fake_bin / 'revdiff'}",
+                f"--new={self.plan}",
+                f"--output={output}",
+            ],
+            env=self._mixed_herdr_env(
+                HERDR_PANE_ID="w-test:p1",
+                TEST_ANNOTATIONS="## codex-plan.md:2 ( )\nreplacement",
+                TEST_REVDIFF_RC="10",
+            ),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 10, result.stderr
+        assert output.read_text() == f"## {self.plan.name}:1 ( )\nreplacement"
+
+    def test_unexpected_exit_retains_stale_canonical_checkpoint(self) -> None:
+        output = self.temp / "canonical-output.md"
+        output.write_text("last known good")
+
+        result = subprocess.run(
+            [
+                "python3",
+                str(RUNTIME),
+                f"--revdiff={self.fake_bin / 'revdiff'}",
+                f"--new={self.plan}",
+                f"--output={output}",
+            ],
+            env=self._mixed_herdr_env(
+                HERDR_PANE_ID="w-test:p1",
+                TEST_ANNOTATIONS="partial failure output",
+                TEST_REVDIFF_RC="7",
+            ),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 7, result.stderr
+        assert output.read_text() == "last known good"
+
+    def test_plan_launcher_never_injects_revdiff_keys(self) -> None:
+        launcher = (
+            PLUGIN_ROOT / "scripts/launch-plan-review-herdr.sh"
+        ).read_text()
+        assert "pane send-keys" not in launcher
 
     def test_desktop_plan_is_centered_at_an_80_column_reading_width(self) -> None:
         capture = self.temp / "desktop-review.txt"
@@ -546,36 +766,20 @@ class TestRevDiffHerdr:
         ) == projected
 
     def test_annotated_reflow_restarts_and_preloads_without_losing_output(self) -> None:
-        count = self.temp / "reflow-count"
         preload = self.temp / "preload.md"
         annotation = "## codex-plan.md:2 ( )\nkeep this"
-        result = subprocess.run(
-            [str(PLAN_LAUNCHER), str(self.plan)],
-            env=self._mixed_herdr_env(
-                TEST_REFLOW_ONCE="1",
-                TEST_REFLOW_COUNT=str(count),
-                TEST_REFLOW_ANNOTATIONS=annotation,
-                TEST_FINAL_ANNOTATIONS=annotation,
-                TEST_PRELOAD_CAPTURE=str(preload),
-                TEST_REVDIFF_RC="10",
-                TEST_REFLOW_DELAY="0.4",
-                TEST_REVDIFF_SLEEP="0.4",
-            ),
-            text=True,
-            capture_output=True,
-            check=False,
+        rc, output, count, _ = self._run_resize_runtime(
+            annotation,
+            TEST_PRELOAD_CAPTURE=str(preload),
         )
 
-        assert result.returncode == 10, result.stderr
-        assert result.stdout == f"## {self.plan.name}:1 ( )\nkeep this"
+        assert rc == 10
+        assert output.read_text() == f"## {self.plan.name}:1 ( )\nkeep this"
         assert count.read_text() == "2"
         assert preload.read_text().endswith(":1 ( )\nkeep this")
-        calls = self._calls().splitlines()
-        assert sum(line.startswith("revdiff ") for line in calls) == 2
-        assert sum("pane send-keys w-test:p1 t" in line for line in calls) == 2
+        assert "pane send-keys" not in self._calls()
 
     def test_comparison_reflow_uses_temp_git_and_preserves_deletion_side(self) -> None:
-        count = self.temp / "comparison-count"
         preload = self.temp / "comparison-preload.md"
         annotation = "## codex-plan.md:2 (-)\nkeep deletion"
         before = subprocess.run(
@@ -585,19 +789,10 @@ class TestRevDiffHerdr:
             capture_output=True,
             check=True,
         ).stdout
-        result = subprocess.run(
-            [str(PLAN_LAUNCHER), str(self.plan), str(self.old_plan)],
-            env=self._mixed_herdr_env(
-                TEST_REFLOW_ONCE="1",
-                TEST_REFLOW_COUNT=str(count),
-                TEST_REFLOW_ANNOTATIONS=annotation,
-                TEST_FINAL_ANNOTATIONS=annotation,
-                TEST_PRELOAD_CAPTURE=str(preload),
-                TEST_REVDIFF_RC="10",
-            ),
-            text=True,
-            capture_output=True,
-            check=False,
+        rc, output, count, _ = self._run_resize_runtime(
+            annotation,
+            old=self.old_plan,
+            TEST_PRELOAD_CAPTURE=str(preload),
         )
         after = subprocess.run(
             ["git", "status", "--porcelain=v1"],
@@ -607,8 +802,8 @@ class TestRevDiffHerdr:
             check=True,
         ).stdout
 
-        assert result.returncode == 10, result.stderr
-        assert result.stdout == f"## {self.old_plan.name}:1 (-)\nkeep deletion"
+        assert rc == 10
+        assert output.read_text() == f"## {self.old_plan.name}:1 (-)\nkeep deletion"
         assert count.read_text() == "2"
         assert "## codex-plan.md:1 (-)" in preload.read_text()
         assert after == before
@@ -660,51 +855,8 @@ class TestRevDiffHerdr:
             "Review this deliberately long paragraph across desktop and narrow "
             "layouts while keeping an annotation attached to this source line.\n"
         )
-        ready = self.temp / "runtime-ready.json"
-        output = self.temp / "runtime-output.md"
-        count = self.temp / "runtime-count"
-        signal = self.temp / "resize-signal"
-        quit_signal = self.temp / "quit-signal"
-        generations = self.temp / "generations"
-        generations.mkdir()
-        master, slave = os.openpty()
-        env = self._mixed_herdr_env(
-            HERDR_PANE_ID="w-test:p1",
-            TEST_RESIZE_SIGNAL=str(signal),
-            TEST_QUIT_SIGNAL=str(quit_signal),
-            TEST_REFLOW_COUNT=str(count),
-            TEST_GENERATION_DIR=str(generations),
-            TEST_REFLOW_ANNOTATIONS=annotation,
-            TEST_FINAL_ANNOTATIONS=annotation,
-            TEST_REVDIFF_RC="10" if annotation else "0",
-        )
-        env.pop("COLUMNS", None)
-        env.pop("LINES", None)
-        try:
-            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 120, 0, 0))
-            process = subprocess.Popen(
-                [
-                    "python3",
-                    str(RUNTIME),
-                    f"--revdiff={self.fake_bin / 'revdiff'}",
-                    f"--new={self.plan}",
-                    f"--output={output}",
-                    f"--ready={ready}",
-                ],
-                env=env,
-                stdin=slave,
-                stdout=slave,
-                stderr=slave,
-            )
-            deadline = time.monotonic() + 5
-            while not ready.exists() and time.monotonic() < deadline:
-                time.sleep(0.05)
-            assert ready.exists(), "initial runtime generation was not published"
-            fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 69, 0, 0))
-            assert process.wait(timeout=8) == (10 if annotation else 0)
-        finally:
-            os.close(slave)
-            os.close(master)
+        rc, output, count, generations = self._run_resize_runtime(annotation)
+        assert rc == (10 if annotation else 0)
 
         desktop = (generations / "generation-1.txt").read_text()
         narrow = (generations / "generation-2.txt").read_text()
@@ -712,59 +864,84 @@ class TestRevDiffHerdr:
         assert desktop.startswith(" " * 16 + "# Plan")
         assert narrow.startswith("# Plan")
         assert count.read_text() == "2"
-        assert output.read_text() == expected
-        assert "herdr pane send-keys w-test:p1 O" in self._calls()
-        assert "herdr pane send-keys w-test:p1 q" in self._calls()
+        assert (output.read_text() if output.exists() else "") == expected
+        assert "pane send-keys" not in self._calls()
 
-    def test_repeated_handoffs_keep_preloading_the_same_annotation(self) -> None:
-        count = self.temp / "repeated-count"
-        preload = self.temp / "repeated-preload.md"
+    def test_resize_oscillation_collapses_to_one_reflow(self) -> None:
         annotation = "## codex-plan.md:2 ( )\nstill here"
-        result = subprocess.run(
-            [str(PLAN_LAUNCHER), str(self.plan)],
-            env=self._mixed_herdr_env(
-                TEST_REFLOW_ONCE="1",
-                TEST_REFLOW_TIMES="2",
-                TEST_REFLOW_COUNT=str(count),
-                TEST_REFLOW_ANNOTATIONS=annotation,
-                TEST_FINAL_ANNOTATIONS=annotation,
-                TEST_PRELOAD_CAPTURE=str(preload),
-                TEST_REVDIFF_RC="10",
-                TEST_REFLOW_DELAY="0.3",
-                TEST_REVDIFF_SLEEP="0.3",
-            ),
-            text=True,
-            capture_output=True,
-            check=False,
+        rc, output, count, _ = self._run_resize_runtime(
+            annotation,
+            resize_columns=(69, 120, 69),
         )
 
-        assert result.returncode == 10, result.stderr
-        assert result.stdout == f"## {self.plan.name}:1 ( )\nstill here"
-        assert count.read_text() == "3"
-        assert preload.read_text().endswith(":1 ( )\nstill here")
-        calls = self._calls().splitlines()
-        assert sum(line.startswith("revdiff ") for line in calls) == 3
-        assert sum("pane send-keys w-test:p1 t" in line for line in calls) == 3
+        assert rc == 10
+        assert output.read_text() == f"## {self.plan.name}:1 ( )\nstill here"
+        assert count.read_text() == "2"
+
+    def test_raw_width_change_with_identical_geometry_does_not_reflow(self) -> None:
+        rc, output, count, _ = self._run_resize_runtime(
+            "",
+            initial_columns=30,
+            resize_columns=(20,),
+            expect_reflow=False,
+        )
+
+        assert rc == 0
+        assert not output.exists()
+        assert count.read_text() == "1"
+
+    def test_centering_change_reflows_even_when_wrap_width_is_unchanged(self) -> None:
+        rc, output, count, generations = self._run_resize_runtime(
+            "", resize_columns=(180,)
+        )
+
+        assert rc == 0
+        assert not output.exists()
+        assert count.read_text() == "2"
+        assert (generations / "generation-1.txt").read_text().startswith(
+            " " * 16 + "# Plan"
+        )
+        assert (generations / "generation-2.txt").read_text().startswith(
+            " " * 46 + "# Plan"
+        )
+
+    def test_active_annotation_defers_resize_until_modal_closes(self) -> None:
+        annotation = "## codex-plan.md:2 ( )\nfinish first"
+        rc, output, count, _ = self._run_resize_runtime(annotation, modal=True)
+
+        assert rc == 10
+        assert count.read_text() == "2"
+        assert output.read_text() == f"## {self.plan.name}:1 ( )\nfinish first"
+
+    @pytest.mark.parametrize(
+        "guard",
+        [
+            {"TEST_PROCESS_INFO_FAIL": "1"},
+            {"TEST_PANE_READ_FAIL": "1"},
+            {"TEST_FOREGROUND_NAME": "vim"},
+            {"TEST_FOREGROUND_PID_OFFSET": "1"},
+        ],
+    )
+    def test_unknown_or_non_revdiff_pane_state_defers_reflow(
+        self, guard: dict[str, str]
+    ) -> None:
+        rc, output, count, _ = self._run_resize_runtime(
+            "", expect_reflow=False, **guard
+        )
+
+        assert rc == 0
+        assert not output.exists()
+        assert count.read_text() == "1"
 
     def test_reflow_failure_returns_the_last_canonical_flush(self) -> None:
-        count = self.temp / "failure-count"
         annotation = "## codex-plan.md:2 ( )\nrecover me"
-        result = subprocess.run(
-            [str(PLAN_LAUNCHER), str(self.plan)],
-            env=self._mixed_herdr_env(
-                TEST_REFLOW_ONCE="1",
-                TEST_REFLOW_COUNT=str(count),
-                TEST_REFLOW_ANNOTATIONS=annotation,
-                TEST_DELETE_AFTER_HANDOFF=str(self.plan),
-            ),
-            text=True,
-            capture_output=True,
-            check=False,
+        rc, output, _, _ = self._run_resize_runtime(
+            annotation,
+            TEST_DELETE_AFTER_HANDOFF=str(self.plan),
         )
 
-        assert result.returncode == 10
-        assert result.stdout == f"## {self.plan.name}:1 ( )\nrecover me"
-        assert "returning the last flush" in result.stderr
+        assert rc == 10
+        assert output.read_text() == f"## {self.plan.name}:1 ( )\nrecover me"
 
     def test_annotation_free_review_does_not_restart_or_invent_output(self) -> None:
         result = subprocess.run(

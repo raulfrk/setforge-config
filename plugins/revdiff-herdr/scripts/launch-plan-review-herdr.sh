@@ -79,10 +79,9 @@ fi
 tmpbase=${TMPDIR:-/tmp}
 output_file=$(mktemp "$tmpbase/plan-review-output-XXXXXX")
 error_file=$(mktemp "$tmpbase/plan-review-error-XXXXXX")
-ready_file=$(mktemp "$tmpbase/plan-review-ready-XXXXXX")
 sentinel=$(mktemp "$tmpbase/plan-review-done-XXXXXX")
 launch_script=$(mktemp "$tmpbase/plan-review-launch-XXXXXX")
-rm -f "$ready_file" "$sentinel"
+rm -f "$sentinel"
 created_tab_id=
 
 # Invoked indirectly by the EXIT trap below.
@@ -93,12 +92,12 @@ cleanup() {
     if [[ -n $created_tab_id ]]; then
         herdr tab close "$created_tab_id" >/dev/null 2>&1 || true
     fi
-    rm -f "$output_file" "$error_file" "$ready_file" "$sentinel" "$sentinel.tmp" "$launch_script"
+    rm -f "$output_file" "$error_file" "$sentinel" "$sentinel.tmp" "$launch_script"
     exit "$cleanup_rc"
 }
 trap cleanup EXIT
 
-runtime_command="PYTHONDONTWRITEBYTECODE=1 $(sq "$python_bin") $(sq "$runtime") $(sq "--revdiff=$revdiff_bin") $(sq "--new=$new_abs") $(sq "--output=$output_file") $(sq "--ready=$ready_file")"
+runtime_command="PYTHONDONTWRITEBYTECODE=1 $(sq "$python_bin") $(sq "$runtime") $(sq "--revdiff=$revdiff_bin") $(sq "--new=$new_abs") $(sq "--output=$output_file")"
 if [[ -n $old_abs ]]; then
     runtime_command="$runtime_command $(sq "--old=$old_abs")"
 fi
@@ -142,31 +141,7 @@ if ! herdr pane run "$pane_id" "HERDR_PANE_ID=$(sq "$pane_id") sh $(sq "$launch_
     exit 1
 fi
 
-# Each runtime generation is a new RevDiff process. Hide its initial TOC once;
-# users may still toggle it manually for the rest of that process.
-handled_generation=0
-while :; do
-    generation=
-    if [[ -f $ready_file ]]; then
-        generation=$(sed -n 's/.*"generation":[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$ready_file" | head -1)
-    fi
-    if [[ -n $generation && $generation -gt $handled_generation ]]; then
-        for _ in $(seq 1 50); do
-            if herdr pane process-info --pane "$pane_id" 2>/dev/null \
-                    | grep -Eq '"name"[[:space:]]*:[[:space:]]*"revdiff"'; then
-                sleep 0.1
-                herdr pane send-keys "$pane_id" t >/dev/null 2>&1 || true
-                handled_generation=$generation
-                break
-            fi
-            sleep 0.1
-        done
-        if [[ -f $sentinel && $handled_generation -lt $generation ]]; then
-            # RevDiff exited before it could be observed in the foreground.
-            handled_generation=$generation
-        fi
-    fi
-    [[ -f $sentinel && $handled_generation -ge ${generation:-0} ]] && break
+while [[ ! -f $sentinel ]]; do
     sleep 0.1
 done
 review_rc=$(cat "$sentinel" 2>/dev/null || echo 1)
@@ -177,5 +152,7 @@ esac
 herdr tab close "$created_tab_id" >/dev/null 2>&1 || true
 created_tab_id=
 cat "$error_file" >&2
-cat "$output_file"
+if [[ -f $output_file ]]; then
+    cat "$output_file"
+fi
 exit "$review_rc"
