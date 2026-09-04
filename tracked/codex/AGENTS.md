@@ -58,11 +58,16 @@ unittest-based module, convert the affected tests to pytest; broaden the
 conversion only when needed to keep that module coherent.
 
 Before planning or implementing material tracked work in a Git checkout,
-resolve its canonical Git root and run `bd where --json` from that root. If it
-succeeds, load the `beads` skill only when the returned canonical `path` equals
-`<git-root>/.beads`; stop and report any location mismatch before proceeding.
-If it reports no Beads project, continue normally without initializing or
-proposing Beads.
+resolve its canonical Git root, resolve the primary worktree from the first
+`worktree` entry returned by `git worktree list --porcelain`, and run
+`bd where --json` from the current checkout root. Before accepting a discovered
+project, require `BEADS_DIR` to be unset. The primary `.beads` directory itself
+must not be a symlink or contain `redirect` when that path exists; its absence
+is allowed so `bd where` can report no project. In a linked worktree, reject a
+worktree-local `.beads` path before canonicalization. Then load the `beads`
+skill only when the returned canonical `path` equals the primary worktree's
+canonical `<git-root>/.beads`. Stop on any mismatch. If it reports no Beads
+project, continue normally without initializing or proposing Beads.
 
 Before presenting a decision-complete implementation plan, run the
 `review-gate` skill in plan mode. After completing file-changing work and its

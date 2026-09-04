@@ -7,8 +7,12 @@ description: Adapt an existing Git repository to the canonical private Beads con
 
 Read the base `beads` skill and
 [the canonical project configuration](../beads/references/project-config.md).
-Operate only on the database whose canonical path is `<git-root>/.beads`.
-Never reinitialize it or turn this procedure into a migration framework.
+Run adaptation only from the primary Git checkout. If invoked from a linked
+worktree, stop and move the procedure to the primary checkout before inspection
+or mutation. Operate only on the database whose canonical path is the primary
+checkout's `<git-root>/.beads`. Require `BEADS_DIR` to be unset and require that
+directory to be a real directory rather than a symlink, with no `redirect`
+file. Never reinitialize it or turn this procedure into a migration framework.
 
 ## Inspect and preview
 

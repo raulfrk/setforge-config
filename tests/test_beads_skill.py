@@ -114,6 +114,24 @@ def initialize_beads(repo: Path, env: dict[str, str], prefix: str = "project") -
     )
 
 
+def initialize_linked_beads_worktree(
+    tmp_path: Path,
+) -> tuple[Path, Path, dict[str, str]]:
+    repo, env = initialize_repo(tmp_path)
+    initialize_beads(repo, env)
+    (repo / "README.md").write_text("fixture\n", encoding="utf-8")
+    run(["git", "add", "README.md"], cwd=repo, env=env)
+    run(["git", "commit", "--quiet", "-m", "fixture"], cwd=repo, env=env)
+
+    linked = tmp_path / "linked"
+    run(
+        ["git", "worktree", "add", "--quiet", "-b", "linked", str(linked)],
+        cwd=repo,
+        env=env,
+    )
+    return repo, linked, env
+
+
 def issue_snapshot(repo: Path, env: dict[str, str]) -> list[dict[str, object]]:
     result = run(
         [
@@ -170,8 +188,12 @@ def test_agent_policy_uses_selective_ownership_and_beads_discovery() -> None:
         "Delegate only bounded, independent workstreams or independent review" in policy
     )
     assert "never from the number of available agent slots" in policy
-    assert "run `bd where --json` from that root" in policy
-    assert "returned canonical `path` equals `<git-root>/.beads`" in policy
+    assert "run `bd where --json` from the current checkout root" in policy
+    assert "primary worktree's canonical `<git-root>/.beads`" in policy
+    assert "require `BEADS_DIR` to be unset" in policy
+    assert "its absence is allowed so `bd where` can report no project" in policy
+    assert "reject a worktree-local `.beads` path before canonicalization" in policy
+    assert "must not be a symlink or contain `redirect`" in policy
     assert "continue normally without initializing or proposing Beads" in policy
 
 
@@ -188,8 +210,13 @@ def test_base_skill_preserves_private_authorized_lifecycle() -> None:
         "at most three nesting levels",
         "one leaf Bead produces one coherent commit",
         "Do not parse `bd info --json`",
+        "require `BEADS_DIR` to be unset",
+        "an absent path is valid at this stage",
+        "reject any worktree-local `.beads` path before canonicalization",
+        "real directory rather than a symlink",
     ):
         assert invariant in skill
+    assert skill.index("bd where --json") < skill.index("bd config show")
 
 
 def test_reference_is_the_single_complete_configuration_contract() -> None:
@@ -227,6 +254,10 @@ def test_reference_is_the_single_complete_configuration_contract() -> None:
 def test_bootstrap_skill_routes_existing_state_and_requires_approval() -> None:
     skill = normalized(BOOTSTRAP_SKILL)
     for invariant in (
+        "Run initialization only from the primary Git checkout",
+        "Never create a worktree-local Beads database",
+        "Require `BEADS_DIR` to be unset",
+        "reject a primary `.beads` symlink or `redirect` file",
         "Treat `no beads project found` as absence",
         "If a database exists, do not initialize",
         "route drift to the `beads-adapt` skill",
@@ -332,10 +363,54 @@ def test_real_bd_bootstrap_reaches_canonical_private_state(tmp_path: Path) -> No
         assert parsed[key] == expected
 
 
+def test_real_bd_linked_worktree_uses_primary_database(tmp_path: Path) -> None:
+    repo, linked, env = initialize_linked_beads_worktree(tmp_path)
+    expected = (repo / ".beads").resolve()
+    primary = json.loads(run(["bd", "where", "--json"], cwd=repo, env=env).stdout)
+    secondary = json.loads(run(["bd", "where", "--json"], cwd=linked, env=env).stdout)
+
+    assert Path(primary["path"]).resolve() == expected
+    assert Path(secondary["path"]).resolve() == expected
+    assert not (linked / ".beads").exists()
+
+
+def test_real_bd_alias_routes_require_lexical_preflight(tmp_path: Path) -> None:
+    repo, linked, env = initialize_linked_beads_worktree(tmp_path)
+    expected = (repo / ".beads").resolve()
+    local = linked / ".beads"
+
+    local.symlink_to(expected, target_is_directory=True)
+    via_symlink = json.loads(run(["bd", "where", "--json"], cwd=linked, env=env).stdout)
+    assert Path(via_symlink["path"]).resolve() == expected
+    assert local.is_symlink()
+
+    local.unlink()
+    local.mkdir()
+    (local / "redirect").write_text(f"{expected}\n", encoding="utf-8")
+    via_redirect = json.loads(
+        run(["bd", "where", "--json"], cwd=linked, env=env).stdout
+    )
+    assert Path(via_redirect["path"]).resolve() == expected
+    assert (local / "redirect").is_file()
+
+    local.rename(linked / ".beads-redirect-fixture")
+    override_env = env.copy()
+    override_env["BEADS_DIR"] = str(expected)
+    via_env = json.loads(
+        run(["bd", "where", "--json"], cwd=linked, env=override_env).stdout
+    )
+    assert Path(via_env["path"]).resolve() == expected
+    assert override_env["BEADS_DIR"]
+
+
 def test_adaptation_skill_is_fail_closed_and_preserves_before_mutation() -> None:
     skill = normalized(ADAPT_SKILL)
     for invariant in (
         "return without creating a backup or changing anything",
+        "Run adaptation only from the primary Git checkout",
+        "Require `BEADS_DIR` to be unset",
+        "real directory rather than a symlink",
+        "no `redirect` file",
         "Stop on staged divergence",
         "set -o pipefail",
         'beads_dir=$(realpath -- "$git_root/.beads") || exit 1',

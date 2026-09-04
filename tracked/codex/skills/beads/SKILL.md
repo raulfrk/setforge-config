@@ -11,20 +11,30 @@ framework.
 
 ## Establish the active project
 
-Before any mutation, resolve the Git root and active Beads location:
+Before any mutation, resolve the current Git root and primary worktree:
 
 ```sh
 git rev-parse --show-toplevel
-bd where --json
-bd config show
+git worktree list --porcelain
 ```
 
-Canonicalize both paths and require the returned Beads `path` to equal
-`<git-root>/.beads`. Stop and report a mismatch. Treat the recognized
+Resolve the primary worktree from the first `worktree` entry returned by
+`git worktree list --porcelain`. Before canonicalizing anything, require
+`BEADS_DIR` to be unset. If the primary `.beads` path exists, require it to be a
+real directory rather than a symlink and reject a `redirect` file there; an
+absent path is valid at this stage. When the current checkout differs from the
+primary, reject any worktree-local `.beads` path before canonicalization. After
+those lexical checks, run `bd where --json`. Treat the recognized
 `no beads project found` result as normal absence, not permission to initialize.
-Do not parse `bd info --json`; in Beads 1.1.2 it emits human-readable output.
-Use native `bd` commands and consult `bd <command> --help` for exact syntax;
-never use raw SQL or `bd edit`.
+If discovery succeeds, canonicalize the paths and require the returned Beads
+`path` to equal the primary worktree's canonical `<git-root>/.beads`. This is
+the expected native location from both the primary checkout and a linked Git
+worktree. Stop on any mismatch.
+
+Only after path validation succeeds, inspect project configuration with
+`bd config show`. Do not parse `bd info --json`; in Beads 1.1.2 it emits
+human-readable output. Use native `bd` commands and consult
+`bd <command> --help` for exact syntax; never use raw SQL or `bd edit`.
 
 For configuration meaning, provenance, and the sole approved command, read
 [the project configuration reference](references/project-config.md). For a new
