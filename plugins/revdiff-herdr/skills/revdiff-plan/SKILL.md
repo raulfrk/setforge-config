@@ -89,22 +89,26 @@ document flow automatically:
 $PLAN_LAUNCHER "--only=$CURRENT_PLAN"
 ```
 
-The launcher blocks until the TUI exits. Give the command the maximum timeout
-the harness supports and do not background it. Exit `10` means annotations were
+The launcher remains pending until the TUI exits. Allow sufficient overall
+runtime for human review while bounding each tool wait to the harness limit.
+Do not background it or end the turn before collecting its required result.
+If the command yields, retain its session handle and collect its output and
+exit status; do not confuse a running process with completion. Exit `10` means annotations were
 captured and is a successful review result; exit `0` with no output means the
 review is accepted. Treat other nonzero exits as launcher failures.
 
 ### 3. Address annotations
 
 Annotation headers identify the canonical file and line, followed by the
-comment. Classify comments as follows:
+comment. Interpret the meaning in context: answer questions directly, apply
+concrete requested plan changes, and clarify material ambiguity. Keywords and
+punctuation are hints, not a classification rule; "why is this needed?" is a
+question without requiring `??`.
 
-- Explanation request: contains `??`, or begins with `explain`, `remind`,
-  `describe`, `what is`, `what are`, `how does`, `how do`, or `clarify`.
-- Plan-change directive: everything else.
-
-Answer explanation requests directly. Apply every plan-change directive to a
-new canonical Markdown file; do not edit the reviewed snapshot in place.
+For plan changes, write the complete revision to a new canonical Markdown file;
+do not edit the reviewed snapshot in place. A question alone does not require
+an extra explanation TUI. Follow any complete-plan and exact previous-revision
+marker instructions supplied by the current automatic review loop.
 
 ### 4. Review each revision against the preceding one
 

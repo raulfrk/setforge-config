@@ -73,7 +73,7 @@ continue through RevDiff's normal review path unchanged.
 
 ## Review Description
 
-When launching revdiff for a user (auto-open after a refactor, code review, etc.), include `--description` (or `--description-file=path.md`) to attach prose context to the review. The description appears at the top of the info popup (`i` key) and is rendered as markdown:
+When launching revdiff for a requested interactive review, include `--description` (or `--description-file=path.md`) to attach prose context to the review. The description appears at the top of the info popup (`i` key) and is rendered as markdown:
 
 - Headings (`#`, `##`) for sections
 - Code fences (```` ``` ````) for snippets and commands
@@ -316,23 +316,27 @@ Use `--output` / `-o` flag to write annotations to a file instead of stdout.
 
 Exit status: `0` = no annotations, discarded annotations, or default mode; `10` = annotations were produced with `--exit-code-on-annotations`, `REVDIFF_EXIT_CODE_ON_ANNOTATIONS`, or `exit-code-on-annotations`; `1` = real errors. Agent launchers set `REVDIFF_EXIT_CODE_ON_ANNOTATIONS` and treat `10` as success-with-annotations.
 
-## Asking Questions Instead of Directives
+## Questions and Edit Requests
 
-An annotation is normally an instruction to change code. To ask about the code instead, put `??` anywhere in the text, or open with `explain`, `remind`, `describe`, `what is`, `what are`, `how does`, `how do` or `clarify` (case-insensitive). `??` is the language-neutral form and works whatever language you write in.
+For this custom Codex plugin, annotation meaning comes from the comment and
+referenced context, not a keyword list or punctuation convention. Questions
+such as "why is this needed?" are answered directly in chat. Concrete requests
+such as "rename this function" authorize that scoped edit. Material ambiguity
+is clarified before changing behavior or expanding scope.
 
-```
-## renderer.go:142 (+)
-why a pointer here??
-
-## store.go:88 (-)
-explain what this lock protects
-```
-
-The agent answers as a markdown document and reopens it in revdiff via `--only`, with a TOC sidebar. Annotate that document to ask follow-ups and it is refined and reopened; the loop ends when you quit without annotating. Code-change annotations from the same batch are held and applied after the explanation loop finishes. Applies to the Claude and Codex plugins; the Pi package classifies questions the same way but answers them in chat.
+`??` and words such as "explain" can express a question, but are not required.
+Questions do not automatically open an explanation document or another TUI.
+Request interactive review explicitly when you want to annotate an explanation.
+These instructions describe this plugin; they do not change other integrations.
 
 ## Preloading Annotations
 
 Use `--annotations=PATH` to preload the annotation store from a markdown file in the same `-o` format. The format is bidirectional: any file written by `-o` can be read back via `--annotations` for round-trip workflows — review, quit, edit the file externally, relaunch, and continue from the preloaded state.
+
+When the preload contains assistant opinions, preserve that baseline and known
+authorship. Returned output can include unchanged opinions: their presence or
+reordering does not authorize edits. Interpret user additions or changes in
+context, reusing existing explicit authorization without repeating completed work.
 
 ## Review History
 
