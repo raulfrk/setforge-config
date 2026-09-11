@@ -1,6 +1,8 @@
-# SetForge Codex profile
+# SetForge agent profiles
 
-This repository defines Raul's main Codex profile.
+This repository defines Raul's Codex and OpenCode profiles.
+
+## Codex
 
 The profile intentionally starts small:
 
@@ -53,3 +55,65 @@ marketplace/plugin mutation as unsuccessful after Codex has installed it. Check
 `codex plugin marketplace list --json` and `codex plugin list --json`; when the
 requested state is present, rerun the same SetForge install and it should be a
 no-op. The tracked SetForge skill records the exact compatibility check.
+
+## OpenCode
+
+The OpenCode profile ports the same project principles and local workflow to
+OpenCode 1.18.21. It installs pinned Build, Plan, worker, and reviewer agents;
+the reusable SetForge, Herdr, Beads, review-gate, usage-check, and RevDiff
+skills; and two local plugins. The coordinator plugin supplies persistent child
+agent tools with pinned roles and bounded worktrees. The Plan workflow plugin
+switches between the native Build and Plan agents and holds each completed Plan
+response for an interactive RevDiff review before returning it to the user.
+
+The profile owns only its 37 listed files below `~/.config/opencode/` and the
+shared `bd`, `revdiff`, `wt`, and `rtk` package pins. It does not manage
+`opencode.json`, `opencode.jsonc`, `tui.jsonc`, `package.json`, `node_modules`,
+provider credentials, or any Codex path. Existing unlisted OpenCode files are
+preserved. The Herdr-assisted review commands require a responsive Herdr
+workspace. OpenCode exposes local token and cost statistics, but version 1.18.21
+does not expose provider account allowance through a public command.
+
+Install from a clean checkout after reviewing the dry run:
+
+```sh
+setforge install --profile=opencode --dry-run
+setforge install --profile=opencode --yes
+setforge compare --profile=opencode --check --strict
+```
+
+For a later update that has tracked-versus-live section drift, use `setforge
+install --profile=opencode --auto=use-tracked --yes`.
+
+The install does not authenticate OpenCode. When credentials are needed, run
+the OpenCode-owned flow separately:
+
+```sh
+opencode auth login
+```
+
+Before changing an existing installation, create a snapshot with a unique UTC
+label such as `before-opencode-profile-20260911T220000Z`. Choose `--keep` high
+enough to retain all existing snapshots plus the new one, because the default
+keeps only ten:
+
+```sh
+setforge snapshot list
+setforge snapshot create before-opencode-profile-<UTC> --profile=opencode --keep=<count>
+```
+
+To roll back, first inspect any active write-ahead operation and recover it when
+needed, then restore the recorded snapshot ID interactively:
+
+```sh
+setforge recover --profile=opencode
+setforge recover --profile=opencode --apply --yes
+setforge snapshot restore <snapshot-id> --profile=opencode
+setforge compare --profile=opencode
+```
+
+Snapshot restore is additive: files created after the snapshot remain in place.
+If the failed install created a managed destination that was absent beforehand,
+remove it only after confirming that it still matches the failed install's
+candidate bytes. Restore separately backed-up package binaries when package
+installation changed them.

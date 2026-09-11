@@ -85,6 +85,164 @@ tracked_files:
     src: herdr/config.toml
     dst: ~/.config/herdr/config.toml
 
+  opencode_global_agents:
+    src: opencode/AGENTS.md
+    dst: ~/.config/opencode/AGENTS.md
+
+  opencode_agents_build:
+    src: opencode/agents/build.md
+    dst: ~/.config/opencode/agents/build.md
+
+  opencode_agents_plan:
+    src: opencode/agents/plan.md
+    dst: ~/.config/opencode/agents/plan.md
+
+  opencode_agents_plan_reviser:
+    src: opencode/agents/plan_reviser.md
+    dst: ~/.config/opencode/agents/plan_reviser.md
+
+  opencode_agents_review_correctness:
+    src: opencode/agents/review_correctness.md
+    dst: ~/.config/opencode/agents/review_correctness.md
+
+  opencode_agents_review_critical:
+    src: opencode/agents/review_critical.md
+    dst: ~/.config/opencode/agents/review_critical.md
+
+  opencode_agents_review_general:
+    src: opencode/agents/review_general.md
+    dst: ~/.config/opencode/agents/review_general.md
+
+  opencode_agents_worker:
+    src: opencode/agents/worker.md
+    dst: ~/.config/opencode/agents/worker.md
+
+  opencode_plugins_setforge_agent_coordinator:
+    src: opencode/plugins/setforge-agent-coordinator.ts
+    dst: ~/.config/opencode/plugins/setforge-agent-coordinator.ts
+
+  opencode_plugins_setforge_plan_workflow:
+    src: opencode/plugins/setforge-plan-workflow.ts
+    dst: ~/.config/opencode/plugins/setforge-plan-workflow.ts
+
+  opencode_scripts_launch_plan_review_herdr:
+    src: opencode/scripts/launch-plan-review-herdr.sh
+    dst: ~/.config/opencode/scripts/launch-plan-review-herdr.sh
+    mode: 0o755
+
+  opencode_scripts_launch_plan_review:
+    src: opencode/scripts/launch-plan-review.sh
+    dst: ~/.config/opencode/scripts/launch-plan-review.sh
+    mode: 0o755
+
+  opencode_scripts_launch_plan_review_upstream:
+    src: opencode/scripts/launch-plan-review.upstream.sh
+    dst: ~/.config/opencode/scripts/launch-plan-review.upstream.sh
+    mode: 0o755
+
+  opencode_scripts_plan_review_runtime:
+    src: opencode/scripts/plan-review-runtime.py
+    dst: ~/.config/opencode/scripts/plan-review-runtime.py
+    mode: 0o755
+
+  opencode_scripts_plan_review_format:
+    src: opencode/scripts/plan_review_format.py
+    dst: ~/.config/opencode/scripts/plan_review_format.py
+    mode: 0o755
+
+  opencode_skills_beads_adapt:
+    src: opencode/skills/beads-adapt/SKILL.md
+    dst: ~/.config/opencode/skills/beads-adapt/SKILL.md
+
+  opencode_skills_beads_bootstrap:
+    src: opencode/skills/beads-bootstrap/SKILL.md
+    dst: ~/.config/opencode/skills/beads-bootstrap/SKILL.md
+
+  opencode_skills_beads:
+    src: opencode/skills/beads/SKILL.md
+    dst: ~/.config/opencode/skills/beads/SKILL.md
+
+  opencode_skills_beads_references_project_config:
+    src: opencode/skills/beads/references/project-config.md
+    dst: ~/.config/opencode/skills/beads/references/project-config.md
+
+  opencode_skills_cross_project_planning:
+    src: opencode/skills/cross-project-planning/SKILL.md
+    dst: ~/.config/opencode/skills/cross-project-planning/SKILL.md
+
+  opencode_skills_herdr:
+    src: opencode/skills/herdr/SKILL.md
+    dst: ~/.config/opencode/skills/herdr/SKILL.md
+
+  opencode_skills_herdr_references_workspace_operations:
+    src: opencode/skills/herdr/references/workspace-operations.md
+    dst: ~/.config/opencode/skills/herdr/references/workspace-operations.md
+
+  opencode_skills_revdiff_plan:
+    src: opencode/skills/revdiff-plan/SKILL.md
+    dst: ~/.config/opencode/skills/revdiff-plan/SKILL.md
+
+  opencode_skills_revdiff:
+    src: opencode/skills/revdiff/SKILL.md
+    dst: ~/.config/opencode/skills/revdiff/SKILL.md
+
+  opencode_skills_revdiff_references_config:
+    src: opencode/skills/revdiff/references/config.md
+    dst: ~/.config/opencode/skills/revdiff/references/config.md
+
+  opencode_skills_revdiff_references_install:
+    src: opencode/skills/revdiff/references/install.md
+    dst: ~/.config/opencode/skills/revdiff/references/install.md
+
+  opencode_skills_revdiff_references_usage:
+    src: opencode/skills/revdiff/references/usage.md
+    dst: ~/.config/opencode/skills/revdiff/references/usage.md
+
+  opencode_skills_revdiff_scripts_agentdeck_window:
+    src: opencode/skills/revdiff/scripts/agentdeck-window.sh
+    dst: ~/.config/opencode/skills/revdiff/scripts/agentdeck-window.sh
+    mode: 0o755
+
+  opencode_skills_revdiff_scripts_detect_ref:
+    src: opencode/skills/revdiff/scripts/detect-ref.sh
+    dst: ~/.config/opencode/skills/revdiff/scripts/detect-ref.sh
+    mode: 0o755
+
+  opencode_skills_revdiff_scripts_launch_revdiff:
+    src: opencode/skills/revdiff/scripts/launch-revdiff.sh
+    dst: ~/.config/opencode/skills/revdiff/scripts/launch-revdiff.sh
+    mode: 0o755
+
+  opencode_skills_revdiff_scripts_launch_revdiff_upstream:
+    src: opencode/skills/revdiff/scripts/launch-revdiff.upstream.sh
+    dst: ~/.config/opencode/skills/revdiff/scripts/launch-revdiff.upstream.sh
+    mode: 0o755
+
+  opencode_skills_revdiff_scripts_read_latest_history:
+    src: opencode/skills/revdiff/scripts/read-latest-history.sh
+    dst: ~/.config/opencode/skills/revdiff/scripts/read-latest-history.sh
+    mode: 0o755
+
+  opencode_skills_review_gate:
+    src: opencode/skills/review-gate/SKILL.md
+    dst: ~/.config/opencode/skills/review-gate/SKILL.md
+
+  opencode_skills_review_gate_references_revdiff_returns:
+    src: opencode/skills/review-gate/references/revdiff-returns.md
+    dst: ~/.config/opencode/skills/review-gate/references/revdiff-returns.md
+
+  opencode_skills_review_gate_references_technical_checkpoints:
+    src: opencode/skills/review-gate/references/technical-checkpoints.md
+    dst: ~/.config/opencode/skills/review-gate/references/technical-checkpoints.md
+
+  opencode_skills_setforge:
+    src: opencode/skills/setforge/SKILL.md
+    dst: ~/.config/opencode/skills/setforge/SKILL.md
+
+  opencode_skills_usage_check:
+    src: opencode/skills/usage-check/SKILL.md
+    dst: ~/.config/opencode/skills/usage-check/SKILL.md
+
 packages:
   beads:
     type: github_release
@@ -137,6 +295,51 @@ codex:
       marketplace: personal
 
 profiles:
+  opencode:
+    tracked_files:
+      - opencode_global_agents
+      - opencode_agents_build
+      - opencode_agents_plan
+      - opencode_agents_plan_reviser
+      - opencode_agents_review_correctness
+      - opencode_agents_review_critical
+      - opencode_agents_review_general
+      - opencode_agents_worker
+      - opencode_plugins_setforge_agent_coordinator
+      - opencode_plugins_setforge_plan_workflow
+      - opencode_scripts_launch_plan_review_herdr
+      - opencode_scripts_launch_plan_review
+      - opencode_scripts_launch_plan_review_upstream
+      - opencode_scripts_plan_review_runtime
+      - opencode_scripts_plan_review_format
+      - opencode_skills_beads_adapt
+      - opencode_skills_beads_bootstrap
+      - opencode_skills_beads
+      - opencode_skills_beads_references_project_config
+      - opencode_skills_cross_project_planning
+      - opencode_skills_herdr
+      - opencode_skills_herdr_references_workspace_operations
+      - opencode_skills_revdiff_plan
+      - opencode_skills_revdiff
+      - opencode_skills_revdiff_references_config
+      - opencode_skills_revdiff_references_install
+      - opencode_skills_revdiff_references_usage
+      - opencode_skills_revdiff_scripts_agentdeck_window
+      - opencode_skills_revdiff_scripts_detect_ref
+      - opencode_skills_revdiff_scripts_launch_revdiff
+      - opencode_skills_revdiff_scripts_launch_revdiff_upstream
+      - opencode_skills_revdiff_scripts_read_latest_history
+      - opencode_skills_review_gate
+      - opencode_skills_review_gate_references_revdiff_returns
+      - opencode_skills_review_gate_references_technical_checkpoints
+      - opencode_skills_setforge
+      - opencode_skills_usage_check
+    packages:
+      - beads
+      - revdiff
+      - worktrunk
+      - rtk
+
   codex:
     tracked_files:
       - codex_config

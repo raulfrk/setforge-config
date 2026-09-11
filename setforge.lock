@@ -6,6 +6,7 @@ key = "gastownhall/beads"
 version = "v1.1.2"
 profiles = [
     "codex",
+    "opencode",
 ]
 checksum = "sha256:a72d71ed374955dc9f83a0f90b54bd7b6a0016709dd1676ae2e368651ed401c2"
 
@@ -15,6 +16,7 @@ key = "max-sixty/worktrunk"
 version = "v0.75.0"
 profiles = [
     "codex",
+    "opencode",
 ]
 checksum = "sha256:9ca16c77245c01edb079620a4375a8a49046fded4d4e571dd21930fd0235eca3"
 
@@ -25,6 +27,7 @@ version = "v0.48.0"
 profiles = [
     "codex",
     "codex-rtk",
+    "opencode",
 ]
 checksum = "sha256:e4e650fa1677c0de2f6839a6040d7b17f312d32f163c402b75af70e9e5af1a91"
 
@@ -34,5 +37,6 @@ key = "umputun/revdiff"
 version = "v1.12.0"
 profiles = [
     "codex",
+    "opencode",
 ]
 checksum = "sha256:3b36478c3b9d6c6f5557515fed876e88ce1c3d14564714a3ed5aefb903cc7154"
