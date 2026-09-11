@@ -11,7 +11,10 @@ framework.
 
 ## Establish the active project
 
-Before any mutation, resolve the current Git root and primary worktree:
+Establish the current Git root and primary worktree once per task and checkout.
+Reuse a validated discovery while the relevant environment and paths remain
+unchanged, including when a supporting skill needs it. Recheck after a change
+that can affect the result:
 
 ```sh
 git rev-parse --show-toplevel
@@ -43,9 +46,14 @@ use the `beads-adapt` skill.
 
 ## Authorization
 
-Never initialize a database or create a Bead without first showing the exact
-proposal and receiving user approval. A creation proposal includes its title,
-type, purpose, acceptance criteria, and any parent or dependency relationships.
+Initialization, creation, and configuration require explicit authorization of
+the exact operation or bounded batch. Reuse authorization already supplied in
+the conversation; do not ask again when entering a supporting skill or reference.
+When details are missing, present the repository, prefix or settings as applicable,
+and each proposed Bead's title, type, purpose, acceptance criteria, and parent or
+dependency relationships before asking. Ask again only when the target or scope
+materially changes. Do not infer additional graph expansion from approval of a
+specific operation.
 
 Once the user selects existing work or explicitly requests a bounded graph or
 configuration change, perform ordinary non-destructive updates without another
@@ -77,8 +85,8 @@ database.
 
 Inspect effective values and provenance before proposing configuration. Read
 [the project configuration reference](references/project-config.md), present
-its canonical command exactly as shown, and wait for approval before applying
-it. Do not reproduce the command here or invent additional policy keys. Leave
+its canonical command exactly as shown, and obtain any missing approval before
+applying it. Existing explicit approval of that command satisfies this requirement. Do not reproduce the command here or invent additional policy keys. Leave
 Beads-generated metadata and compaction values untouched.
 
 When preservation matters, capture the complete issue graph with:
@@ -106,7 +114,8 @@ For selected existing work:
 
 When `custom.workflow.decomposition` is `reviewer-friendly`, propose child
 Beads only when independently reviewable pieces materially improve review. The
-user approves each child creation. Use the shallowest useful hierarchy with at
+user approves each child creation, individually or as part of an exact bounded
+batch; reuse that approval. Use the shallowest useful hierarchy with at
 most three nesting levels. Avoid file-based splits, one-child epics,
 placeholder layers, and dependencies that do not represent real ordering.
 

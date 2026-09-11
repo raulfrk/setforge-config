@@ -183,11 +183,12 @@ def tree_manifest(root: Path) -> list[tuple[str, str, int, int, str]]:
 
 def test_agent_policy_uses_selective_ownership_and_beads_discovery() -> None:
     policy = normalized(AGENTS)
-    assert "one primary agent to own each coherent change" in policy
     assert (
-        "Delegate only bounded, independent workstreams or independent review" in policy
+        "The primary owns design, implementation, tests, corrections, integration, "
+        "and acceptance" in policy
     )
-    assert "never from the number of available agent slots" in policy
+    assert "Delegate implementation only when useful independent work can run" in policy
+    assert "choose concurrency from the actual decomposition, not available agent slots" in policy
     assert "run `bd where --json` from the current checkout root" in policy
     assert "primary worktree's canonical `<git-root>/.beads`" in policy
     assert "require `BEADS_DIR` to be unset" in policy
@@ -200,8 +201,8 @@ def test_agent_policy_uses_selective_ownership_and_beads_discovery() -> None:
 def test_base_skill_preserves_private_authorized_lifecycle() -> None:
     skill = normalized(BASE_SKILL)
     for invariant in (
-        "Never initialize a database or create a Bead",
-        "receiving user approval",
+        "explicit authorization of the exact operation or bounded batch",
+        "reuse that approval",
         "bd init --stealth --non-interactive --skip-agents --skip-hooks",
         "bd update <id> --claim",
         "only after the checks succeed",
@@ -261,7 +262,9 @@ def test_bootstrap_skill_routes_existing_state_and_requires_approval() -> None:
         "Treat `no beads project found` as absence",
         "If a database exists, do not initialize",
         "route drift to the `beads-adapt` skill",
-        "Obtain explicit user approval immediately before running either command",
+        "Reuse explicit approval already given for this exact repository, prefix, "
+        "initialization, and configuration batch",
+        "Obtain approval for missing details before running the commands",
         "`.git/info/exclude`",
         "remote list must be empty",
         "no Beads hook may be installed",

@@ -1,11 +1,27 @@
 model = "gpt-5.6-sol"
-model_reasoning_effort = "high"
+tool_output_token_limit = 2000
+hide_agent_reasoning = false
+show_raw_agent_reasoning = true
+model_reasoning_summary = "detailed"
+model_reasoning_effort = "medium"
+plan_mode_reasoning_effort = "medium"
+service_tier = "default"
 default_permissions = ":danger-full-access"
 approval_policy = "never"
 personality = "pragmatic"
 
 [agents]
 max_threads = 12
+default_subagent_model = "gpt-5.6-luna"
+default_subagent_reasoning_effort = "max"
+
+[features.multi_agent_v2]
+default_wait_timeout_ms = 600000
+max_wait_timeout_ms = 3600000
+
+[agents.review_correctness]
+description = "Run an independent requirements and correctness review."
+config_file = "agents/review-correctness.toml"
 
 [agents.review_critical]
 description = "Run a dynamically scoped correctness, compliance, or high-risk review."

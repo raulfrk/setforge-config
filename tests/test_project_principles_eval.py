@@ -8,6 +8,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+import yaml
 
 from evals import project_principles as evaluator
 from evals.project_principles import (
@@ -16,12 +17,21 @@ from evals.project_principles import (
     DEFAULT_MODEL,
     EvaluationError,
     REVIEW_CRITICAL_AGENT,
+    REVIEW_CORRECTNESS_AGENT,
     REVIEW_GATE_SKILL,
+    REVIEW_GATE_TECHNICAL_CHECKPOINTS,
+    REVIEW_GATE_REVDIFF_RETURNS,
     REVIEW_GENERAL_AGENT,
+    HERDR_SKILL,
+    HERDR_MODE_HANDOFF,
+    HERDR_PLAN_MODE_HELPER,
+    HERDR_WORKSPACE_OPERATIONS,
     changed_paths,
+    candidate_tracked_resources,
     codex_command,
     copy_auth,
     create_runtime,
+    deploy_candidate,
     grader_schema,
     grade_case,
     initialize_fixture,
@@ -41,36 +51,68 @@ def test_policy_contains_approved_principles() -> None:
     for phrase in (
         "smallest cheap runnable experiment",
         "Do not spike routine work",
-        "Do not add frameworks",
+        "Establish the failure before proving a proposed solution",
+        "Review requirements do not authorize extra software",
         "Superficial duplication or hypothetical reuse is insufficient evidence",
+        "The primary owns design, implementation, tests, corrections, integration, and acceptance",
+        "Delegate implementation only when useful independent work can run in parallel",
+        "Honor configured models and explicit user selections",
+        "Before coding, state a proportional intended result",
+        "preserving all remaining user-requested outcomes in the existing plan",
+        "Use separate worktrees when edits overlap",
+        "the primary integrates the results",
+        "Compare suspected regressions with the baseline",
+        "Use completion notifications and native agent waits",
+        "A timeout or early wakeup alone does not justify redispatch",
+        "Unchanged pending status is not progress",
+        "Distinguish execution time from human review, approval, and external waits",
+        "Keep routine work outside Plan Mode",
+        "each phase requires a fresh completion and verdict",
+        "an earlier checkpoint cannot certify a later diff",
+        "focused independent checkpoint before a consequential action",
+        "same action, risk, and complete current evidence",
+        "the primary reassesses the evidence and approach",
+        "An invalid harness assertion may be removed only with evidence",
         "include representative snippets",
     ):
         assert phrase in policy
 
 
 def test_review_gate_requires_complete_evidence_and_independent_validation() -> None:
-    skill = " ".join(REVIEW_GATE_SKILL.read_text(encoding="utf-8").split())
+    skill = " ".join(
+        " ".join(path.read_text(encoding="utf-8").split())
+        for path in (
+            REVIEW_GATE_SKILL,
+            REVIEW_GATE_TECHNICAL_CHECKPOINTS,
+            REVIEW_GATE_REVDIFF_RETURNS,
+        )
+    )
     for phrase in (
         "complete draft—not a placeholder, outline, or summary",
-        "credential exposure across logs and exceptions",
-        "always require one such lane",
         "command run only by a reviewer is not primary-agent validation",
         "reviewer suggestion is evidence to evaluate, not a new requirement",
         "Hypothetical alternate implementations",
-        "Do not replace core lanes with freshly spawned reviewers",
-        "Record each lane's role and thread ID",
-        "Never call `spawn_agent` for an already-known lane",
-        "some event streams call it `send_input`",
         "dispatch output is stale lifecycle state",
-        "not treat completion of the current review gate as a",
         'use `fork_turns="none"`',
-        "repeating that lane's recorded role",
-        "Every rerun includes every current lane",
         "never short-circuits the batch",
-        "explicitly offer RevDiff review by name",
+        "Routine UI work and ordinary feature work",
+        "Plan Mode alone does not make a phase material",
+        "Judge materiality from the change and its consequences",
+        "gate itself does not require new evidence bundles, manifests, recovery tooling",
+        "cannot enlarge the execution contract",
+        "multi-file change, and Plan Mode alone do not require independent review",
+        "Review-only escalation does not require a design author",
+        "The primary owns routine gate validation",
+        "same independent thread may cover checkpoints and successive phases",
+        "Send material revisions back to the same author",
+        "checkpoint before a consequential action",
+        "Actual credential exposure across logs, exceptions",
+        "merely mentions credentials requires no specialist",
+        "After an inconclusive material spike",
+        "Remove an invalid harness assertion only when evidence",
+        "it is not a mandatory extra step",
         "defer reading its contents until the initial gate is complete",
         "explicitly tell every initial reviewer",
-        "rather than referring to prior content as unchanged",
     ):
         assert phrase in skill
 
@@ -148,7 +190,17 @@ def test_review_runner_config_is_statically_observable() -> None:
         (CANDIDATE_AGENTS.parent / "config.toml").read_text(encoding="utf-8")
     )
     assert config["agents"]["max_threads"] == 12
+    assert config["model"] == "gpt-5.6-sol"
+    assert config["model_reasoning_effort"] == "medium"
+    assert config["plan_mode_reasoning_effort"] == "medium"
+    assert config["model_reasoning_summary"] == "detailed"
+    assert config["hide_agent_reasoning"] is False
+    assert config["show_raw_agent_reasoning"] is True
+    assert config["service_tier"] == "default"
+    assert config["agents"]["default_subagent_model"] == "gpt-5.6-luna"
+    assert config["agents"]["default_subagent_reasoning_effort"] == "max"
     expected = {
+        "review_correctness": (REVIEW_CORRECTNESS_AGENT, "gpt-6-astra"),
         "review_critical": (REVIEW_CRITICAL_AGENT, "gpt-5.6-sol"),
         "review_general": (REVIEW_GENERAL_AGENT, "gpt-5.6-terra"),
     }
@@ -159,6 +211,43 @@ def test_review_runner_config_is_statically_observable() -> None:
         assert runner["model"] == model
         assert runner["model_reasoning_effort"] == "low"
         assert runner["sandbox_mode"] == "read-only"
+        if name == "review_correctness":
+            assert runner["service_tier"] == "default"
+
+
+def test_review_correctness_resource_is_in_codex_manifest() -> None:
+    manifest = (CANDIDATE_AGENTS.parents[2] / "setforge.yaml").read_text(
+        encoding="utf-8"
+    )
+    resource = "codex_agent_review_correctness"
+    assert f"  {resource}:" in manifest
+    assert "src: codex/agents/review-correctness.toml" in manifest
+    assert "dst: ~/.codex/agents/review-correctness.toml" in manifest
+    assert f"      - {resource}" in manifest
+    tracked = candidate_tracked_resources(Path("/candidate-home"))
+    assert (
+        REVIEW_CORRECTNESS_AGENT,
+        Path("/candidate-home/.codex/agents/review-correctness.toml"),
+    ) in tracked
+
+
+def test_codex_policy_profile_selects_only_policy_resources() -> None:
+    manifest = yaml.safe_load(
+        (CANDIDATE_AGENTS.parents[2] / "setforge.yaml").read_text(encoding="utf-8")
+    )
+    profile = manifest["profiles"]["codex-policy"]
+    assert set(profile) == {"tracked_files"}
+    assert set(profile["tracked_files"]) == {
+        "codex_global_agents",
+        "codex_skill_review_gate",
+        "codex_skill_review_gate_reference_technical_checkpoints",
+        "codex_skill_usage_check",
+        "codex_skill_usage_check_helper",
+    }
+    assert len(profile["tracked_files"]) == 5
+    assert "extends" not in profile
+    assert "packages" not in profile
+    assert "plugins" not in profile
 
 
 def test_spike_fixture_records_order_without_git_drift(tmp_path: Path) -> None:
@@ -311,6 +400,31 @@ def test_failed_subject_pytest_is_not_verification(tmp_path: Path) -> None:
     ]
 
 
+def test_pytest_evidence_is_checked_before_timeline_display_truncation(
+    tmp_path: Path,
+) -> None:
+    case = CASES[0]
+    workspace = tmp_path / case.id
+    initial = initialize_fixture(case, workspace)
+    assert case.production_file
+    (workspace / case.production_file).write_text(
+        "def clamp(value, lower, upper):\n    return max(lower, min(upper, value))\n",
+        encoding="utf-8",
+    )
+    event = json.dumps(
+        {
+            "command": "python3 -m pytest -q; git diff",
+            "status": "completed",
+            "exit_code": 0,
+            "output": "2 passed in 0.10s\n" + "diff output\n" * 150,
+        }
+    )
+    subject = subprocess.CompletedProcess([], 0, event, "")
+    result = grade_case(case, workspace, initial, subject, "done")
+    assert result["checks"]["subject_ran_pytest"]
+    assert len(result["activity_timeline"][0]["output"]) == 1200
+
+
 def test_static_grader_rejects_missing_test_and_disallowed_dependency(tmp_path: Path) -> None:
     case = next(case for case in CASES if case.id == "small_feature")
     workspace = tmp_path / case.id
@@ -404,3 +518,70 @@ def test_agent_grade_requires_exact_ids_and_consistent_verdict() -> None:
     grade = valid_grade()
     grade["cases"][1]["id"] = grade["cases"][0]["id"]
     assert not validate_agent_grade(grade, expected)
+
+
+def test_wait_defaults_and_progressive_disclosure_resources(tmp_path: Path) -> None:
+    config = tomllib.loads((CANDIDATE_AGENTS.parent / "config.toml").read_text(encoding="utf-8"))
+    assert config["agents"]["max_threads"] == 12
+    assert config["features"]["multi_agent_v2"] == {
+        "default_wait_timeout_ms": 600000,
+        "max_wait_timeout_ms": 3600000,
+    }
+
+    review_router = REVIEW_GATE_SKILL.read_text(encoding="utf-8")
+    assert "references/technical-checkpoints.md" in review_router
+    assert "references/revdiff-returns.md" in review_router
+    assert "Send material revisions back to the same author" in REVIEW_GATE_TECHNICAL_CHECKPOINTS.read_text(encoding="utf-8")
+    revdiff = " ".join(REVIEW_GATE_REVDIFF_RETURNS.read_text(encoding="utf-8").split())
+    assert "Do not discard or defer later actionable feedback" in revdiff
+
+    herdr_router = HERDR_SKILL.read_text(encoding="utf-8")
+    assert "references/mode-handoff.md" in herdr_router
+    assert "references/workspace-operations.md" in herdr_router
+    mode = HERDR_MODE_HANDOFF.read_text(encoding="utf-8")
+    assert "../scripts/plan_mode_handoff.py" in mode
+    assert (HERDR_MODE_HANDOFF.parent / "../scripts/plan_mode_handoff.py").resolve().is_file()
+    assert "Resolve the calling pane" in HERDR_WORKSPACE_OPERATIONS.read_text(encoding="utf-8")
+
+    manifest = (CANDIDATE_AGENTS.parents[2] / "setforge.yaml").read_text(encoding="utf-8")
+    for resource, relative in (
+        ("codex_skill_review_gate_reference_technical_checkpoints", "review-gate/references/technical-checkpoints.md"),
+        ("codex_skill_review_gate_reference_revdiff_returns", "review-gate/references/revdiff-returns.md"),
+        ("codex_skill_herdr_reference_mode_handoff", "herdr/references/mode-handoff.md"),
+        ("codex_skill_herdr_reference_workspace_operations", "herdr/references/workspace-operations.md"),
+    ):
+        assert f"  {resource}:" in manifest
+        assert f"src: codex/skills/{relative}" in manifest
+        assert f"dst: ~/.codex/skills/{relative}" in manifest
+        assert f"      - {resource}" in manifest
+
+    home = tmp_path / "candidate-home"
+    env = isolated_environment(home)
+    deploy_candidate(env)
+
+    deployed_review = home / ".codex/skills/review-gate/SKILL.md"
+    deployed_herdr = home / ".codex/skills/herdr/SKILL.md"
+    for source, destination in (
+        (REVIEW_GATE_TECHNICAL_CHECKPOINTS, deployed_review.parent / "references/technical-checkpoints.md"),
+        (REVIEW_GATE_REVDIFF_RETURNS, deployed_review.parent / "references/revdiff-returns.md"),
+        (HERDR_MODE_HANDOFF, deployed_herdr.parent / "references/mode-handoff.md"),
+        (HERDR_WORKSPACE_OPERATIONS, deployed_herdr.parent / "references/workspace-operations.md"),
+    ):
+        assert destination.is_file()
+        assert destination.read_bytes() == source.read_bytes()
+
+    for entrypoint, relative_links in (
+        (deployed_review, ("references/technical-checkpoints.md", "references/revdiff-returns.md")),
+        (deployed_herdr, ("references/mode-handoff.md", "references/workspace-operations.md")),
+    ):
+        text = entrypoint.read_text(encoding="utf-8")
+        for relative in relative_links:
+            assert f"]({relative})" in text
+            assert (entrypoint.parent / relative).resolve().is_file()
+
+    deployed_mode = deployed_herdr.parent / "references/mode-handoff.md"
+    helper_relative = "../scripts/plan_mode_handoff.py"
+    assert helper_relative in deployed_mode.read_text(encoding="utf-8")
+    deployed_helper = (deployed_mode.parent / helper_relative).resolve()
+    assert deployed_helper.is_file()
+    assert deployed_helper.read_bytes() == HERDR_PLAN_MODE_HELPER.read_bytes()

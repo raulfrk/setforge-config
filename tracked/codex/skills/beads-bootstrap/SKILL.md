@@ -17,8 +17,9 @@ move the procedure there before proposing or running any mutation. Never create
 a worktree-local Beads database. Require `BEADS_DIR` to be unset and reject a
 primary `.beads` symlink or `redirect` file before initialization.
 
-1. Resolve `git rev-parse --show-toplevel` and run `bd where --json` from the
-   primary checkout root.
+1. Use the base skill's validated discovery for this unchanged task and checkout;
+   otherwise resolve `git rev-parse --show-toplevel` and run `bd where --json`
+   from the primary checkout root.
 2. Treat `no beads project found` as absence. If a database exists, do not
    initialize: report whether its seven values conform and route drift to the
    `beads-adapt` skill.
@@ -30,7 +31,10 @@ primary `.beads` symlink or `redirect` file before initialization.
      --prefix <approved-prefix>
    ```
 
-4. Obtain explicit user approval immediately before running either command.
+4. Reuse explicit approval already given for this exact repository, prefix,
+   initialization, and configuration batch. Obtain approval for missing details
+   before running the commands; do not ask separately for an already approved
+   step merely because it appears in a supporting skill or reference.
 
 ## Initialize and verify
 

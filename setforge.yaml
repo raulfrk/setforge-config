@@ -17,17 +17,49 @@ tracked_files:
     src: codex/agents/review-general.toml
     dst: ~/.codex/agents/review-general.toml
 
+  codex_agent_review_correctness:
+    src: codex/agents/review-correctness.toml
+    dst: ~/.codex/agents/review-correctness.toml
+
   codex_skill_review_gate:
     src: codex/skills/review-gate/SKILL.md
     dst: ~/.codex/skills/review-gate/SKILL.md
+
+  codex_skill_review_gate_reference_technical_checkpoints:
+    src: codex/skills/review-gate/references/technical-checkpoints.md
+    dst: ~/.codex/skills/review-gate/references/technical-checkpoints.md
+
+  codex_skill_review_gate_reference_revdiff_returns:
+    src: codex/skills/review-gate/references/revdiff-returns.md
+    dst: ~/.codex/skills/review-gate/references/revdiff-returns.md
 
   codex_skill_setforge:
     src: codex/skills/setforge/SKILL.md
     dst: ~/.codex/skills/setforge/SKILL.md
 
+  codex_skill_usage_check:
+    src: codex/skills/usage-check/SKILL.md
+    dst: ~/.codex/skills/usage-check/SKILL.md
+
+  codex_skill_usage_check_helper:
+    src: codex/skills/usage-check/scripts/check_usage.py
+    dst: ~/.codex/skills/usage-check/scripts/check_usage.py
+
   codex_skill_herdr:
     src: codex/skills/herdr/SKILL.md
     dst: ~/.codex/skills/herdr/SKILL.md
+
+  codex_skill_herdr_reference_mode_handoff:
+    src: codex/skills/herdr/references/mode-handoff.md
+    dst: ~/.codex/skills/herdr/references/mode-handoff.md
+
+  codex_skill_herdr_reference_workspace_operations:
+    src: codex/skills/herdr/references/workspace-operations.md
+    dst: ~/.codex/skills/herdr/references/workspace-operations.md
+
+  codex_skill_herdr_plan_mode_handoff:
+    src: codex/skills/herdr/scripts/plan_mode_handoff.py
+    dst: ~/.codex/skills/herdr/scripts/plan_mode_handoff.py
 
   codex_skill_beads:
     src: codex/skills/beads/SKILL.md
@@ -44,6 +76,10 @@ tracked_files:
   codex_skill_beads_adapt:
     src: codex/skills/beads-adapt/SKILL.md
     dst: ~/.codex/skills/beads-adapt/SKILL.md
+
+  codex_skill_cross_project_planning:
+    src: codex/skills/cross-project-planning/SKILL.md
+    dst: ~/.codex/skills/cross-project-planning/SKILL.md
 
   herdr_config:
     src: herdr/config.toml
@@ -67,6 +103,16 @@ packages:
     asset: revdiff_1.12.0_linux_amd64.tar.gz
     checksum: sha256:3b36478c3b9d6c6f5557515fed876e88ce1c3d14564714a3ed5aefb903cc7154
     binary: revdiff
+    install: ~/.local/bin
+    chmod: "755"
+
+  rtk:
+    type: github_release
+    repo: rtk-ai/rtk
+    tag: v0.48.0
+    asset: rtk-x86_64-unknown-linux-musl.tar.gz
+    checksum: sha256:e4e650fa1677c0de2f6839a6040d7b17f312d32f163c402b75af70e9e5af1a91
+    binary: rtk
     install: ~/.local/bin
     chmod: "755"
 
@@ -97,21 +143,43 @@ profiles:
       - codex_global_agents
       - codex_agent_review_critical
       - codex_agent_review_general
+      - codex_agent_review_correctness
       - codex_skill_review_gate
+      - codex_skill_review_gate_reference_technical_checkpoints
+      - codex_skill_review_gate_reference_revdiff_returns
       - codex_skill_setforge
+      - codex_skill_usage_check
+      - codex_skill_usage_check_helper
       - codex_skill_herdr
+      - codex_skill_herdr_reference_mode_handoff
+      - codex_skill_herdr_reference_workspace_operations
+      - codex_skill_herdr_plan_mode_handoff
       - codex_skill_beads
       - codex_skill_beads_reference_project_config
       - codex_skill_beads_bootstrap
       - codex_skill_beads_adapt
+      - codex_skill_cross_project_planning
       - herdr_config
     packages:
       - beads
       - revdiff
       - worktrunk
+      - rtk
     codex:
       plugins:
         - revdiff-herdr
+
+  codex-rtk:
+    packages:
+      - rtk
+
+  codex-policy:
+    tracked_files:
+      - codex_global_agents
+      - codex_skill_review_gate
+      - codex_skill_review_gate_reference_technical_checkpoints
+      - codex_skill_usage_check
+      - codex_skill_usage_check_helper
 
 schema_version: '6.5'
 minimum_version: '6.5'

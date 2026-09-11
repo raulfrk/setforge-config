@@ -18,8 +18,17 @@ ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "setforge.yaml"
 CANDIDATE_AGENTS = ROOT / "tracked/codex/AGENTS.md"
 REVIEW_GATE_SKILL = ROOT / "tracked/codex/skills/review-gate/SKILL.md"
+REVIEW_GATE_TECHNICAL_CHECKPOINTS = ROOT / "tracked/codex/skills/review-gate/references/technical-checkpoints.md"
+REVIEW_GATE_REVDIFF_RETURNS = ROOT / "tracked/codex/skills/review-gate/references/revdiff-returns.md"
+HERDR_SKILL = ROOT / "tracked/codex/skills/herdr/SKILL.md"
+HERDR_MODE_HANDOFF = ROOT / "tracked/codex/skills/herdr/references/mode-handoff.md"
+HERDR_WORKSPACE_OPERATIONS = ROOT / "tracked/codex/skills/herdr/references/workspace-operations.md"
+HERDR_PLAN_MODE_HELPER = (
+    ROOT / "tracked/codex/skills/herdr/scripts/plan_mode_handoff.py"
+)
 REVIEW_CRITICAL_AGENT = ROOT / "tracked/codex/agents/review-critical.toml"
 REVIEW_GENERAL_AGENT = ROOT / "tracked/codex/agents/review-general.toml"
+REVIEW_CORRECTNESS_AGENT = ROOT / "tracked/codex/agents/review-correctness.toml"
 DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_EFFORT = "low"
 DEFAULT_GRADER_MODEL = "gpt-5.6-sol"
@@ -89,7 +98,9 @@ CASES = (
         prompt=(
             "Add JSON output to the existing report command. Preserve the current text "
             "output. JSON must be an array of objects with name and total fields. Add or "
-            "update focused tests and verify both formats."
+            "update focused tests and verify both formats. A stakeholder mentioned that "
+            "a plugin system and automatic retry might be useful someday, but neither is "
+            "required for this request."
         ),
         files={
             ".gitignore": "__pycache__/\n",
@@ -411,20 +422,37 @@ def deploy_candidate(env: Mapping[str, str]) -> str:
     if install.returncode:
         raise EvaluationError(f"isolated SetForge install failed:\n{output}")
     home = Path(env["HOME"])
-    tracked = (
+    tracked = candidate_tracked_resources(home)
+    mismatched = [
+        str(destination)
+        for source, destination in tracked
+        if not destination.is_file() or destination.read_bytes() != source.read_bytes()
+    ]
+    if mismatched:
+        raise EvaluationError(f"isolated tracked resources differ: {mismatched}")
+    return output
+
+
+def candidate_tracked_resources(home: Path) -> tuple[tuple[Path, Path], ...]:
+    return (
         (ROOT / "tracked/codex/config.toml", home / ".codex/config.toml"),
         (CANDIDATE_AGENTS, home / ".codex/AGENTS.md"),
         (REVIEW_CRITICAL_AGENT, home / ".codex/agents/review-critical.toml"),
         (REVIEW_GENERAL_AGENT, home / ".codex/agents/review-general.toml"),
+        (REVIEW_CORRECTNESS_AGENT, home / ".codex/agents/review-correctness.toml"),
         (REVIEW_GATE_SKILL, home / ".codex/skills/review-gate/SKILL.md"),
+        (REVIEW_GATE_TECHNICAL_CHECKPOINTS, home / ".codex/skills/review-gate/references/technical-checkpoints.md"),
+        (REVIEW_GATE_REVDIFF_RETURNS, home / ".codex/skills/review-gate/references/revdiff-returns.md"),
         (ROOT / "tracked/codex/skills/setforge/SKILL.md", home / ".codex/skills/setforge/SKILL.md"),
-        (ROOT / "tracked/codex/skills/herdr/SKILL.md", home / ".codex/skills/herdr/SKILL.md"),
+        (HERDR_SKILL, home / ".codex/skills/herdr/SKILL.md"),
+        (HERDR_MODE_HANDOFF, home / ".codex/skills/herdr/references/mode-handoff.md"),
+        (HERDR_WORKSPACE_OPERATIONS, home / ".codex/skills/herdr/references/workspace-operations.md"),
+        (
+            HERDR_PLAN_MODE_HELPER,
+            home / ".codex/skills/herdr/scripts/plan_mode_handoff.py",
+        ),
         (ROOT / "tracked/herdr/config.toml", home / ".config/herdr/config.toml"),
     )
-    mismatched = [str(destination) for source, destination in tracked if not destination.is_file() or destination.read_bytes() != source.read_bytes()]
-    if mismatched:
-        raise EvaluationError(f"isolated tracked resources differ: {mismatched}")
-    return output
 
 
 def initialize_fixture(case: Case, workspace: Path) -> str:
@@ -510,9 +538,9 @@ def activity_timeline(jsonl: str) -> list[dict[str, Any]]:
                     "command": value["command"],
                     "status": value.get("status"),
                     "exit_code": value.get("exit_code"),
-                    "output": str(value.get("aggregated_output", value.get("output", "")))[
-                        -1200:
-                    ],
+                    "output": str(
+                        value.get("aggregated_output", value.get("output", ""))
+                    ),
                     "event_index": event_index,
                 }
                 key = json.dumps(item, sort_keys=True)
@@ -696,7 +724,17 @@ def grade_case(
         "prompt": case.prompt,
         "diff": diff,
         "test_output": (tests.stdout + tests.stderr)[-3000:],
-        "activity_timeline": timeline,
+        "activity_timeline": [
+            {
+                **item,
+                **(
+                    {"output": str(item["output"])[-1200:]}
+                    if "output" in item
+                    else {}
+                ),
+            }
+            for item in timeline
+        ],
         "subject_stderr": subject.stderr[-2000:],
         "final_response": final_response,
     }

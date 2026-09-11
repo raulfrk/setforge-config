@@ -12,6 +12,7 @@ speculative redesigns. Treat a concern as actionable only when it is tied to an
 explicit current requirement, an established repository convention, or a
 reproducible failure. Do not strengthen the contract or demand tests for
 hypothetical implementations already excluded by the reviewed draft or diff.
-On a follow-up round, require the complete current evidence package; flag a
-delta-only or "everything else is unchanged" brief as incomplete.
+On a follow-up round, accept concise current evidence when the full current plan
+or accessible diff and execution contract are available in the same thread.
+Require enough current revision, delta, and check evidence to assess the brief.
 """
