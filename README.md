@@ -1,6 +1,88 @@
 # SetForge agent profiles
 
-This repository defines Raul's Codex and OpenCode profiles.
+This repository defines Raul's Codex, OpenCode, and Oh My Pi profiles.
+
+## Oh My Pi
+
+The `omp` profile targets OMP 18.1.18 and ports the same engineering policy,
+private Beads workflow, risk-based review gate, Herdr controls, and RevDiff
+workflow onto OMP's native agents, `task`/`hub`, Plan artifacts, and extension
+lifecycle. Current limits shape the profile:
+
+- OMP extensions cannot read or toggle native Plan directly. Conditional entry
+  therefore requires a proven Herdr-owned interactive OMP pane; elsewhere the
+  agent asks the user to type `/plan`.
+- `plan.defaultOnStartup` can start every interactive session in Plan, but this
+  profile keeps it `false` so routine work starts in Build. Print, RPC, and
+  non-Herdr sessions do not receive conditional automatic entry.
+- Automatic RevDiff gating applies to a root interactive native Plan proposal.
+  Headless proposal review fails closed; ordinary prose uses `revdiff_plan` or
+  `/revdiff-plan` manually.
+- Plan and reviewer tool restrictions are policy and tool-list controls, not an
+  operating-system read-only sandbox.
+- OMP `task`/`hub` context, effort, wake, wait, and mail behavior is analogous
+  to the Codex workflow but is not wire-compatible with Codex collaboration
+  calls. Provider and tool effects cannot be exactly once across a process
+  crash.
+- Completed isolated workers retain patches because `apply: false`, but they
+  cannot remain persistent correction owners. Persistent shared workers remain
+  the owners for later corrections.
+- OMP requires the terminal `yield` tool in every task child and suppresses
+  `todo` in that session shape. The custom worker therefore uses `hub` for
+  persistent coordination but has no child-local `todo` tool.
+- Provider allowance and OAuth-visible models remain unverified until the user
+  runs `/login openai-codex`. OMP can report local activity, but cannot
+  reconstruct Codex rollout-tree credit estimates or topology.
+
+The profile owns exactly its 36 listed resources below `~/.omp/agent/`, the
+`~/.local/bin/omp` pin, and the shared `bd`, `revdiff`, `wt`, and `rtk` package
+pins. It does not own `agent.db*`, models, settings, keybindings, `config.yaml`,
+sessions, artifacts, memory, plugins, unlisted extensions, logs, native caches,
+OpenCode paths, Codex paths, or Herdr's generated
+`extensions/herdr-omp-agent-state.ts` integration. Because OMP gives
+`config.yml` precedence over `config.yaml`, reconcile or remove an existing
+live `~/.omp/agent/config.yaml` before installing this managed `config.yml`.
+
+Review the exact locked install, install the profile, then install Herdr's OMP
+integration with `PI_CODING_AGENT_DIR` unset:
+
+```sh
+manifest=/home/raul/projects/setforge-config/setforge.yaml
+setforge install --profile=omp --config="$manifest" --locked --no-fetch --dry-run
+setforge install --profile=omp --config="$manifest" --locked --no-fetch --yes
+env -u PI_CODING_AGENT_DIR herdr integration install omp
+setforge compare --profile=omp --config="$manifest" --check --strict
+```
+
+The install does not authenticate a provider. Later, inside OMP, run:
+
+```text
+/login openai-codex
+```
+
+Before replacing an existing OMP installation, list all snapshots and create a
+uniquely labelled one with `--keep` set to the existing count plus one. Keep a
+separate mode-restricted rollback bundle for package binaries, prior absence,
+and the unowned Herdr integration because SetForge snapshots are additive:
+
+```sh
+setforge snapshot list
+setforge snapshot create before-omp-profile-<UTC> --profile=omp --keep=<existing-count-plus-one>
+```
+
+For rollback, inspect and recover any active write-ahead operation, classify
+each current path against its preflight and installed bytes, then restore the
+recorded snapshot ID only where that cannot overwrite independent changes:
+
+```sh
+setforge recover --profile=omp
+setforge snapshot restore <snapshot-id> --profile=omp
+setforge compare --profile=omp
+```
+
+Restore package and Herdr integration bytes from the bound rollback bundle and
+remove a newly created destination only while it still matches the failed
+install candidate.
 
 ## Codex
 

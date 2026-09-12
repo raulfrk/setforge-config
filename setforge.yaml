@@ -1,6 +1,161 @@
 version: 1
 
 tracked_files:
+  omp_agents_md:
+    src: omp/AGENTS.md
+    dst: ~/.omp/agent/AGENTS.md
+
+  omp_agents_review_correctness_md:
+    src: omp/agents/review_correctness.md
+    dst: ~/.omp/agent/agents/review_correctness.md
+
+  omp_agents_review_critical_md:
+    src: omp/agents/review_critical.md
+    dst: ~/.omp/agent/agents/review_critical.md
+
+  omp_agents_review_general_md:
+    src: omp/agents/review_general.md
+    dst: ~/.omp/agent/agents/review_general.md
+
+  omp_agents_worker_md:
+    src: omp/agents/worker.md
+    dst: ~/.omp/agent/agents/worker.md
+
+  omp_config_yml:
+    src: omp/config.yml
+    dst: ~/.omp/agent/config.yml
+
+  omp_extensions_setforge_plan_workflow_ts:
+    src: omp/extensions/setforge-plan-workflow.ts
+    dst: ~/.omp/agent/extensions/setforge-plan-workflow.ts
+
+  omp_scripts_launch_plan_review_herdr_sh:
+    src: omp/scripts/launch-plan-review-herdr.sh
+    dst: ~/.omp/agent/scripts/launch-plan-review-herdr.sh
+    mode: 0o755
+
+  omp_scripts_launch_plan_review_sh:
+    src: omp/scripts/launch-plan-review.sh
+    dst: ~/.omp/agent/scripts/launch-plan-review.sh
+    mode: 0o755
+
+  omp_scripts_launch_plan_review_upstream_sh:
+    src: omp/scripts/launch-plan-review.upstream.sh
+    dst: ~/.omp/agent/scripts/launch-plan-review.upstream.sh
+    mode: 0o755
+
+  omp_scripts_plan_review_runtime_py:
+    src: omp/scripts/plan-review-runtime.py
+    dst: ~/.omp/agent/scripts/plan-review-runtime.py
+    mode: 0o755
+
+  omp_scripts_plan_review_format_py:
+    src: omp/scripts/plan_review_format.py
+    dst: ~/.omp/agent/scripts/plan_review_format.py
+    mode: 0o755
+
+  omp_skills_beads_skill_md:
+    src: omp/skills/beads/SKILL.md
+    dst: ~/.omp/agent/skills/beads/SKILL.md
+
+  omp_skills_beads_references_project_config_md:
+    src: omp/skills/beads/references/project-config.md
+    dst: ~/.omp/agent/skills/beads/references/project-config.md
+
+  omp_skills_beads_adapt_skill_md:
+    src: omp/skills/beads-adapt/SKILL.md
+    dst: ~/.omp/agent/skills/beads-adapt/SKILL.md
+
+  omp_skills_beads_bootstrap_skill_md:
+    src: omp/skills/beads-bootstrap/SKILL.md
+    dst: ~/.omp/agent/skills/beads-bootstrap/SKILL.md
+
+  omp_skills_cross_project_planning_skill_md:
+    src: omp/skills/cross-project-planning/SKILL.md
+    dst: ~/.omp/agent/skills/cross-project-planning/SKILL.md
+
+  omp_skills_herdr_skill_md:
+    src: omp/skills/herdr/SKILL.md
+    dst: ~/.omp/agent/skills/herdr/SKILL.md
+
+  omp_skills_herdr_references_mode_handoff_md:
+    src: omp/skills/herdr/references/mode-handoff.md
+    dst: ~/.omp/agent/skills/herdr/references/mode-handoff.md
+
+  omp_skills_herdr_references_workspace_operations_md:
+    src: omp/skills/herdr/references/workspace-operations.md
+    dst: ~/.omp/agent/skills/herdr/references/workspace-operations.md
+
+  omp_skills_herdr_scripts_omp_plan_mode_handoff_py:
+    src: omp/skills/herdr/scripts/omp_plan_mode_handoff.py
+    dst: ~/.omp/agent/skills/herdr/scripts/omp_plan_mode_handoff.py
+    mode: 0o755
+
+  omp_skills_revdiff_skill_md:
+    src: omp/skills/revdiff/SKILL.md
+    dst: ~/.omp/agent/skills/revdiff/SKILL.md
+
+  omp_skills_revdiff_references_config_md:
+    src: omp/skills/revdiff/references/config.md
+    dst: ~/.omp/agent/skills/revdiff/references/config.md
+
+  omp_skills_revdiff_references_install_md:
+    src: omp/skills/revdiff/references/install.md
+    dst: ~/.omp/agent/skills/revdiff/references/install.md
+
+  omp_skills_revdiff_references_usage_md:
+    src: omp/skills/revdiff/references/usage.md
+    dst: ~/.omp/agent/skills/revdiff/references/usage.md
+
+  omp_skills_revdiff_scripts_agentdeck_window_sh:
+    src: omp/skills/revdiff/scripts/agentdeck-window.sh
+    dst: ~/.omp/agent/skills/revdiff/scripts/agentdeck-window.sh
+    mode: 0o755
+
+  omp_skills_revdiff_scripts_detect_ref_sh:
+    src: omp/skills/revdiff/scripts/detect-ref.sh
+    dst: ~/.omp/agent/skills/revdiff/scripts/detect-ref.sh
+    mode: 0o755
+
+  omp_skills_revdiff_scripts_launch_revdiff_sh:
+    src: omp/skills/revdiff/scripts/launch-revdiff.sh
+    dst: ~/.omp/agent/skills/revdiff/scripts/launch-revdiff.sh
+    mode: 0o755
+
+  omp_skills_revdiff_scripts_launch_revdiff_upstream_sh:
+    src: omp/skills/revdiff/scripts/launch-revdiff.upstream.sh
+    dst: ~/.omp/agent/skills/revdiff/scripts/launch-revdiff.upstream.sh
+    mode: 0o755
+
+  omp_skills_revdiff_scripts_read_latest_history_sh:
+    src: omp/skills/revdiff/scripts/read-latest-history.sh
+    dst: ~/.omp/agent/skills/revdiff/scripts/read-latest-history.sh
+    mode: 0o755
+
+  omp_skills_revdiff_plan_skill_md:
+    src: omp/skills/revdiff-plan/SKILL.md
+    dst: ~/.omp/agent/skills/revdiff-plan/SKILL.md
+
+  omp_skills_review_gate_skill_md:
+    src: omp/skills/review-gate/SKILL.md
+    dst: ~/.omp/agent/skills/review-gate/SKILL.md
+
+  omp_skills_review_gate_references_revdiff_returns_md:
+    src: omp/skills/review-gate/references/revdiff-returns.md
+    dst: ~/.omp/agent/skills/review-gate/references/revdiff-returns.md
+
+  omp_skills_review_gate_references_technical_checkpoints_md:
+    src: omp/skills/review-gate/references/technical-checkpoints.md
+    dst: ~/.omp/agent/skills/review-gate/references/technical-checkpoints.md
+
+  omp_skills_setforge_skill_md:
+    src: omp/skills/setforge/SKILL.md
+    dst: ~/.omp/agent/skills/setforge/SKILL.md
+
+  omp_skills_usage_check_skill_md:
+    src: omp/skills/usage-check/SKILL.md
+    dst: ~/.omp/agent/skills/usage-check/SKILL.md
+
   codex_config:
     src: codex/config.toml
     dst: ~/.codex/config.toml
@@ -244,6 +399,18 @@ tracked_files:
     dst: ~/.config/opencode/skills/usage-check/SKILL.md
 
 packages:
+  omp:
+    type: github_release
+    repo: can1357/oh-my-pi
+    tag: v18.1.18
+    asset: omp-linux-x64
+    checksum: sha256:45421f9a5f112bc47cb9f77c4b4d7927631f8ff859624f821287ec854eb239fc
+    binary: omp-linux-x64
+    rename: omp
+    install: ~/.local/bin
+    chmod: "755"
+    extract: false
+
   beads:
     type: github_release
     repo: gastownhall/beads
@@ -295,6 +462,51 @@ codex:
       marketplace: personal
 
 profiles:
+  omp:
+    tracked_files:
+      - omp_agents_md
+      - omp_agents_review_correctness_md
+      - omp_agents_review_critical_md
+      - omp_agents_review_general_md
+      - omp_agents_worker_md
+      - omp_config_yml
+      - omp_extensions_setforge_plan_workflow_ts
+      - omp_scripts_launch_plan_review_herdr_sh
+      - omp_scripts_launch_plan_review_sh
+      - omp_scripts_launch_plan_review_upstream_sh
+      - omp_scripts_plan_review_runtime_py
+      - omp_scripts_plan_review_format_py
+      - omp_skills_beads_skill_md
+      - omp_skills_beads_references_project_config_md
+      - omp_skills_beads_adapt_skill_md
+      - omp_skills_beads_bootstrap_skill_md
+      - omp_skills_cross_project_planning_skill_md
+      - omp_skills_herdr_skill_md
+      - omp_skills_herdr_references_mode_handoff_md
+      - omp_skills_herdr_references_workspace_operations_md
+      - omp_skills_herdr_scripts_omp_plan_mode_handoff_py
+      - omp_skills_revdiff_skill_md
+      - omp_skills_revdiff_references_config_md
+      - omp_skills_revdiff_references_install_md
+      - omp_skills_revdiff_references_usage_md
+      - omp_skills_revdiff_scripts_agentdeck_window_sh
+      - omp_skills_revdiff_scripts_detect_ref_sh
+      - omp_skills_revdiff_scripts_launch_revdiff_sh
+      - omp_skills_revdiff_scripts_launch_revdiff_upstream_sh
+      - omp_skills_revdiff_scripts_read_latest_history_sh
+      - omp_skills_revdiff_plan_skill_md
+      - omp_skills_review_gate_skill_md
+      - omp_skills_review_gate_references_revdiff_returns_md
+      - omp_skills_review_gate_references_technical_checkpoints_md
+      - omp_skills_setforge_skill_md
+      - omp_skills_usage_check_skill_md
+    packages:
+      - omp
+      - beads
+      - revdiff
+      - worktrunk
+      - rtk
+
   opencode:
     tracked_files:
       - opencode_global_agents

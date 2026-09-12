@@ -1,0 +1,32 @@
+setupVersion: 2
+enabledProviders: []
+modelRoles:
+  default: openai-codex/gpt-5.6-sol:medium
+  plan: openai-codex/gpt-5.6-sol:medium
+  smol: openai-codex/gpt-5.6-luna:medium
+  worker: openai-codex/gpt-5.6-luna:max
+  review_correctness: openai-codex/gpt-6-astra:low
+  review_critical: openai-codex/gpt-5.6-sol:low
+  review_general: openai-codex/gpt-5.6-terra:low
+plan:
+  enabled: true
+  defaultOnStartup: false
+async:
+  enabled: true
+  maxJobs: 12
+task:
+  batch: true
+  enableEffort: true
+  enableLsp: true
+  maxEffort: max
+  maxConcurrency: 12
+  maxRecursionDepth: 1
+  disabledAgents:
+  - task
+  - sonic
+  - reviewer
+  - security-reviewer
+  isolation:
+    enabled: true
+    apply: false
+    merge: patch
