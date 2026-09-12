@@ -139,6 +139,8 @@ def inspect_surface(state: dict[str, Any], require_plan: bool) -> tuple[str, str
     if marker not in screen or role != "assistant" or text is None or text.strip() != marker or count != 1:
         raise UnsafeSurface("the exact assistant marker is absent or ambiguous")
     if not screen.rstrip().endswith("╰─"):
+        if require_plan and mode == "build" and "╰─ /plan" in screen.splitlines():
+            raise UnsettledSurface("native /plan command palette is still closing")
         raise UnsafeSurface("the OMP composer is not positively empty")
     lowered = screen.lower()
     if any(

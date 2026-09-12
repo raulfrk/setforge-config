@@ -211,6 +211,12 @@ class _HerdrServer(socketserver.ThreadingUnixStreamServer):
         super().__init__(path, _HerdrHandler)
 
 
+def _activate_fake_plan(case: dict[str, object]) -> None:
+    with Path(case["session"]).open("a") as stream:
+        stream.write(json.dumps({"type": "mode_change", "mode": "plan", "data": {"planFilePath": "local://PLAN.md"}}) + "\n")
+    case["screen"] = str(case["screen"]).replace("build", "🗺 Plan")
+
+
 class _HerdrHandler(socketserver.StreamRequestHandler):
     def handle(self) -> None:
         request = json.loads(self.rfile.readline())
@@ -233,11 +239,19 @@ class _HerdrHandler(socketserver.StreamRequestHandler):
             value.update(case.get("agent", {}))
             response = {"id": request["id"], "result": {"agent": value, "type": "agent_info"}}
         elif request["method"] == "agent.read":
+            if case.pop("activate_plan_on_read", False):
+                _activate_fake_plan(case)
+            screen = case["screen"]
+            if case.get("plan_transition_remaining", 0):
+                screen = case["plan_transition_screen"]
+                case["plan_transition_remaining"] -= 1
+                if case["plan_transition_remaining"] == 0:
+                    case["activate_plan_on_read"] = True
             response = {
                 "id": request["id"],
                 "result": {
                     "read": {
-                        "text": case["screen"],
+                        "text": screen,
                         "truncated": case.get("truncated", False),
                         "source": "recent_unwrapped",
                     }
@@ -250,9 +264,12 @@ class _HerdrHandler(socketserver.StreamRequestHandler):
                 response = {"id": request["id"], "error": {"code": "injected", "message": "failure"}}
             else:
                 if text == "/plan":
-                    with Path(case["session"]).open("a") as stream:
-                        stream.write(json.dumps({"type": "mode_change", "mode": "plan", "data": {"planFilePath": "local://PLAN.md"}}) + "\n")
-                    case["screen"] = str(case["screen"]).replace("build", "🗺 Plan")
+                    transition_reads = int(case.get("plan_transition_reads", 0))
+                    if transition_reads:
+                        case["plan_transition_remaining"] = transition_reads
+                        case["plan_transition_screen"] = str(case["screen"]).removesuffix("╰─") + "╰─ /plan\n❯ 🗺  plan  Plan: off"
+                    else:
+                        _activate_fake_plan(case)
                 response = {"id": request["id"], "result": {"type": "agent_prompted", "agent": {}}}
         else:
             response = {"id": request["id"], "error": {"code": "unknown", "message": request["method"]}}
@@ -273,6 +290,7 @@ def _run_handoff_case(
     agent: dict | None = None,
     truncated: bool = False,
     prompt_error: bool = False,
+    plan_transition_reads: int = 0,
     sent: str | None = None,
     deadline_seconds: float = 0.7,
 ) -> subprocess.CompletedProcess[str]:
@@ -292,6 +310,7 @@ def _run_handoff_case(
         "agent": agent or {},
         "truncated": truncated,
         "prompt_error": prompt_error,
+        "plan_transition_reads": plan_transition_reads,
     }
     server = _HerdrServer(socket_path, case)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -374,6 +393,20 @@ def test_omp_handoff_crosses_each_input_boundary_once_and_cleans_up(tmp_path: Pa
         screen=screen,
         expected_prompts=["/plan", "PRIVATE_CONTINUATION"],
         success=True,
+        deadline_seconds=5,
+    )
+
+
+def test_omp_handoff_waits_for_its_native_plan_palette_to_close(tmp_path: Path) -> None:
+    entries = [_message("user", "SUBSTANTIAL"), _message("assistant", MARKER)]
+    screen = f"transcript\n{MARKER}\n π > model > build\n╰─"
+    _run_handoff_case(
+        tmp_path,
+        entries=entries,
+        screen=screen,
+        expected_prompts=["/plan", "PRIVATE_CONTINUATION"],
+        success=True,
+        plan_transition_reads=1,
         deadline_seconds=5,
     )
 
