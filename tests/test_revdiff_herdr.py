@@ -68,6 +68,8 @@ class TestRevDiffHerdr:
         self.plan.write_text("# Plan\n\nReview this Markdown plan.\n")
         self.old_plan = self.temp / "old-plan.md"
         self.old_plan.write_text("# Plan\n\nOld text.\n")
+        self.source = self.temp / "source.py"
+        self.source.write_text("answer = 42\n")
         self._write_fakes()
 
     def teardown_method(self) -> None:
@@ -171,6 +173,11 @@ class TestRevDiffHerdr:
                         exit 7
                     fi
                     sh -c "${4:?missing pane command}" &
+                    ;;
+                'pane report-metadata')
+                    if [[ ${TEST_HERDR_MARKER_FAIL:-0} == 1 ]]; then
+                        exit 13
+                    fi
                     ;;
                 'pane process-info')
                     if [[ ${TEST_PROCESS_INFO_FAIL:-0} == 1 ]]; then
@@ -380,6 +387,16 @@ class TestRevDiffHerdr:
         assert capture.read_text() == "# Plan\n\nReview this Markdown plan.\n"
         assert not re.search(r"(?m)^(tmux|agtermctl|zellij) ", calls)
         lines = calls.splitlines()
+        marker_call = (
+            "herdr pane report-metadata w-test:p1 --source revdiff-herdr "
+            "--token revdiff_review=active"
+        )
+        assert marker_call in lines
+        assert lines.index(marker_call) < next(
+            index
+            for index, line in enumerate(lines)
+            if line.startswith("herdr pane run w-test:p1")
+        )
         assert lines.index("herdr tab close w-test:t1") < lines.index(
             "herdr tab focus w-test:t-caller"
         )
@@ -960,7 +977,7 @@ class TestRevDiffHerdr:
 
     def test_manual_review_prefers_herdr(self) -> None:
         result = subprocess.run(
-            [str(MANUAL_LAUNCHER), f"--only={self.plan}"],
+            [str(MANUAL_LAUNCHER), f"--only={self.source}"],
             env=self._mixed_herdr_env(),
             text=True,
             capture_output=True,
@@ -970,10 +987,24 @@ class TestRevDiffHerdr:
         assert result.returncode == 0, result.stderr
         calls = self._calls()
         assert "herdr tab create" in calls
+        assert (
+            "herdr pane report-metadata w-test:p1 --source revdiff-herdr "
+            "--token revdiff_review=active"
+        ) in calls
         assert "herdr pane run w-test:p1" in calls
         assert "herdr tab close w-test:t1" in calls
         assert "herdr tab focus w-test:t-caller" in calls
         assert not re.search(r"(?m)^(tmux|agtermctl|zellij) ", calls)
+        lines = calls.splitlines()
+        marker_call = (
+            "herdr pane report-metadata w-test:p1 --source revdiff-herdr "
+            "--token revdiff_review=active"
+        )
+        assert lines.index(marker_call) < next(
+            index
+            for index, line in enumerate(lines)
+            if line.startswith("herdr pane run w-test:p1")
+        )
 
     def test_public_launcher_routes_markdown_comparison_and_description(self) -> None:
         result = subprocess.run(
@@ -1131,6 +1162,33 @@ class TestRevDiffHerdr:
         calls = self._calls()
         assert "herdr tab close w-test:t1" in calls
         assert "herdr tab focus w-test:t-caller" in calls
+
+    @pytest.mark.parametrize("launcher", [PLAN_LAUNCHER, MANUAL_LAUNCHER])
+    def test_marker_failure_closes_created_tab_without_starting_review(
+        self, launcher: Path
+    ) -> None:
+        arguments = [str(launcher), str(self.plan)]
+        if launcher == MANUAL_LAUNCHER:
+            arguments[1] = f"--only={self.source}"
+        result = subprocess.run(
+            arguments,
+            env=self._mixed_herdr_env(TEST_HERDR_MARKER_FAIL="1"),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 1
+        assert "failed to mark RevDiff review pane w-test:p1" in result.stderr
+        calls = self._calls()
+        assert (
+            "herdr pane report-metadata w-test:p1 --source revdiff-herdr "
+            "--token revdiff_review=active"
+        ) in calls
+        assert "herdr tab close w-test:t1" in calls
+        assert "herdr tab focus w-test:t-caller" in calls
+        assert "herdr pane run" not in calls
+        assert not re.search(r"(?m)^tmux ", calls)
 
     def test_focus_failure_does_not_replace_annotations_or_exit_status(self) -> None:
         result = subprocess.run(

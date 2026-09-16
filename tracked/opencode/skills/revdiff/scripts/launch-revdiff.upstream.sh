@@ -341,6 +341,13 @@ LAUNCHER
         exit 1
     fi
 
+    if ! herdr pane report-metadata "$HERDR_PANE_ID" --source revdiff-herdr --token revdiff_review=active >/dev/null 2>&1; then
+        echo "error: failed to mark RevDiff review pane $HERDR_PANE_ID" >&2
+        herdr tab close "$HERDR_TAB_ID" >/dev/null 2>&1 || true
+        rm -f "$SENTINEL" "$LAUNCH_SCRIPT"
+        exit 1
+    fi
+
     if ! herdr pane run "$HERDR_PANE_ID" "sh $(sq "$LAUNCH_SCRIPT")" >/dev/null 2>&1; then
         echo "error: herdr pane run failed for pane $HERDR_PANE_ID" >&2
         herdr tab close "$HERDR_TAB_ID" >/dev/null 2>&1 || true

@@ -136,6 +136,11 @@ if [[ -z $created_tab_id || -z $pane_id ]]; then
     exit 1
 fi
 
+if ! herdr pane report-metadata "$pane_id" --source revdiff-herdr --token revdiff_review=active >/dev/null 2>&1; then
+    echo "error: failed to mark RevDiff review pane $pane_id" >&2
+    exit 1
+fi
+
 if ! herdr pane run "$pane_id" "HERDR_PANE_ID=$(sq "$pane_id") sh $(sq "$launch_script")" >/dev/null 2>&1; then
     echo "error: herdr pane run failed for pane $pane_id" >&2
     exit 1
