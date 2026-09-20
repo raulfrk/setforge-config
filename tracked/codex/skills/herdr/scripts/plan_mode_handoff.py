@@ -1,85 +1,229 @@
 #!/usr/bin/env python3
-"""Fail-closed Herdr handoff between Codex Default and Plan modes."""
+"""Switch a completed Codex root between collaboration modes in place."""
+
+from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
+from datetime import datetime
 import json
 import os
+from pathlib import Path
 import re
 import subprocess
 import sys
 import time
-from datetime import datetime
+from typing import Any, Mapping, Sequence
+
 
 PLACEHOLDER = "› Ask Codex to do anything"
 POLL_SECONDS = 0.25
 STABLE_SECONDS = 1.0
+INPUT_SETTLE_SECONDS = 0.1
 TIMEOUT_SECONDS = 120.0
+EFFORTS = frozenset(("low", "medium", "high", "xhigh", "max", "ultra"))
 PLAN_INDICATOR = re.compile(
     r"(?:^| · | {2,}|(?<=…) )"
     r"Plan mode(?: \(shift\+tab to cycle\))?(?=$| · | {2,})"
 )
+STATUS_FIELD = re.compile(
+    r"^(Session|Model|Reasoning(?: effort)?|Directory|Collaboration mode):"
+    r"\s*(.*?)\s*$"
+)
 
 
 class HandoffError(RuntimeError):
-    pass
+    """A terminal, identity, or ordering condition made the handoff unsafe."""
 
 
-def log(message):
-    print(f"{datetime.now().astimezone().isoformat(timespec='seconds')} {message}", file=sys.stderr, flush=True)
+@dataclass(frozen=True)
+class PaneIdentity:
+    pane_id: str
+    tab_id: str
+    workspace_id: str
+    record: Mapping[str, Any]
 
 
-def run(command, deadline):
+@dataclass(frozen=True)
+class Surface:
+    model: str
+    effort: str
+    cwd: str
+    mode: str | None
+    footer: str
+
+
+@dataclass(frozen=True)
+class Status:
+    thread_id: str
+    model: str
+    effort: str
+    cwd: str
+    mode: str
+
+
+@dataclass(frozen=True)
+class HandoffResult:
+    thread_id: str
+    pane: PaneIdentity
+
+
+def log(message: str) -> None:
+    print(
+        f"{datetime.now().astimezone().isoformat(timespec='seconds')} {message}",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
+def safe_id(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]*", value):
+        raise HandoffError(f"{label} is not a safe identifier")
+    return value
+
+
+def run(command: Sequence[str], deadline: float) -> str:
+    if not command or any(not isinstance(part, str) or "\x00" in part for part in command):
+        raise HandoffError("Herdr command contains an invalid argument")
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise HandoffError("handoff deadline exceeded")
+    long_operation = "agent" in command and "prompt" in command and "--wait" in command
     try:
-        result = subprocess.run(command, text=True, capture_output=True, timeout=min(5.0, remaining))
+        result = subprocess.run(
+            list(command),
+            text=True,
+            capture_output=True,
+            timeout=remaining if long_operation else min(5.0, remaining),
+            check=False,
+        )
     except subprocess.TimeoutExpired as exc:
-        raise HandoffError(f"Herdr command timed out: {command[3] if len(command) > 3 else command[-1]}") from exc
+        raise HandoffError(f"Herdr command timed out: {command[0]}") from exc
+    except OSError as exc:
+        raise HandoffError(f"could not execute Herdr: {exc}") from exc
     if result.returncode:
-        raise HandoffError(f"Herdr command failed ({result.returncode}): {result.stderr.strip() or result.stdout.strip()}")
+        detail = result.stderr.strip() or result.stdout.strip()
+        raise HandoffError(f"Herdr command failed ({result.returncode}): {detail}")
     return result.stdout
 
 
-def marker_tail(text, marker):
+def prefix(session: str) -> list[str]:
+    return ["herdr", "--session", safe_id(session, "session")]
+
+
+def json_result(raw: str) -> Mapping[str, Any]:
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HandoffError("Herdr response was not JSON") from exc
+    if not isinstance(data, Mapping):
+        raise HandoffError("Herdr response was not an object")
+    result = data.get("result", data)
+    if not isinstance(result, Mapping):
+        raise HandoffError("Herdr result was not an object")
+    return result
+
+
+def list_panes(session: str, deadline: float) -> list[Mapping[str, Any]]:
+    result = json_result(run(prefix(session) + ["pane", "list"], deadline))
+    panes = result.get("panes")
+    if not isinstance(panes, list) or any(not isinstance(item, Mapping) for item in panes):
+        raise HandoffError("Herdr pane list was malformed")
+    return list(panes)
+
+
+def pane_status(pane: Mapping[str, Any]) -> str | None:
+    value = pane.get("agent_status", pane.get("status"))
+    return value if isinstance(value, str) else None
+
+
+def location(pane: Mapping[str, Any]) -> tuple[str, str, str]:
+    return (
+        safe_id(pane.get("pane_id"), "pane.pane_id"),
+        safe_id(pane.get("tab_id"), "pane.tab_id"),
+        safe_id(pane.get("workspace_id"), "pane.workspace_id"),
+    )
+
+
+def identity(pane: Mapping[str, Any]) -> PaneIdentity:
+    pane_id, tab_id, workspace_id = location(pane)
+    return PaneIdentity(pane_id, tab_id, workspace_id, pane)
+
+
+def pinned_pane(
+    session: str,
+    pinned: tuple[str, str, str],
+    deadline: float,
+) -> PaneIdentity:
+    matches = [pane for pane in list_panes(session, deadline) if location(pane) == pinned]
+    if len(matches) != 1:
+        raise HandoffError("pinned pane identity changed or disappeared")
+    pane = matches[0]
+    if pane.get("agent") != "codex":
+        raise HandoffError("pinned pane is no longer running Codex")
+    return identity(pane)
+
+
+def read_pane(session: str, pane_id: str, deadline: float, lines: int = 240) -> str:
+    return run(
+        prefix(session)
+        + ["pane", "read", pane_id, "--source", "recent-unwrapped", "--lines", str(lines)],
+        deadline,
+    )
+
+
+def process_info(session: str, pane_id: str, deadline: float) -> Mapping[str, Any]:
+    return json_result(
+        run(prefix(session) + ["pane", "process-info", "--pane", pane_id], deadline)
+    )
+
+
+def extract_cwd(result: Mapping[str, Any]) -> str | None:
+    process = result.get("process_info", result)
+    if not isinstance(process, Mapping):
+        return None
+    foreground = process.get("foreground_processes")
+    if not isinstance(foreground, list):
+        return None
+    values = [item.get("cwd") for item in foreground if isinstance(item, Mapping)]
+    paths = [value for value in values if isinstance(value, str)]
+    return paths[0] if paths and len(set(paths)) == 1 else None
+
+
+def same_cwd(expected: Path, observed: str) -> bool:
+    return expected.expanduser().resolve(strict=False) == Path(observed).expanduser().resolve(
+        strict=False
+    )
+
+
+def observed_cwd(
+    session: str,
+    pane: PaneIdentity,
+    expected: Path,
+    deadline: float,
+) -> str:
+    candidate = pane.record.get("foreground_cwd") or pane.record.get("cwd")
+    if isinstance(candidate, str) and same_cwd(expected, candidate):
+        return candidate
+    candidate = extract_cwd(process_info(session, pane.pane_id, deadline))
+    if not candidate or not same_cwd(expected, candidate):
+        raise HandoffError("Herdr pane cwd does not match the expected cwd")
+    return candidate
+
+
+def marker_tail(text: str, marker: str) -> list[str] | None:
     lines = text.splitlines()
     accepted = {marker, f"• {marker}"}
     matches = [index for index, line in enumerate(lines) if line.strip() in accepted]
     return None if not matches else lines[matches[-1] + 1 :]
 
 
-def footer_mode(lines):
-    footer = footer_evidence(lines)
-    if footer is None:
-        return None
-    if re.search(r"Plan mode(?: \(shift\+tab to cycle\))?$", footer):
-        return "plan"
-    # A terminal ellipsis may clip the status line after a complete context percentage.
-    return "default" if re.search(r"Context \d+% left(?: ·…)?$", footer) else None
-
-
-def footer_evidence(lines):
-    footer = next(
-        (line.strip() for line in reversed(lines) if " · Contex" in line and " · " in line),
-        None,
-    )
-    if not footer or not re.fullmatch(
-        r"gpt-[^·]+ · ~?[/\w.-]+(?: · [^·]+)* · "
-        r"Contex(?:t(?: \d+(?:% left|…)|…)|…)"
-        r"(?:(?: +| · )Plan mode(?: \(shift\+tab to cycle\))?| ·…)?",
-        footer,
-    ):
-        return None
-    return footer
-
-
-def completion(text, marker, allowed_prompts=()):
+def completion(text: str, marker: str) -> bool:
     tail = marker_tail(text, marker)
     if tail is None:
-        return None, False
+        return False
     prompts = [line.strip() for line in tail if line.lstrip().startswith("›")]
-    permitted = {PLACEHOLDER, *allowed_prompts}
-    if any(prompt not in permitted for prompt in prompts):
+    if any(prompt != PLACEHOLDER for prompt in prompts):
         raise HandoffError("new user input or a nonempty composer appeared after the marker")
     stripped = [line.strip() for line in tail]
     if any(
@@ -88,178 +232,419 @@ def completion(text, marker, allowed_prompts=()):
         for line in stripped
     ):
         raise HandoffError("a dialog or approval prompt appeared after the marker")
-    active = any(
-        line.startswith(("• Working", "• Thinking"))
-        for line in stripped
-    )
-    empty_composer = bool(prompts) and prompts[-1] == PLACEHOLDER
-    return footer_mode(tail), empty_composer and not active
+    active = any(line.startswith(("• Working", "• Thinking")) for line in stripped)
+    return bool(prompts) and prompts[-1] == PLACEHOLDER and not active
 
 
-def native_footer_row(text, marker):
-    tail = marker_tail(text, marker)
-    if tail is None:
+def surface(screen: str) -> Surface | None:
+    lines = screen.splitlines()
+    prompts = [index for index, line in enumerate(lines) if line.strip() == PLACEHOLDER]
+    if not prompts:
         return None
-    composers = [index for index, line in enumerate(tail) if line.lstrip().startswith("›")]
-    if not composers or tail[composers[-1]].strip() != PLACEHOLDER:
+    suffix = [line.strip() for line in lines[prompts[-1] + 1 :] if line.strip()]
+    if any(
+        line.startswith(("• Working", "• Thinking", "Do you trust", "Allow command", "›"))
+        for line in suffix
+    ):
         return None
-    return next(
-        (line.strip() for line in tail[composers[-1] + 1 :] if line.strip()),
+    candidates: list[tuple[str, list[str]]] = []
+    for line in suffix:
+        pieces = [part.strip() for part in line.split("·")]
+        route = pieces[0].split() if pieces else []
+        if len(pieces) >= 2 and len(route) == 2 and route[1] in EFFORTS:
+            candidates.append((line, pieces))
+    if not candidates:
+        return None
+    footer, pieces = candidates[-1]
+    model, effort = pieces[0].split()
+    mode = None
+    if PLAN_INDICATOR.search(footer):
+        mode = "plan"
+    elif re.search(r"(?:^| · )Main \[default\](?:$| · )", footer):
+        mode = "default"
+    elif "Plan mode" not in footer and re.search(
+        r"(?:^| · )Context \d+% left(?: ·…)?(?: · ← for agents)?$", footer
+    ):
+        mode = "default"
+    return Surface(model, effort, pieces[1], mode, footer)
+
+
+def discover_marker_pane(
+    session: str,
+    marker: str,
+    expected_cwd: Path,
+    deadline: float,
+) -> PaneIdentity:
+    stable_since = None
+    previous = None
+    pinned = None
+    while time.monotonic() < deadline:
+        candidates: list[tuple[PaneIdentity, str]] = []
+        for record in list_panes(session, deadline):
+            if record.get("agent") != "codex":
+                continue
+            pane = identity(record)
+            try:
+                observed_cwd(session, pane, expected_cwd, deadline)
+                screen = read_pane(session, pane.pane_id, deadline)
+                if completion(screen, marker) and surface(screen) is not None:
+                    candidates.append((pane, screen))
+            except HandoffError:
+                continue
+        if len(candidates) > 1:
+            raise HandoffError("completed handoff marker appears in multiple Codex panes")
+        if len(candidates) == 1:
+            pane, screen = candidates[0]
+            candidate_pin = (pane.pane_id, pane.tab_id, pane.workspace_id)
+            if pinned is not None and candidate_pin != pinned:
+                raise HandoffError("handoff marker moved between panes")
+            pinned = candidate_pin
+            key = screen
+            now = time.monotonic()
+            idle = pane_status(pane.record) in (None, "idle", "done", "unknown")
+            if idle and key == previous and stable_since is not None:
+                if now - stable_since >= STABLE_SECONDS:
+                    log(f"READY pane={pane.pane_id}")
+                    return pane
+            else:
+                previous = key
+                stable_since = now if idle else None
+        else:
+            previous = None
+            stable_since = None
+        time.sleep(POLL_SECONDS)
+    raise HandoffError("timed out waiting for the stable completed Codex marker")
+
+
+def status_field(line: str) -> re.Match[str] | None:
+    candidate = line.strip()
+    if candidate.startswith("│"):
+        candidate = candidate[1:].strip()
+    if candidate.endswith("│"):
+        candidate = candidate[:-1].strip()
+    return STATUS_FIELD.match(candidate)
+
+
+def status_panel(screen: str) -> Status:
+    lines = screen.splitlines()
+    session_rows = [
+        index
+        for index, line in enumerate(lines)
+        if (match := status_field(line)) is not None and match.group(1) == "Session"
+    ]
+    if not session_rows:
+        raise HandoffError("Codex /status panel has no exact Session field")
+    session_index = session_rows[-1]
+    top = next(
+        (index for index in range(session_index - 1, max(-1, session_index - 45), -1)
+         if lines[index].strip().startswith(("╭", "┌"))),
         None,
     )
+    bottom = next(
+        (index for index in range(session_index + 1, min(len(lines), session_index + 45))
+         if lines[index].strip().startswith(("╰", "└"))),
+        None,
+    )
+    if top is None or bottom is None:
+        raise HandoffError("Codex /status panel has incomplete borders")
+    fields: dict[str, str] = {}
+    for line in lines[top + 1 : bottom]:
+        match = status_field(line)
+        if match is None:
+            continue
+        key = "Reasoning" if match.group(1).startswith("Reasoning") else match.group(1)
+        fields[key] = match.group(2)
+    missing = [key for key in ("Session", "Model", "Directory", "Collaboration mode") if key not in fields]
+    if missing:
+        raise HandoffError("Codex /status panel is missing fields: " + ", ".join(missing))
+    model_text = fields["Model"].strip()
+    combined = re.match(r"^(\S+) \(reasoning (\w+)(?:,|\))", model_text)
+    if combined:
+        model, effort = combined.groups()
+    elif "Reasoning" in fields:
+        model, effort = model_text, fields["Reasoning"].split()[0]
+    else:
+        raise HandoffError("Codex /status panel has no exact reasoning effort")
+    return Status(
+        safe_id(fields["Session"], "status.Session"),
+        model,
+        effort,
+        fields["Directory"],
+        fields["Collaboration mode"].strip().lower(),
+    )
 
 
-def native_plan_visible(text, marker):
-    footer = native_footer_row(text, marker)
-    return footer is not None and PLAN_INDICATOR.search(footer) is not None
+def send_keys(
+    session: str,
+    pane_id: str,
+    keys: Sequence[str],
+    deadline: float,
+) -> None:
+    if not keys:
+        return
+    run(prefix(session) + ["agent", "send-keys", pane_id, *keys], deadline)
 
 
-def parse_args(argv=None):
-    parser = argparse.ArgumentParser()
+def submit_literal(session: str, pane_id: str, text: str, deadline: float) -> None:
+    if not text.startswith("/") or any(char in text for char in "\r\n\x00"):
+        raise HandoffError("only one literal slash command may be submitted")
+    run(prefix(session) + ["pane", "send-text", pane_id, text], deadline)
+    time.sleep(INPUT_SETTLE_SECONDS)
+    send_keys(session, pane_id, ["enter"], deadline)
+
+
+def wait_status(
+    session: str,
+    pinned: tuple[str, str, str],
+    expected_thread: str,
+    expected_cwd: Path,
+    deadline: float,
+    *,
+    expected_model: str | None = None,
+    expected_effort: str | None = None,
+    expected_mode: str | None = None,
+) -> Status:
+    before = read_pane(session, pinned[0], deadline)
+    submit_literal(session, pinned[0], "/status", deadline)
+    last_error: HandoffError | None = None
+    while time.monotonic() < deadline:
+        pane = pinned_pane(session, pinned, deadline)
+        observed_cwd(session, pane, expected_cwd, deadline)
+        screen = read_pane(session, pane.pane_id, deadline)
+        if screen == before or surface(screen) is None:
+            time.sleep(POLL_SECONDS)
+            continue
+        try:
+            status = status_panel(screen)
+            if status.thread_id != expected_thread:
+                raise HandoffError("Codex thread changed during the in-place handoff")
+            if not same_cwd(expected_cwd, status.cwd):
+                raise HandoffError("Codex /status cwd does not match the expected cwd")
+            if expected_model is not None and status.model != expected_model:
+                raise HandoffError("Codex /status model does not match the target")
+            if expected_effort is not None and status.effort != expected_effort:
+                raise HandoffError("Codex /status effort does not match the target")
+            if expected_mode is not None and status.mode != expected_mode:
+                raise HandoffError("Codex /status collaboration mode does not match the target")
+            return status
+        except HandoffError as exc:
+            last_error = exc
+        time.sleep(POLL_SECONDS)
+    detail = f": {last_error}" if last_error else ""
+    raise HandoffError(f"timed out waiting for verified Codex /status{detail}")
+
+
+def wait_surface(
+    session: str,
+    pinned: tuple[str, str, str],
+    expected_cwd: Path,
+    model: str,
+    effort: str,
+    deadline: float,
+    mode: str | None = None,
+) -> PaneIdentity:
+    while time.monotonic() < deadline:
+        pane = pinned_pane(session, pinned, deadline)
+        observed_cwd(session, pane, expected_cwd, deadline)
+        observed = surface(read_pane(session, pane.pane_id, deadline))
+        if (
+            observed is not None
+            and observed.model == model
+            and observed.effort == effort
+            and same_cwd(expected_cwd, observed.cwd)
+            and (mode is None or observed.mode == mode)
+        ):
+            return pane
+        time.sleep(POLL_SECONDS)
+    label = f"{model}/{effort}" + (f"/{mode}" if mode else "")
+    raise HandoffError(f"timed out waiting for verified Codex surface {label}")
+
+
+def enter_plan_mode(
+    session: str,
+    pinned: tuple[str, str, str],
+    expected_cwd: Path,
+    model: str,
+    effort: str,
+    deadline: float,
+) -> None:
+    before = read_pane(session, pinned[0], deadline)
+    submit_literal(session, pinned[0], "/plan", deadline)
+    while time.monotonic() < deadline:
+        pane = pinned_pane(session, pinned, deadline)
+        observed_cwd(session, pane, expected_cwd, deadline)
+        screen = read_pane(session, pane.pane_id, deadline)
+        observed = surface(screen)
+        if (
+            screen != before
+            and observed is not None
+            and observed.model == model
+            and observed.effort == effort
+            and same_cwd(expected_cwd, observed.cwd)
+        ):
+            return
+        time.sleep(POLL_SECONDS)
+    raise HandoffError("timed out waiting for /plan to settle")
+
+
+def state_root() -> Path:
+    if os.environ.get("XDG_STATE_HOME"):
+        return Path(os.environ["XDG_STATE_HOME"]).expanduser() / "codex-mode-handoff"
+    return Path.home() / ".local" / "state" / "codex-mode-handoff"
+
+
+def unfinished_path(args: argparse.Namespace) -> Path:
+    return state_root() / (
+        f"{safe_id(args.session, 'session')}-{safe_id(args.thread_id, 'thread_id')}.json"
+    )
+
+
+def require_no_unfinished(args: argparse.Namespace) -> None:
+    path = unfinished_path(args)
+    if path.exists():
+        raise HandoffError(f"unfinished handoff marker already exists: {path}")
+
+
+def write_unfinished(args: argparse.Namespace, pane: PaneIdentity) -> Path:
+    root = state_root()
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(root, 0o700)
+    path = unfinished_path(args)
+    payload = {
+        "status": "in_progress",
+        "session": args.session,
+        "thread_id": args.thread_id,
+        "pane_id": pane.pane_id,
+        "tab_id": pane.tab_id,
+        "workspace_id": pane.workspace_id,
+        "cwd": str(args.cwd.expanduser().resolve(strict=False)),
+        "target_mode": args.target_mode,
+    }
+    descriptor = None
+    try:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        os.write(descriptor, (json.dumps(payload, sort_keys=True) + "\n").encode())
+        os.fsync(descriptor)
+    except FileExistsError as exc:
+        raise HandoffError(f"unfinished handoff marker already exists: {path}") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    return path
+
+
+def remove_unfinished(path: Path | None) -> None:
+    if path is None:
+        return
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def read_continuation(path: Path) -> str:
+    mode = path.stat().st_mode
+    if mode & 0o077:
+        raise HandoffError("continuation file must not be accessible by group or others")
+    text = path.read_text(encoding="utf-8")
+    if not text.strip():
+        raise HandoffError("continuation file is empty")
+    return text
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target-mode", choices=("plan", "default"), required=True)
     parser.add_argument("--session", required=True)
     parser.add_argument("--thread-id", required=True)
+    parser.add_argument("--cwd", type=Path, required=True)
     parser.add_argument("--marker", required=True)
-    parser.add_argument("--continuation-file", required=True)
+    parser.add_argument("--continuation-file", type=Path, required=True)
     parser.add_argument("--reason")
     args = parser.parse_args(argv)
-    if args.target_mode == "default" and not args.reason:
-        parser.error("--reason is required for --target-mode default")
+    if not args.cwd.expanduser().is_dir():
+        parser.error("--cwd must name an existing directory")
     return args
 
 
-def advance_stability(stable_since, previous, mode, complete, footer, target, now):
-    acceptable = complete and (
-        target == "plan" or (footer is not None and mode in ("plan", "default"))
+def prompt_continuation(
+    session: str,
+    pane_id: str,
+    continuation: str,
+    deadline: float,
+) -> None:
+    result = json_result(
+        run(prefix(session) + ["agent", "prompt", pane_id, continuation], deadline)
     )
-    signature = (complete,) if target == "plan" else (mode, complete, footer)
-    if signature != previous or not acceptable:
-        return (now if acceptable else None), signature
-    return stable_since, signature
+    agent = result.get("agent")
+    if not isinstance(agent, Mapping) or agent.get("pane_id") != pane_id:
+        raise HandoffError("continuation response pane identity mismatch")
 
 
-def log_observation(phase, text, marker, allowed_prompts=()):
-    tail = marker_tail(text, marker)
-    mode, complete = completion(text, marker, allowed_prompts)
-    lines = tail or ()
-    footer = footer_evidence(lines)
-    candidate = next(
-        (line.strip()[:240] for line in reversed(lines) if line.strip().startswith("gpt-")),
-        None,
+def handoff(args: argparse.Namespace) -> HandoffResult:
+    continuation = read_continuation(args.continuation_file)
+    require_no_unfinished(args)
+    log(
+        f"ARMED session={safe_id(args.session, 'session')} "
+        f"thread={safe_id(args.thread_id, 'thread_id')} cwd={args.cwd}"
+    )
+    deadline = time.monotonic() + TIMEOUT_SECONDS
+    pane = discover_marker_pane(args.session, args.marker, args.cwd, deadline)
+    pinned = (pane.pane_id, pane.tab_id, pane.workspace_id)
+    initial = wait_status(
+        args.session,
+        pinned,
+        args.thread_id,
+        args.cwd,
+        deadline,
     )
     log(
-        f"OBSERVE phase={phase} marker={tail is not None} complete={complete} "
-        f"mode={mode or 'ambiguous'} footer_valid={footer is not None} "
-        f"footer={candidate!r}"
+        f"VERIFIED thread={initial.thread_id} pane={pane.pane_id} "
+        f"route={initial.model}/{initial.effort}/{initial.mode}"
     )
-
-
-def main(argv=None):
-    args = parse_args(argv)
-    continuation_stat = os.stat(args.continuation_file)
-    if continuation_stat.st_mode & 0o077:
-        raise HandoffError("continuation file must not be accessible by group or others")
-    with open(args.continuation_file, encoding="utf-8") as stream:
-        continuation = stream.read()
-    if not continuation.strip():
-        raise HandoffError("continuation file is empty")
-    deadline = time.monotonic() + TIMEOUT_SECONDS
-    log(f"START pid={os.getpid()} target={args.target_mode}")
-    prefix = ["herdr", "--session", args.session]
-    pinned = None
-
-    def identity():
-        nonlocal pinned
-        data = json.loads(run(prefix + ["pane", "list"], deadline))
-        matches = [pane for pane in data["result"]["panes"] if pane.get("agent_session", {}).get("agent") == "codex" and pane.get("agent_session", {}).get("value") == args.thread_id]
-        if len(matches) != 1:
-            raise HandoffError(f"expected one immutable thread match, found {len(matches)}")
-        location = (matches[0]["pane_id"], matches[0]["tab_id"], matches[0]["workspace_id"])
-        if pinned is None:
-            pinned = location
-            log(f"READY pane={pinned[0]} tab={pinned[1]} target={args.target_mode}")
-        elif location != pinned:
-            raise HandoffError("the matched Codex pane moved during handoff")
-        return matches[0]
-
-    pane = identity()["pane_id"]
-
-    def read():
-        return run(prefix + ["agent", "read", pane, "--source", "recent-unwrapped", "--lines", "120"], deadline)
-
-    stable_since = None
-    previous = None
-    while time.monotonic() < deadline:
-        rendered = read()
-        mode, complete = completion(rendered, args.marker)
-        footer = footer_evidence(marker_tail(rendered, args.marker) or ())
-        now = time.monotonic()
-        stable_since, previous = advance_stability(
-            stable_since, previous, mode, complete, footer, args.target_mode, now
+    wait_surface(args.session, pinned, args.cwd, initial.model, initial.effort, deadline)
+    model, effort = initial.model, initial.effort
+    if args.target_mode == "default" and initial.mode != "default":
+        raise HandoffError(
+            "Default handoff requires the developer-level Default Mode instruction first"
         )
-        if stable_since is not None and now - stable_since >= STABLE_SECONDS:
-            break
-        time.sleep(POLL_SECONDS)
-    else:
-        log_observation("initial-timeout", rendered, args.marker)
-        raise HandoffError("timed out waiting for stable completed rendering")
-
-    identity()
-    rendered = read()
-    current_mode, complete = completion(rendered, args.marker)
-    footer = footer_evidence(marker_tail(rendered, args.marker) or ())
-    if not complete or (
-        args.target_mode == "default"
-        and (footer is None or current_mode not in ("plan", "default"))
-    ):
-        raise HandoffError("completion state changed before mode action")
+    marker_path = write_unfinished(args, pane)
     if args.target_mode == "plan":
-        action = prefix + ["agent", "prompt", pane, "/plan"]
-        action_name = "/plan"
-        log(f"ACTION {action_name}")
-        run(action, deadline)
-    elif current_mode != args.target_mode:
-        action = prefix + ["pane", "send-text", pane, "\x1b[Z"]
-        action_name = "Shift+Tab"
-        log(f"ACTION {action_name}")
-        run(action, deadline)
-
-    allowed_prompts = ("› /plan",) if args.target_mode == "plan" else ()
-    while time.monotonic() < deadline:
-        rendered = read()
-        mode, complete = completion(rendered, args.marker, allowed_prompts)
-        target_visible = (
-            native_plan_visible(rendered, args.marker)
-            if args.target_mode == "plan"
-            else mode == args.target_mode
-        )
-        if target_visible and complete:
-            break
-        time.sleep(POLL_SECONDS)
-    else:
-        log_observation("target-timeout", rendered, args.marker, allowed_prompts)
-        raise HandoffError(f"target {args.target_mode} footer was not verified")
-
-    identity()
-    rendered = read()
-    mode, complete = completion(rendered, args.marker, allowed_prompts)
-    target_visible = (
-        native_plan_visible(rendered, args.marker)
-        if args.target_mode == "plan"
-        else mode == args.target_mode
+        if initial.mode == "plan":
+            log(f"NOOP /plan mode=plan already-active pane={pane.pane_id}")
+        else:
+            log(f"ACTION /plan pane={pane.pane_id}")
+            enter_plan_mode(args.session, pinned, args.cwd, model, effort, deadline)
+    final_status = wait_status(
+        args.session,
+        pinned,
+        args.thread_id,
+        args.cwd,
+        deadline,
+        expected_model=model,
+        expected_effort=effort,
+        expected_mode=args.target_mode,
     )
-    if not target_visible or not complete:
-        raise HandoffError("verified state changed before continuation")
-    response = json.loads(run(prefix + ["agent", "prompt", pane, continuation], deadline))
-    agent = response["result"]["agent"]
-    if agent.get("pane_id") != pane or agent.get("agent_session", {}).get("value") != args.thread_id:
-        raise HandoffError("continuation response identity mismatch")
-    log(f"SUCCESS target={args.target_mode} continuation=sent")
+    log(f"ACTION continuation pane={pane.pane_id} thread={final_status.thread_id}")
+    prompt_continuation(args.session, pane.pane_id, continuation, deadline)
+    final_pane = pinned_pane(args.session, pinned, deadline)
+    remove_unfinished(marker_path)
+    return HandoffResult(args.thread_id, final_pane)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+    try:
+        result = handoff(args)
+        log(
+            f"SUCCESS target={args.target_mode} thread={result.thread_id} "
+            f"pane={result.pane.pane_id} continuation=sent"
+        )
+        return 0
+    except (HandoffError, OSError, UnicodeError, ValueError) as exc:
+        log(f"FAILED {exc}")
+        return 1
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except (HandoffError, OSError, ValueError, json.JSONDecodeError) as exc:
-        log(f"FAILED {exc}")
-        raise SystemExit(1)
+    raise SystemExit(main())

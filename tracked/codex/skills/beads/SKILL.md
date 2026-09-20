@@ -103,12 +103,24 @@ snapshots.
 
 For selected existing work:
 
-1. Read the Bead and its acceptance criteria, then claim it with
-   `bd update <id> --claim` before implementation.
-2. Keep progress and relevant evidence in the private Bead when useful.
+1. Read the exact Bead, its acceptance criteria, dependencies, and current
+   notes before claiming or implementing it. Claim only after that read; do not
+   combine claim-before-read as `bd update <id> --claim && bd show <id>`.
+2. Before changing acceptance text, appending progress, or closing, refresh the
+   exact Bead when its complete authoritative state is not already current in
+   context.
 3. Run the acceptance checks and inspect their observable results.
 4. Close with `bd close <id> --reason <verified-result>` only after the checks
    succeed. If verification fails, keep it open and report the failure.
+
+Keep Bead updates decision-relevant. Append concise deltas at verified
+boundaries and reference retained artifacts instead of copying full reports.
+Record evidence on the owning leaf; update an epic or sibling only when its own
+status, dependency, acceptance criteria, or decision materially changes. Do
+not broadcast an identical checkpoint across a graph merely for visibility. If
+an exact Bead read is truncated, use bounded field-specific JSON projections
+to recover its acceptance criteria and relevant recent notes before relying on
+it.
 
 ## Decompose for review
 

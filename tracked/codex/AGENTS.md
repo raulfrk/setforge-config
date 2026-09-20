@@ -263,6 +263,14 @@ skill only when the returned canonical `path` equals the primary worktree's
 canonical `<git-root>/.beads`. Stop on any mismatch. If it reports no Beads
 project, continue normally without initializing or proposing Beads.
 
+Beads discovery is not an issue read. When current work maps to an existing
+Bead, read that exact Bead and its acceptance criteria before substantive work
+and before the first update or close in the session. Refresh it after a handoff
+or context recovery when the authoritative issue state is not fully present,
+after an external change, or at the next meaningful work phase when the last
+exact read predates that phase. Reuse a current complete read; do not reread
+unchanged issue state on every turn.
+
 Before presenting a completed plan or handing off file-changing work, assess
 whether its actual risk or an explicit request requires independent review.
 Use the `review-gate` skill for required reviews and consequential-action
