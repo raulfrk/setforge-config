@@ -33,8 +33,8 @@ The bundled Stop hook is the primary flow for Plan mode:
    current assistant turn.
 2. It stores the canonical Markdown in an ephemeral `plan-rev-*.md` snapshot.
 3. The first review is presented as a mapped file-backed text projection. On
-   desktop it uses a centered 80-column reading width; on narrow panes it
-   reserves RevDiff chrome and uses the remaining width without centering.
+   desktop it uses an 80-column reading width starting at column zero; on
+   narrow panes it reserves RevDiff chrome and uses the remaining width.
 4. The Markdown TOC starts hidden for every RevDiff process. `t` toggles it.
 5. If the user annotates, the hook blocks the turn and asks Codex to emit the
    complete revised plan with the exact previous-revision marker it provides.

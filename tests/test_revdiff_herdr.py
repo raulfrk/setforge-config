@@ -461,16 +461,16 @@ class TestRevDiffHerdr:
     @pytest.mark.parametrize(
         ("columns", "expected"),
         [
-            (30, (32, 0)),
-            (70, (57, 0)),
-            (89, (76, 0)),
-            (90, (80, 1)),
-            (120, (80, 16)),
-            (180, (80, 46)),
+            (30, 32),
+            (70, 57),
+            (89, 76),
+            (90, 80),
+            (120, 80),
+            (180, 80),
         ],
     )
-    def test_projection_geometry_captures_all_render_dimensions(
-        self, columns: int, expected: tuple[int, int]
+    def test_projection_geometry_tracks_wrap_width(
+        self, columns: int, expected: int
     ) -> None:
         assert PLAN_RUNTIME.projection_geometry(columns) == expected
 
@@ -579,7 +579,7 @@ class TestRevDiffHerdr:
         ).read_text()
         assert "pane send-keys" not in launcher
 
-    def test_desktop_plan_is_centered_at_an_80_column_reading_width(self) -> None:
+    def test_desktop_plan_starts_at_column_zero_at_an_80_column_width(self) -> None:
         capture = self.temp / "desktop-review.txt"
         result = subprocess.run(
             [str(PLAN_LAUNCHER), str(self.plan)],
@@ -594,9 +594,9 @@ class TestRevDiffHerdr:
 
         assert result.returncode == 0, result.stderr
         lines = capture.read_text().splitlines()
-        assert lines[0] == " " * 16 + "# Plan"
+        assert lines[0] == "# Plan"
         assert lines[1] == ""
-        assert lines[2] == " " * 16 + "Review this Markdown plan."
+        assert lines[2] == "Review this Markdown plan."
 
     def test_projection_preserves_code_tables_links_and_inline_markdown(self) -> None:
         source = self.temp / "structures.md"
@@ -878,7 +878,7 @@ class TestRevDiffHerdr:
         desktop = (generations / "generation-1.txt").read_text()
         narrow = (generations / "generation-2.txt").read_text()
         assert desktop != narrow
-        assert desktop.startswith(" " * 16 + "# Plan")
+        assert desktop.startswith("# Plan")
         assert narrow.startswith("# Plan")
         assert count.read_text() == "2"
         assert (output.read_text() if output.exists() else "") == expected
@@ -907,20 +907,15 @@ class TestRevDiffHerdr:
         assert not output.exists()
         assert count.read_text() == "1"
 
-    def test_centering_change_reflows_even_when_wrap_width_is_unchanged(self) -> None:
+    def test_wider_terminal_does_not_indent_or_reflow_fixed_width_projection(self) -> None:
         rc, output, count, generations = self._run_resize_runtime(
-            "", resize_columns=(180,)
+            "", resize_columns=(180,), expect_reflow=False
         )
 
         assert rc == 0
         assert not output.exists()
-        assert count.read_text() == "2"
-        assert (generations / "generation-1.txt").read_text().startswith(
-            " " * 16 + "# Plan"
-        )
-        assert (generations / "generation-2.txt").read_text().startswith(
-            " " * 46 + "# Plan"
-        )
+        assert count.read_text() == "1"
+        assert (generations / "generation-1.txt").read_text().startswith("# Plan")
 
     def test_active_annotation_defers_resize_until_modal_closes(self) -> None:
         annotation = "## codex-plan.md:2 ( )\nfinish first"

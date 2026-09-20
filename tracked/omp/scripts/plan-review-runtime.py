@@ -27,30 +27,13 @@ def terminal_columns() -> int:
     return shutil.get_terminal_size(fallback=(80, 24)).columns
 
 
-def projection_geometry(columns: int) -> tuple[int, int]:
-    """Return every terminal dimension that changes projected bytes."""
-    width = review_width(columns)
-    if columns < 90:
-        return width, 0
-    available = max(width, columns - 8)
-    return width, max(0, (available - width) // 2)
+def projection_geometry(columns: int) -> int:
+    """Return the wrap width that changes projected bytes."""
+    return review_width(columns)
 
 
-def center_projection(path: Path, padding: int) -> None:
-    """Center desktop projections without changing projected line numbers."""
-    if padding == 0:
-        return
-    prefix = " " * padding
-    lines = path.read_text(encoding="utf-8").splitlines()
-    rendered = "\n".join(prefix + line if line else "" for line in lines)
-    path.write_text(rendered + ("\n" if rendered else ""), encoding="utf-8")
-
-
-def render_single(
-    source: Path, view: Path, mapping: Path, width: int, padding: int
-) -> None:
+def render_single(source: Path, view: Path, mapping: Path, width: int) -> None:
     write_projection(source, view, mapping, width)
-    center_projection(view, padding)
 
 
 def create_baseline_repo(
@@ -58,13 +41,12 @@ def create_baseline_repo(
     source: Path,
     mapping: Path,
     width: int,
-    padding: int,
     message: str,
 ) -> Path:
     """Create the clean tracked Markdown file required by RevDiff context mode."""
     repo.mkdir()
     review_file = repo / "omp-plan.md"
-    render_single(source, review_file, mapping, width, padding)
+    render_single(source, review_file, mapping, width)
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
     subprocess.run(["git", "add", "omp-plan.md"], cwd=repo, check=True)
     subprocess.run(
@@ -96,14 +78,13 @@ def render_comparison(
     new_mapping: Path,
     old_mapping: Path,
     width: int,
-    padding: int,
 ) -> tuple[Path, Path]:
     """Represent responsive projections as a normal one-file Git diff."""
     repo = temp / f"comparison-{generation}"
     review_file = create_baseline_repo(
-        repo, old, old_mapping, width, padding, "previous plan"
+        repo, old, old_mapping, width, "previous plan"
     )
-    render_single(new, review_file, new_mapping, width, padding)
+    render_single(new, review_file, new_mapping, width)
     return repo, review_file
 
 
@@ -113,12 +94,11 @@ def render_context(
     generation: int,
     mapping: Path,
     width: int,
-    padding: int,
 ) -> tuple[Path, Path]:
     """Represent a clean Markdown document as repository-backed context."""
     repo = temp / f"context-{generation}"
     review_file = create_baseline_repo(
-        repo, source, mapping, width, padding, "plan context"
+        repo, source, mapping, width, "plan context"
     )
     return repo, review_file
 
@@ -206,7 +186,7 @@ def write_checkpoint(path: Path, content: str) -> None:
 class RevDiffResult:
     code: int
     reflow: bool
-    geometry: tuple[int, int]
+    geometry: int
 
 
 def run_revdiff(
@@ -214,7 +194,7 @@ def run_revdiff(
     env: dict[str, str],
     cwd: Path | None,
     pane_id: str,
-    initial_geometry: tuple[int, int],
+    initial_geometry: int,
 ) -> RevDiffResult:
     """Run RevDiff and terminate it once the latest safe geometry settles."""
     process = subprocess.Popen(command, env=env, cwd=cwd)
@@ -281,7 +261,7 @@ def main() -> int:
         preload = temp / "preload.md"
         generation = 0
         pending_annotations: str | None = None
-        next_geometry: tuple[int, int] | None = None
+        next_geometry: int | None = None
         env = os.environ.copy()
         env["REVDIFF_EXIT_CODE_ON_ANNOTATIONS"] = "true"
         pane_id = os.environ.get("HERDR_PANE_ID", "")
@@ -292,7 +272,7 @@ def main() -> int:
             while True:
                 geometry = next_geometry or projection_geometry(terminal_columns())
                 next_geometry = None
-                width, padding = geometry
+                width = geometry
                 try:
                     if args.old is None:
                         run_cwd, new_view = render_context(
@@ -301,7 +281,6 @@ def main() -> int:
                             generation,
                             new_map,
                             width,
-                            padding,
                         )
                         only_path = "omp-plan.md"
                         projected_name = only_path
@@ -315,7 +294,6 @@ def main() -> int:
                             new_map,
                             old_map,
                             width,
-                            padding,
                         )
                         only_path = "omp-plan.md"
                         projected_name = only_path
