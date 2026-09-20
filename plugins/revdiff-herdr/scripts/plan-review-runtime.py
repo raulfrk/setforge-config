@@ -23,17 +23,9 @@ from plan_review_format import (
 )
 
 
-def terminal_columns() -> int:
-    return shutil.get_terminal_size(fallback=(80, 24)).columns
-
-
 def projection_geometry(columns: int) -> int:
     """Return the wrap width that changes projected bytes."""
     return review_width(columns)
-
-
-def render_single(source: Path, view: Path, mapping: Path, width: int) -> None:
-    write_projection(source, view, mapping, width)
 
 
 def create_baseline_repo(
@@ -46,7 +38,7 @@ def create_baseline_repo(
     """Create the clean tracked Markdown file required by RevDiff context mode."""
     repo.mkdir()
     review_file = repo / "codex-plan.md"
-    render_single(source, review_file, mapping, width)
+    write_projection(source, review_file, mapping, width)
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
     subprocess.run(["git", "add", "codex-plan.md"], cwd=repo, check=True)
     subprocess.run(
@@ -68,39 +60,6 @@ def create_baseline_repo(
         check=True,
     )
     return review_file
-
-
-def render_comparison(
-    new: Path,
-    old: Path,
-    temp: Path,
-    generation: int,
-    new_mapping: Path,
-    old_mapping: Path,
-    width: int,
-) -> tuple[Path, Path]:
-    """Represent responsive projections as a normal one-file Git diff."""
-    repo = temp / f"comparison-{generation}"
-    review_file = create_baseline_repo(
-        repo, old, old_mapping, width, "previous plan"
-    )
-    render_single(new, review_file, new_mapping, width)
-    return repo, review_file
-
-
-def render_context(
-    source: Path,
-    temp: Path,
-    generation: int,
-    mapping: Path,
-    width: int,
-) -> tuple[Path, Path]:
-    """Represent a clean Markdown document as repository-backed context."""
-    repo = temp / f"context-{generation}"
-    review_file = create_baseline_repo(
-        repo, source, mapping, width, "plan context"
-    )
-    return repo, review_file
 
 
 def annotation_input_active(screen: str) -> bool:
@@ -204,13 +163,13 @@ def run_revdiff(
         try:
             return RevDiffResult(process.wait(timeout=0.1), False, initial_geometry)
         except subprocess.TimeoutExpired:
-            current_geometry = projection_geometry(terminal_columns())
+            current_geometry = projection_geometry(
+                shutil.get_terminal_size(fallback=(80, 24)).columns
+            )
             if current_geometry != observed_geometry:
                 observed_geometry = current_geometry
                 changed_at = (
-                    time.monotonic()
-                    if current_geometry != initial_geometry
-                    else None
+                    time.monotonic() if current_geometry != initial_geometry else None
                 )
                 continue
             if (
@@ -222,7 +181,9 @@ def run_revdiff(
                     continue
                 # Inspection can take long enough for another resize. Never
                 # terminate a generation for geometry that is already stale.
-                latest_geometry = projection_geometry(terminal_columns())
+                latest_geometry = projection_geometry(
+                    shutil.get_terminal_size(fallback=(80, 24)).columns
+                )
                 if latest_geometry != current_geometry:
                     observed_geometry = latest_geometry
                     changed_at = (
@@ -240,7 +201,7 @@ def run_revdiff(
                 return RevDiffResult(process.wait(), True, current_geometry)
 
 
-def main() -> int:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--revdiff", type=Path, required=True)
     parser.add_argument("--new", type=Path, required=True)
@@ -249,125 +210,145 @@ def main() -> int:
     descriptions = parser.add_mutually_exclusive_group()
     descriptions.add_argument("--description")
     descriptions.add_argument("--description-file", type=Path)
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+def render_generation(
+    args: argparse.Namespace,
+    temp: Path,
+    generation: int,
+    geometry: int,
+    pending_annotations: str | None,
+) -> Path:
+    new_map = temp / "codex-plan.map.json"
+    old_map = temp / "previous-plan.map.json" if args.old is not None else None
+    if args.old is None:
+        run_cwd = temp / f"context-{generation}"
+        create_baseline_repo(run_cwd, args.new, new_map, geometry, "plan context")
+    else:
+        assert old_map is not None
+        run_cwd = temp / f"comparison-{generation}"
+        review_file = create_baseline_repo(
+            run_cwd,
+            args.old,
+            old_map,
+            geometry,
+            "previous plan",
+        )
+        write_projection(args.new, review_file, new_map, geometry)
+
+    if pending_annotations is not None:
+        preload = temp / "preload.md"
+        projected = project_annotations(
+            pending_annotations,
+            read_mapping(new_map),
+            read_mapping(old_map) if old_map is not None else None,
+            "codex-plan.md",
+        )
+        if projected:
+            preload.write_text(projected, encoding="utf-8")
+        else:
+            preload.unlink(missing_ok=True)
+    return run_cwd
+
+
+def revdiff_command(args: argparse.Namespace, temp: Path, generation: int) -> list[str]:
+    command = [
+        str(args.revdiff),
+        "--only=codex-plan.md",
+        f"--output={temp / f'output-{generation}.md'}",
+        f"--history-dir={temp / f'history-{generation}'}",
+    ]
+    if args.description is not None:
+        command.append(f"--description={args.description}")
+    elif args.description_file is not None:
+        command.append(f"--description-file={args.description_file}")
+    preload = temp / "preload.md"
+    if preload.is_file() and preload.stat().st_size:
+        command.append(f"--annotations={preload}")
+    return command
+
+
+def generation_annotations(
+    args: argparse.Namespace,
+    temp: Path,
+    generation: int,
+    *,
+    from_history: bool,
+) -> str:
+    if from_history:
+        raw = read_generation_history(temp / f"history-{generation}")
+    else:
+        output = temp / f"output-{generation}.md"
+        raw = output.read_text(encoding="utf-8") if output.is_file() else ""
+    old_map = temp / "previous-plan.map.json" if args.old is not None else None
+    return remap_annotations(
+        raw,
+        read_mapping(temp / "codex-plan.map.json"),
+        read_mapping(old_map) if old_map is not None else None,
+    )
+
+
+def run_review(args: argparse.Namespace, temp: Path, pane_id: str) -> int:
+    generation = 0
+    pending_annotations: str | None = None
+    next_geometry: int | None = None
+    env = os.environ.copy()
+    env["REVDIFF_EXIT_CODE_ON_ANNOTATIONS"] = "true"
+
+    while True:
+        geometry = next_geometry or projection_geometry(
+            shutil.get_terminal_size(fallback=(80, 24)).columns
+        )
+        next_geometry = None
+        try:
+            run_cwd = render_generation(
+                args, temp, generation, geometry, pending_annotations
+            )
+        except (OSError, subprocess.SubprocessError, ValueError) as error:
+            if pending_annotations is None:
+                raise
+            print(
+                f"error: annotation reflow failed; returning the last flush: {error}",
+                file=sys.stderr,
+            )
+            return 10
+        pending_annotations = None
+
+        result = run_revdiff(
+            revdiff_command(args, temp, generation),
+            env,
+            run_cwd,
+            pane_id,
+            geometry,
+        )
+        if not result.reflow:
+            if result.code in (0, 10):
+                write_checkpoint(
+                    args.output,
+                    generation_annotations(args, temp, generation, from_history=False),
+                )
+            return result.code
+
+        canonical = generation_annotations(args, temp, generation, from_history=True)
+        # Preserve the flush before replacement projection work can fail.
+        write_checkpoint(args.output, canonical)
+        generation += 1
+        pending_annotations = canonical
+        next_geometry = result.geometry
+
+
+def main() -> int:
+    args = parse_args()
+    pane_id = os.environ.get("HERDR_PANE_ID", "")
+    if not pane_id:
+        raise RuntimeError("HERDR_PANE_ID is required for annotation handoff")
 
     with tempfile.TemporaryDirectory(prefix="plan-review-view-") as temp_value:
-        temp = Path(temp_value)
-        new_view = temp / "codex-plan.md"
-        new_map = temp / "codex-plan.map.json"
-        old_map: Path | None = None
-        if args.old is not None:
-            old_map = temp / "previous-plan.map.json"
-        preload = temp / "preload.md"
-        generation = 0
-        pending_annotations: str | None = None
-        next_geometry: int | None = None
-        env = os.environ.copy()
-        env["REVDIFF_EXIT_CODE_ON_ANNOTATIONS"] = "true"
-        pane_id = os.environ.get("HERDR_PANE_ID", "")
-        if not pane_id:
-            raise RuntimeError("HERDR_PANE_ID is required for annotation handoff")
-        result = 0
         try:
-            while True:
-                geometry = next_geometry or projection_geometry(terminal_columns())
-                next_geometry = None
-                width = geometry
-                try:
-                    if args.old is None:
-                        run_cwd, new_view = render_context(
-                            args.new,
-                            temp,
-                            generation,
-                            new_map,
-                            width,
-                        )
-                        only_path = "codex-plan.md"
-                        projected_name = only_path
-                    else:
-                        assert old_map is not None
-                        run_cwd, new_view = render_comparison(
-                            args.new,
-                            args.old,
-                            temp,
-                            generation,
-                            new_map,
-                            old_map,
-                            width,
-                        )
-                        only_path = "codex-plan.md"
-                        projected_name = only_path
-                    if pending_annotations is not None:
-                        projected = project_annotations(
-                            pending_annotations,
-                            read_mapping(new_map),
-                            read_mapping(old_map)
-                            if old_map is not None
-                            else None,
-                            projected_name,
-                        )
-                        if projected:
-                            preload.write_text(
-                                projected,
-                                encoding="utf-8",
-                            )
-                        else:
-                            preload.unlink(missing_ok=True)
-                except (OSError, subprocess.SubprocessError, ValueError) as error:
-                    if pending_annotations is None:
-                        raise
-                    print(
-                        f"error: annotation reflow failed; returning the last flush: {error}",
-                        file=sys.stderr,
-                    )
-                    return 10
-                pending_annotations = None
-                generation_output = temp / f"output-{generation}.md"
-                history_dir = temp / f"history-{generation}"
-                command = [
-                    str(args.revdiff),
-                    f"--only={only_path}",
-                    f"--output={generation_output}",
-                    f"--history-dir={history_dir}",
-                ]
-                if args.description is not None:
-                    command.append(f"--description={args.description}")
-                elif args.description_file is not None:
-                    command.append(f"--description-file={args.description_file}")
-                if preload.is_file() and preload.stat().st_size:
-                    command.append(f"--annotations={preload}")
-                run_result = run_revdiff(command, env, run_cwd, pane_id, geometry)
-                result = run_result.code
-                if not run_result.reflow:
-                    if result in (0, 10):
-                        raw = (
-                            generation_output.read_text(encoding="utf-8")
-                            if generation_output.is_file()
-                            else ""
-                        )
-                        canonical = remap_annotations(
-                            raw,
-                            read_mapping(new_map),
-                            read_mapping(old_map) if old_map is not None else None,
-                        )
-                        write_checkpoint(args.output, canonical)
-                    break
-
-                raw = read_generation_history(history_dir)
-                canonical = remap_annotations(
-                    raw,
-                    read_mapping(new_map),
-                    read_mapping(old_map) if old_map is not None else None,
-                )
-                # Preserve the flush before any operation required for the
-                # replacement projection can fail.
-                write_checkpoint(args.output, canonical)
-                generation += 1
-                pending_annotations = canonical
-                next_geometry = run_result.geometry
+            return run_review(args, Path(temp_value), pane_id)
         except KeyboardInterrupt:
             return 130
-        return result
 
 
 if __name__ == "__main__":

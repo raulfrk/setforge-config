@@ -131,17 +131,6 @@ reassessment point based on known runtime, or a short diagnostic observation
 when runtime is unknown. Before another retry, experiment, or review round,
 identify the new evidence expected and why it advances the requested outcome.
 
-Use usage-check at the start of substantial work, before a costly phase when a
-fresh reading could change the approach, on an explicit usage request, or after
-a native usage warning. Reuse a sufficiently current snapshot. Treat account
-allowance as shared with concurrent sessions on other projects; consider
-remaining allowance and time until reset when choosing a cheaper sufficient
-approach, leaving capacity for other work. Do not treat the remaining allowance
-as this task's budget or attribute account-wide changes to this session. Include
-account allowance and estimated session/agent credits; show the first check
-briefly and later changes when decision-relevant. Preserve required work, checks,
-and explicit model choices.
-
 At a missed milestone or repeated no-progress result, inspect progress and
 either justify the next step, simplify, or report the specific blocker.
 Unchanged pending status is not progress. Poll commands only when their
@@ -153,11 +142,7 @@ interfere with unrelated processes.
 Distinguish execution time from human review, approval, and external waits.
 When material, include elapsed time, the last verified outcome, the blocker,
 and next evidence in existing progress updates; do not add a heartbeat stream
-or poll just to populate an update. Usage is advisory: state its source and age,
-do not attribute account-wide usage to this task without evidence, and do not
-scrape account internals. Computed estimates must state their basis and coverage;
-do not fabricate estimates or caps, or block work because usage data is
-unavailable.
+or poll just to populate an update.
 Once acceptance criteria and relevant checks pass, finish.
 
 Shell processes and yielded commands remain separate from native agent waits.

@@ -62,12 +62,6 @@ class Status:
     mode: str
 
 
-@dataclass(frozen=True)
-class HandoffResult:
-    thread_id: str
-    pane: PaneIdentity
-
-
 def log(message: str) -> None:
     print(
         f"{datetime.now().astimezone().isoformat(timespec='seconds')} {message}",
@@ -132,22 +126,12 @@ def list_panes(session: str, deadline: float) -> list[Mapping[str, Any]]:
     return list(panes)
 
 
-def pane_status(pane: Mapping[str, Any]) -> str | None:
-    value = pane.get("agent_status", pane.get("status"))
-    return value if isinstance(value, str) else None
-
-
 def location(pane: Mapping[str, Any]) -> tuple[str, str, str]:
     return (
         safe_id(pane.get("pane_id"), "pane.pane_id"),
         safe_id(pane.get("tab_id"), "pane.tab_id"),
         safe_id(pane.get("workspace_id"), "pane.workspace_id"),
     )
-
-
-def identity(pane: Mapping[str, Any]) -> PaneIdentity:
-    pane_id, tab_id, workspace_id = location(pane)
-    return PaneIdentity(pane_id, tab_id, workspace_id, pane)
 
 
 def pinned_pane(
@@ -161,7 +145,7 @@ def pinned_pane(
     pane = matches[0]
     if pane.get("agent") != "codex":
         raise HandoffError("pinned pane is no longer running Codex")
-    return identity(pane)
+    return PaneIdentity(*location(pane), pane)
 
 
 def read_pane(session: str, pane_id: str, deadline: float, lines: int = 240) -> str:
@@ -169,12 +153,6 @@ def read_pane(session: str, pane_id: str, deadline: float, lines: int = 240) -> 
         prefix(session)
         + ["pane", "read", pane_id, "--source", "recent-unwrapped", "--lines", str(lines)],
         deadline,
-    )
-
-
-def process_info(session: str, pane_id: str, deadline: float) -> Mapping[str, Any]:
-    return json_result(
-        run(prefix(session) + ["pane", "process-info", "--pane", pane_id], deadline)
     )
 
 
@@ -205,7 +183,15 @@ def observed_cwd(
     candidate = pane.record.get("foreground_cwd") or pane.record.get("cwd")
     if isinstance(candidate, str) and same_cwd(expected, candidate):
         return candidate
-    candidate = extract_cwd(process_info(session, pane.pane_id, deadline))
+    candidate = extract_cwd(
+        json_result(
+            run(
+                prefix(session)
+                + ["pane", "process-info", "--pane", pane.pane_id],
+                deadline,
+            )
+        )
+    )
     if not candidate or not same_cwd(expected, candidate):
         raise HandoffError("Herdr pane cwd does not match the expected cwd")
     return candidate
@@ -260,10 +246,12 @@ def surface(screen: str) -> Surface | None:
     mode = None
     if PLAN_INDICATOR.search(footer):
         mode = "plan"
-    elif re.search(r"(?:^| · )Main \[default\](?:$| · )", footer):
-        mode = "default"
-    elif "Plan mode" not in footer and re.search(
-        r"(?:^| · )Context \d+% left(?: ·…)?(?: · ← for agents)?$", footer
+    elif re.search(r"(?:^| · )Main \[default\](?:$| · )", footer) or (
+        "Plan mode" not in footer
+        and re.search(
+            r"(?:^| · )Context \d+% left(?: ·…)?(?: · ← for agents)?$",
+            footer,
+        )
     ):
         mode = "default"
     return Surface(model, effort, pieces[1], mode, footer)
@@ -283,7 +271,7 @@ def discover_marker_pane(
         for record in list_panes(session, deadline):
             if record.get("agent") != "codex":
                 continue
-            pane = identity(record)
+            pane = PaneIdentity(*location(record), record)
             try:
                 observed_cwd(session, pane, expected_cwd, deadline)
                 screen = read_pane(session, pane.pane_id, deadline)
@@ -301,7 +289,8 @@ def discover_marker_pane(
             pinned = candidate_pin
             key = screen
             now = time.monotonic()
-            idle = pane_status(pane.record) in (None, "idle", "done", "unknown")
+            status = pane.record.get("agent_status", pane.record.get("status"))
+            idle = not isinstance(status, str) or status in ("idle", "done", "unknown")
             if idle and key == previous and stable_since is not None:
                 if now - stable_since >= STABLE_SECONDS:
                     log(f"READY pane={pane.pane_id}")
@@ -560,7 +549,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--cwd", type=Path, required=True)
     parser.add_argument("--marker", required=True)
     parser.add_argument("--continuation-file", type=Path, required=True)
-    parser.add_argument("--reason")
     args = parser.parse_args(argv)
     if not args.cwd.expanduser().is_dir():
         parser.error("--cwd must name an existing directory")
@@ -581,7 +569,7 @@ def prompt_continuation(
         raise HandoffError("continuation response pane identity mismatch")
 
 
-def handoff(args: argparse.Namespace) -> HandoffResult:
+def handoff(args: argparse.Namespace) -> PaneIdentity:
     continuation = read_continuation(args.continuation_file)
     require_no_unfinished(args)
     log(
@@ -627,18 +615,18 @@ def handoff(args: argparse.Namespace) -> HandoffResult:
     )
     log(f"ACTION continuation pane={pane.pane_id} thread={final_status.thread_id}")
     prompt_continuation(args.session, pane.pane_id, continuation, deadline)
-    final_pane = pinned_pane(args.session, pinned, deadline)
+    pane = pinned_pane(args.session, pinned, deadline)
     remove_unfinished(marker_path)
-    return HandoffResult(args.thread_id, final_pane)
+    return pane
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     try:
-        result = handoff(args)
+        pane = handoff(args)
         log(
-            f"SUCCESS target={args.target_mode} thread={result.thread_id} "
-            f"pane={result.pane.pane_id} continuation=sent"
+            f"SUCCESS target={args.target_mode} thread={args.thread_id} "
+            f"pane={pane.pane_id} continuation=sent"
         )
         return 0
     except (HandoffError, OSError, UnicodeError, ValueError) as exc:

@@ -11,9 +11,10 @@ license retained in [`LICENSE`](LICENSE).
 - Local plugin: `0.1.3`
 - Synchronized: `2026-08-31`
 
-The `*.upstream.sh`, hook, extractor, reference, and manual-review skill files
-originate from that revision. The `launch-*.sh` dispatchers, responsive
-Markdown internals, formatter/runtime helpers, and plan-review skill are local.
+The `*.upstream.sh`, hook, extractor, manual references, and manual-review
+scripts originate from that revision. The manual-review skill, advanced
+workflow reference, `launch-*.sh` dispatchers, responsive Markdown internals,
+formatter/runtime helpers, and plan-review skill are local.
 `skills/revdiff/scripts/launch-revdiff.sh` is the single public entry point;
 the plan-specific launch scripts are internal. Inside
 Herdr they remove competing multiplexer selectors, open a dedicated tab, format

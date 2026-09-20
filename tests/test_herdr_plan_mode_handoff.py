@@ -337,11 +337,11 @@ def install_harness(monkeypatch, tmp_path, harness):
 
 
 @pytest.mark.parametrize(
-    "target,start_model,start_mode,expects_plan",
+    "target,start_model",
     [
-        ("plan", "gpt-5.6-sol", "default", True),
-        ("plan", "gpt-6-astra", "default", True),
-        ("default", "gpt-6-astra", "default", False),
+        ("plan", "gpt-5.6-sol"),
+        ("plan", "gpt-6-astra"),
+        ("default", "gpt-6-astra"),
     ],
 )
 def test_handoff_switches_mode_without_changing_model_and_continues_once(
@@ -349,10 +349,8 @@ def test_handoff_switches_mode_without_changing_model_and_continues_once(
     tmp_path,
     target,
     start_model,
-    start_mode,
-    expects_plan,
 ):
-    harness = Harness(tmp_path, model=start_model, mode=start_mode)
+    harness = Harness(tmp_path, model=start_model)
     install_harness(monkeypatch, tmp_path, harness)
     events = []
     monkeypatch.setattr(handoff, "log", events.append)
@@ -364,7 +362,7 @@ def test_handoff_switches_mode_without_changing_model_and_continues_once(
     assert harness.continuations == ["continue with the approved work"]
     flat = [part for call in harness.calls for part in call]
     assert "/model" not in flat
-    assert flat.count("/plan") == int(expects_plan)
+    assert flat.count("/plan") == int(target == "plan")
     assert "/effort" not in flat
     assert "ctrl+c" not in flat
     assert "start" not in flat
@@ -440,6 +438,7 @@ def test_wrong_thread_aborts_before_mode_change(monkeypatch, tmp_path):
     assert "/model" not in flat
     assert "ctrl+c" not in flat
     assert "start" not in flat
+
 
 def test_continuation_failure_keeps_same_process_and_retains_marker(monkeypatch, tmp_path):
     harness = Harness(tmp_path, fail_continuation=True)

@@ -40,7 +40,6 @@ fi
 manual_src="$worktree/source/plugins/codex/skills"
 planning_src="$worktree/source/plugins/revdiff-planning"
 
-cp "$manual_src/revdiff/SKILL.md" "$plugin_root/skills/revdiff/SKILL.md"
 cp -a "$manual_src/revdiff/references/." "$plugin_root/skills/revdiff/references/"
 cp "$manual_src/revdiff/scripts/agentdeck-window.sh" "$plugin_root/skills/revdiff/scripts/agentdeck-window.sh"
 cp "$manual_src/revdiff/scripts/detect-ref.sh" "$plugin_root/skills/revdiff/scripts/detect-ref.sh"
@@ -69,47 +68,6 @@ def replace_exact(path: pathlib.Path, old: str, new: str) -> None:
 def remove_frontmatter_field(path: pathlib.Path, field: str) -> None:
     lines = path.read_text().splitlines(keepends=True)
     path.write_text("".join(line for line in lines if not line.startswith(f"{field}:")))
-
-revdiff = root / "skills/revdiff/SKILL.md"
-replace_exact(
-    revdiff,
-    '''Resolve the script directory using repo root first, then fall back to Codex home:
-
-```bash
-SCRIPT_DIR="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/codex/skills/revdiff/scripts"
-if [ ! -d "$SCRIPT_DIR" ]; then
-    SCRIPT_DIR="${CODEX_HOME:-$HOME/.codex}/skills/revdiff/scripts"
-fi
-```
-
-Use `$SCRIPT_DIR` in place of script paths throughout this skill.
-
-**Note**: the launcher override chain (user via `${CLAUDE_PLUGIN_DATA}` → bundled) is Claude-only — codex users customize the launcher by editing `~/.codex/skills/revdiff/scripts/launch-revdiff.sh` directly.''',
-    '''Codex supplies the absolute path of this loaded `SKILL.md` in the skill metadata.
-Resolve the directory containing that exact file, then use its `scripts/`
-directory:
-
-```bash
-SKILL_DIR="<absolute directory containing this loaded SKILL.md>"
-SCRIPT_DIR="$SKILL_DIR/scripts"
-```
-
-Do not guess a config-repository path or fall back to `~/.codex/skills`:
-marketplace plugins load from a versioned Codex cache. Use `$SCRIPT_DIR` for
-script paths throughout this skill.''',
-)
-replace_exact(
-    revdiff,
-    "1. Launch revdiff in a terminal overlay (agterm full-pane overlay, tmux popup, Zellij floating pane, herdr tab, kitty overlay, wezterm/Kaku split-pane, cmux split, ghostty split+zoom, iTerm2 split pane, or Emacs vterm frame)",
-    "1. Launch revdiff in a Herdr tab when `HERDR_ENV=1`, otherwise use the upstream terminal backend selection",
-)
-replace_exact(
-    revdiff,
-    "- Detects available terminal (agterm → tmux → Zellij → herdr → kitty → wezterm/Kaku → cmux → ghostty → iTerm2 → Emacs vterm)",
-    "- Selects Herdr first when `HERDR_ENV=1`; otherwise preserves the upstream backend order",
-)
-remove_frontmatter_field(revdiff, "argument-hint")
-replace_exact(revdiff, '"revdiff <file>"', '"revdiff FILE"')
 
 plan = root / "skills/revdiff-plan/SKILL.md"
 remove_frontmatter_field(plan, "argument-hint")
@@ -155,9 +113,10 @@ license retained in [\`LICENSE\`](LICENSE).
 - Local plugin: \`$local_version\`
 - Synchronized: \`$(date -u +%F)\`
 
-The \`*.upstream.sh\`, hook, extractor, reference, and manual-review skill files
-originate from that revision. The \`launch-*.sh\` dispatchers, responsive plan
-launcher, formatter/runtime helpers, and plan-review skill are local. Inside
+The \`*.upstream.sh\`, hook, extractor, manual references, and manual-review
+scripts originate from that revision. The manual-review skill, advanced
+workflow reference, \`launch-*.sh\` dispatchers, responsive plan launcher,
+formatter/runtime helpers, and plan-review skill are local. Inside
 Herdr they remove competing multiplexer selectors, open a dedicated tab, format
 the plan for the live pane width, map annotations back to canonical Markdown,
 and restore the caller's tab without changing the review result. The planning

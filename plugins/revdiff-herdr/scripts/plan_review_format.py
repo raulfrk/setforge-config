@@ -7,7 +7,7 @@ import argparse
 import json
 import re
 import textwrap
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -26,6 +26,30 @@ ANNOTATION_RE = re.compile(r"^(##\s+)(.+?)(?::(\d+)(?:-(\d+))?)?\s+\(([^)]*)\)\s
 class Projection:
     text: str
     line_map: list[int]
+
+
+@dataclass
+class _ProjectionBuilder:
+    output: list[str] = field(default_factory=list)
+    line_map: list[int] = field(default_factory=list)
+
+    def emit(
+        self, value: str, source_line: int, *, preserve_trailing: bool = False
+    ) -> None:
+        self.output.append(value if preserve_trailing else value.rstrip())
+        self.line_map.append(source_line)
+
+    def blank(self, source_line: int) -> None:
+        if not self.output or self.output[-1] == "":
+            return
+        self.emit("", source_line)
+
+    def finish(self) -> Projection:
+        while self.output and self.output[-1] == "":
+            self.output.pop()
+            self.line_map.pop()
+        text = "\n".join(self.output)
+        return Projection(text + "\n" if text else "", self.line_map)
 
 
 def review_width(columns: int) -> int:
@@ -68,10 +92,6 @@ def _is_plain_paragraph_line(lines: list[str], index: int) -> bool:
     )
 
 
-def _has_hard_break(line: str) -> bool:
-    return line.endswith("  ") or line.rstrip().endswith("\\")
-
-
 def _starts_setext_heading(lines: list[str], index: int) -> bool:
     return (
         bool(lines[index].strip())
@@ -80,7 +100,18 @@ def _starts_setext_heading(lines: list[str], index: int) -> bool:
     )
 
 
-def _coalesce_soft_wrapped_paragraphs(source_lines: list[str]) -> tuple[list[str], list[int]]:
+def _closes_fence(match: re.Match[str] | None, opening: str) -> bool:
+    """Recognize a closing fence of the opening marker's type and length."""
+    return bool(
+        match
+        and match.group(1).startswith(opening[0])
+        and len(match.group(1)) >= len(opening)
+    )
+
+
+def _coalesce_soft_wrapped_paragraphs(
+    source_lines: list[str],
+) -> tuple[list[str], list[int]]:
     """Join ordinary Markdown soft wraps while retaining canonical line origins."""
     logical: list[str] = []
     origins: list[int] = []
@@ -93,11 +124,7 @@ def _coalesce_soft_wrapped_paragraphs(source_lines: list[str]) -> tuple[list[str
         if in_fence:
             logical.append(line)
             origins.append(index + 1)
-            if (
-                fence
-                and fence.group(1).startswith(fence_marker[0])
-                and len(fence.group(1)) >= len(fence_marker)
-            ):
+            if _closes_fence(fence, fence_marker):
                 in_fence = False
                 fence_marker = ""
             index += 1
@@ -124,7 +151,8 @@ def _coalesce_soft_wrapped_paragraphs(source_lines: list[str]) -> tuple[list[str
         parts = [line.strip()]
         hard_spaces = line.endswith("  ")
         while (
-            not _has_hard_break(source_lines[index])
+            not source_lines[index].endswith("  ")
+            and not source_lines[index].rstrip().endswith("\\")
             and index + 1 < len(source_lines)
             and _is_plain_paragraph_line(source_lines, index + 1)
             and not _starts_setext_heading(source_lines, index + 1)
@@ -160,115 +188,107 @@ def _wrapped(text: str, width: int, first: str = "", rest: str = "") -> list[str
     return [first + pieces[0], *[rest + piece for piece in pieces[1:]]]
 
 
+def _render_fence(
+    builder: _ProjectionBuilder,
+    line: str,
+    source_line: int,
+    match: re.Match[str] | None,
+    opening: str,
+) -> tuple[bool, str]:
+    if opening:
+        builder.emit(line, source_line)
+        if _closes_fence(match, opening):
+            builder.blank(source_line)
+            return True, ""
+        return True, opening
+    if match:
+        builder.blank(source_line)
+        builder.emit(line, source_line)
+        return True, match.group(1)
+    return False, ""
+
+
+def _emit_wrapped(
+    builder: _ProjectionBuilder,
+    body: str,
+    width: int,
+    source_line: int,
+    prefix: str,
+) -> None:
+    for rendered in _wrapped(body, width, prefix, " " * len(prefix)):
+        builder.emit(rendered, source_line)
+    builder.blank(source_line)
+
+
+def _list_or_quote(line: str) -> tuple[str, str] | None:
+    for pattern in (BULLET_RE, ORDERED_RE):
+        match = pattern.match(line)
+        if match:
+            indent, marker, body = match.groups()
+            return f"{indent}{marker} ", body
+    quote = QUOTE_RE.match(line)
+    return quote.groups() if quote else None
+
+
+def _render_text_line(
+    builder: _ProjectionBuilder,
+    lines: list[str],
+    index: int,
+    source_line: int,
+    width: int,
+) -> None:
+    line = lines[index]
+    if not line.strip():
+        builder.blank(source_line)
+        return
+
+    heading = ATX_HEADING_RE.match(line)
+    if heading:
+        builder.blank(source_line)
+        prefix = f"{heading.group(1)} "
+        _emit_wrapped(builder, heading.group(2), width, source_line, prefix)
+        return
+
+    if (
+        line.startswith(("    ", "\t"))
+        or LINK_DEFINITION_RE.match(line)
+        or _is_table_line(lines, index)
+        or re.match(r"^\s{0,3}(?:---+|___+|\*\*\*+)\s*$", line)
+    ):
+        builder.emit(line, source_line)
+        return
+
+    prefixed = _list_or_quote(line)
+    if prefixed:
+        prefix, body = prefixed
+        _emit_wrapped(builder, body, width, source_line, prefix)
+        return
+
+    hard_spaces = line.endswith("  ")
+    body = line[:-2] if hard_spaces else line
+    rendered_lines = _wrapped(body, width)
+    if hard_spaces:
+        rendered_lines[-1] += "  "
+    for rendered in rendered_lines:
+        builder.emit(rendered, source_line, preserve_trailing=hard_spaces)
+
+
 def render_markdown(source: str, width: int) -> Projection:
     """Return a spacious review projection and its projected-to-source map."""
-    source_lines, source_origins = _coalesce_soft_wrapped_paragraphs(
-        source.splitlines()
-    )
-    output: list[str] = []
-    line_map: list[int] = []
-    in_fence = False
+    lines, origins = _coalesce_soft_wrapped_paragraphs(source.splitlines())
+    builder = _ProjectionBuilder()
     fence_marker = ""
-
-    def emit(value: str, source_line: int, *, preserve_trailing: bool = False) -> None:
-        output.append(value if preserve_trailing else value.rstrip())
-        line_map.append(source_line)
-
-    def blank(source_line: int) -> None:
-        if output and output[-1] != "":
-            emit("", source_line)
-
-    for index, line in enumerate(source_lines):
-        source_line = source_origins[index]
-        fence = FENCE_RE.match(line)
-        if in_fence:
-            emit(line, source_line)
-            if (
-                fence
-                and fence.group(1).startswith(fence_marker[0])
-                and len(fence.group(1)) >= len(fence_marker)
-            ):
-                in_fence = False
-                fence_marker = ""
-                blank(source_line)
-            continue
-        if fence:
-            blank(source_line)
-            fence_marker = fence.group(1)
-            in_fence = True
-            emit(line, source_line)
-            continue
-
-        if not line.strip():
-            blank(source_line)
-            continue
-
-        heading = ATX_HEADING_RE.match(line)
-        if heading:
-            blank(source_line)
-            prefix = f"{heading.group(1)} "
-            for rendered in _wrapped(
-                heading.group(2), width, prefix, " " * len(prefix)
-            ):
-                emit(rendered, source_line)
-            blank(source_line)
-            continue
-
-        # Preserve structures whose columns, indentation, or exact tokens are
-        # semantically significant. Long unbreakable tokens are left intact by
-        # _wrapped() as well.
-        if (
-            line.startswith("    ")
-            or line.startswith("\t")
-            or LINK_DEFINITION_RE.match(line)
-            or _is_table_line(source_lines, index)
-            or re.match(r"^\s{0,3}(?:---+|___+|\*\*\*+)\s*$", line)
-        ):
-            emit(line, source_line)
-            continue
-
-        bullet = BULLET_RE.match(line)
-        if bullet:
-            indent, marker, body = bullet.groups()
-            prefix = f"{indent}{marker} "
-            for rendered in _wrapped(body, width, prefix, " " * len(prefix)):
-                emit(rendered, source_line)
-            blank(source_line)
-            continue
-
-        ordered = ORDERED_RE.match(line)
-        if ordered:
-            indent, marker, body = ordered.groups()
-            prefix = f"{indent}{marker} "
-            for rendered in _wrapped(body, width, prefix, " " * len(prefix)):
-                emit(rendered, source_line)
-            blank(source_line)
-            continue
-
-        quote = QUOTE_RE.match(line)
-        if quote:
-            prefix, body = quote.groups()
-            for rendered in _wrapped(body, width, prefix, " " * len(prefix)):
-                emit(rendered, source_line)
-            blank(source_line)
-            continue
-
-        hard_spaces = line.endswith("  ")
-        body = line[:-2] if hard_spaces else line
-        rendered_lines = _wrapped(body, width)
-        if hard_spaces:
-            rendered_lines[-1] += "  "
-        for rendered in rendered_lines:
-            emit(rendered, source_line, preserve_trailing=hard_spaces)
-
-    while output and output[-1] == "":
-        output.pop()
-        line_map.pop()
-
-    rendered_text = "\n".join(output)
-    if rendered_text:
-        rendered_text += "\n"
-    return Projection(rendered_text, line_map)
+    for index, line in enumerate(lines):
+        handled, fence_marker = _render_fence(
+            builder,
+            line,
+            origins[index],
+            FENCE_RE.match(line),
+            fence_marker,
+        )
+        if not handled:
+            _render_text_line(builder, lines, index, origins[index], width)
+    return builder.finish()
 
 
 def write_projection(source: Path, output: Path, mapping: Path, width: int) -> None:
@@ -304,9 +324,7 @@ def remap_annotations(
 ) -> str:
     """Translate projection line references back to canonical Markdown."""
     new_source = Path(str(new_mapping.get("source", "plan.md"))).name
-    new_projected = Path(
-        str(new_mapping.get("projected", "codex-plan.md"))
-    ).name
+    new_projected = Path(str(new_mapping.get("projected", "codex-plan.md"))).name
     old_projected = (
         Path(str(old_mapping.get("projected", "previous-plan.md"))).name
         if old_mapping
@@ -326,10 +344,7 @@ def remap_annotations(
         prefix, filename, start, end, kind = match.groups()
         use_old = old_mapping is not None and (
             kind.strip() == "-"
-            or (
-                old_projected != new_projected
-                and Path(filename).name == old_projected
-            )
+            or (old_projected != new_projected and Path(filename).name == old_projected)
         )
         mapping = old_mapping if use_old and old_mapping is not None else new_mapping
         canonical_name = old_source if use_old else new_source
@@ -353,9 +368,7 @@ def _projected_line(
     values = mapping.get("line_map")
     if not isinstance(values, list) or not values:
         return source_line
-    matches = [
-        index + 1 for index, value in enumerate(values) if value == source_line
-    ]
+    matches = [index + 1 for index, value in enumerate(values) if value == source_line]
     if matches:
         return matches[-1] if last else matches[0]
     return min(
@@ -375,9 +388,7 @@ def project_annotations(
     projected_name: str | None = None,
 ) -> str:
     """Translate canonical line references into the current projection."""
-    target_name = projected_name or str(
-        new_mapping.get("projected", "codex-plan.md")
-    )
+    target_name = projected_name or str(new_mapping.get("projected", "codex-plan.md"))
     result: list[str] = []
     for line in annotations.splitlines():
         match = ANNOTATION_RE.match(line)
@@ -399,9 +410,7 @@ def project_annotations(
             projected_end = _projected_line(mapping, int(end), last=True)
             if projected_end != projected_start:
                 suffix = f"-{projected_end}"
-        result.append(
-            f"{prefix}{target_name}:{projected_start}{suffix} ({kind})"
-        )
+        result.append(f"{prefix}{target_name}:{projected_start}{suffix} ({kind})")
     trailing = "\n" if annotations.endswith("\n") else ""
     return "\n".join(result) + trailing
 

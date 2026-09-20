@@ -53,5 +53,4 @@ delivery fails after the handoff is armed.
 
 Normal Plan exit still begins with the standard plan-approval flow. Run the
 Default handoff only after the resumed session has received the developer-level
-Default Mode instruction. `--reason` records why a pre-instruction fallback is
-needed; it does not authorize one or bypass active collaboration rules.
+Default Mode instruction.

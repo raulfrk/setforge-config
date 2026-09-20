@@ -37,14 +37,6 @@ tracked_files:
     src: codex/skills/setforge/SKILL.md
     dst: ~/.codex/skills/setforge/SKILL.md
 
-  codex_skill_usage_check:
-    src: codex/skills/usage-check/SKILL.md
-    dst: ~/.codex/skills/usage-check/SKILL.md
-
-  codex_skill_usage_check_helper:
-    src: codex/skills/usage-check/scripts/check_usage.py
-    dst: ~/.codex/skills/usage-check/scripts/check_usage.py
-
   codex_skill_herdr:
     src: codex/skills/herdr/SKILL.md
     dst: ~/.codex/skills/herdr/SKILL.md
@@ -148,8 +140,6 @@ profiles:
       - codex_skill_review_gate_reference_technical_checkpoints
       - codex_skill_review_gate_reference_revdiff_returns
       - codex_skill_setforge
-      - codex_skill_usage_check
-      - codex_skill_usage_check_helper
       - codex_skill_herdr
       - codex_skill_herdr_reference_mode_handoff
       - codex_skill_herdr_reference_workspace_operations
@@ -178,8 +168,6 @@ profiles:
       - codex_global_agents
       - codex_skill_review_gate
       - codex_skill_review_gate_reference_technical_checkpoints
-      - codex_skill_usage_check
-      - codex_skill_usage_check_helper
 
 schema_version: '6.5'
 minimum_version: '6.5'
