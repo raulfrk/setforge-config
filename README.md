@@ -10,7 +10,7 @@ The profile intentionally starts small:
   project work, selective delegation, and disposable feasibility spikes over
   speculative architecture;
 - practical SetForge, Herdr, and private Beads usage skills;
-- pinned `bd`, `revdiff`, and `wt` executables;
+- pinned `bd`, `revdiff`, `rtk`, and `wt` executables;
 - a tracked `revdiff-herdr` Codex plugin that opens automatic Plan reviews and
   manual RevDiff sessions in a dedicated tab in the caller's Herdr workspace,
   formats plans for the live pane width, compares each revision with the

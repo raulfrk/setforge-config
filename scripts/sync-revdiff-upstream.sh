@@ -46,8 +46,6 @@ cp "$manual_src/revdiff/scripts/detect-ref.sh" "$plugin_root/skills/revdiff/scri
 cp "$manual_src/revdiff/scripts/read-latest-history.sh" "$plugin_root/skills/revdiff/scripts/read-latest-history.sh"
 cp "$manual_src/revdiff/scripts/launch-revdiff.sh" "$plugin_root/skills/revdiff/scripts/launch-revdiff.upstream.sh"
 cp "$manual_src/revdiff-plan/scripts/extract-last-message.sh" "$plugin_root/skills/revdiff-plan/scripts/extract-last-message.sh"
-cp "$planning_src/scripts/codex-plan-review-hook.py" "$plugin_root/scripts/codex-plan-review-hook.py"
-cp "$planning_src/scripts/resolve-launcher.sh" "$plugin_root/scripts/resolve-launcher.sh"
 cp "$planning_src/scripts/launch-plan-review.sh" "$plugin_root/scripts/launch-plan-review.upstream.sh"
 cp "$worktree/source/LICENSE" "$plugin_root/LICENSE"
 
@@ -58,34 +56,6 @@ import sys
 
 root = pathlib.Path(sys.argv[1])
 local_version = sys.argv[2]
-
-def replace_exact(path: pathlib.Path, old: str, new: str) -> None:
-    text = path.read_text()
-    if old not in text:
-        raise SystemExit(f"error: upstream text changed; adapt manually: {path}")
-    path.write_text(text.replace(old, new, 1))
-
-def remove_frontmatter_field(path: pathlib.Path, field: str) -> None:
-    lines = path.read_text().splitlines(keepends=True)
-    path.write_text("".join(line for line in lines if not line.startswith(f"{field}:")))
-
-plan = root / "skills/revdiff-plan/SKILL.md"
-remove_frontmatter_field(plan, "argument-hint")
-
-hook = root / "scripts/codex-plan-review-hook.py"
-replace_exact(
-    hook,
-    '''    if event.get("permission_mode") != "plan":
-        respond()
-        return
-
-''',
-    '''
-    # Codex permission_mode describes approval behavior, not collaboration
-    # mode. A complete proposed_plan block is the stable plan-review signal.
-
-''',
-)
 
 manifest_path = root / ".codex-plugin/plugin.json"
 manifest = json.loads(manifest_path.read_text())
@@ -113,10 +83,11 @@ license retained in [\`LICENSE\`](LICENSE).
 - Local plugin: \`$local_version\`
 - Synchronized: \`$(date -u +%F)\`
 
-The \`*.upstream.sh\`, hook, extractor, manual references, and manual-review
-scripts originate from that revision. The manual-review skill, advanced
-workflow reference, \`launch-*.sh\` dispatchers, responsive plan launcher,
-formatter/runtime helpers, and plan-review skill are local. Inside
+The \`*.upstream.sh\`, extractor, manual references, and manual-review scripts
+originate from that revision. The Plan hook and launcher resolver, manual-review
+skill, advanced workflow reference, \`launch-*.sh\` dispatchers, responsive plan
+launcher, formatter/runtime helpers, and plan-review skill are locally maintained.
+Inside
 Herdr they remove competing multiplexer selectors, open a dedicated tab, format
 the plan for the live pane width, map annotations back to canonical Markdown,
 and restore the caller's tab without changing the review result. The planning
@@ -130,10 +101,10 @@ Refresh with:
 \`\`\`
 
 The command requires an explicit upstream revision and local version, imports
-only the allowlisted upstream files, reapplies the Codex cache-path and
-plan-trigger adaptations, and leaves the local responsive formatter, plan
-skill, and Herdr launchers intact. Review the resulting diff and run the full
-test suite before publishing the new marketplace version.
+only the allowlisted upstream files, and leaves the locally maintained Plan
+hook, resolver, skills, responsive formatter, and Herdr launchers intact.
+Review the resulting diff and run the full test suite before publishing the new
+marketplace version.
 EOF
 
 echo "synchronized RevDiff $upstream_commit as local plugin $local_version"

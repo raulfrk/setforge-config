@@ -11,10 +11,11 @@ license retained in [`LICENSE`](LICENSE).
 - Local plugin: `0.1.3`
 - Synchronized: `2026-08-31`
 
-The `*.upstream.sh`, hook, extractor, manual references, and manual-review
-scripts originate from that revision. The manual-review skill, advanced
-workflow reference, `launch-*.sh` dispatchers, responsive Markdown internals,
-formatter/runtime helpers, and plan-review skill are local.
+The `*.upstream.sh`, extractor, manual references, and manual-review scripts
+originate from that revision. The Plan hook and launcher resolver, manual-review
+skill, advanced workflow reference, `launch-*.sh` dispatchers, responsive
+Markdown internals, formatter/runtime helpers, and plan-review skill are
+locally maintained.
 `skills/revdiff/scripts/launch-revdiff.sh` is the single public entry point;
 the plan-specific launch scripts are internal. Inside
 Herdr they remove competing multiplexer selectors, open a dedicated tab, format
@@ -30,7 +31,7 @@ Refresh with:
 ```
 
 The command requires an explicit upstream revision and local version, imports
-only the allowlisted upstream files, reapplies the Codex cache-path and
-plan-trigger adaptations, and leaves the local responsive formatter, plan
-skill, and Herdr launchers intact. Review the resulting diff and run the full
-test suite before publishing the new marketplace version.
+only the allowlisted upstream files, and leaves the locally maintained Plan
+hook, resolver, skills, responsive formatter, and Herdr launchers intact.
+Review the resulting diff and run the full test suite before publishing the new
+marketplace version.
