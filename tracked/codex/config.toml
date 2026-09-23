@@ -1,7 +1,7 @@
-model = "gpt-5.6-sol"
+model = "gpt-6-sol"
 tool_output_token_limit = 2000
-model_context_window = 272000
-model_auto_compact_token_limit = 244800
+model_context_window = 1050000
+model_auto_compact_token_limit = 945000
 hide_agent_reasoning = false
 show_raw_agent_reasoning = true
 model_reasoning_summary = "detailed"
@@ -14,7 +14,7 @@ personality = "pragmatic"
 
 [agents]
 max_threads = 12
-default_subagent_model = "gpt-5.6-luna"
+default_subagent_model = "gpt-6-sol"
 default_subagent_reasoning_effort = "max"
 
 [features.multi_agent_v2]

@@ -52,16 +52,6 @@ in parallel. Honor configured models and explicit user selections; do not
 silently switch models. Independent review depends on risk, not the primary
 model or implementation ownership. Keep routine work outside Plan Mode.
 
-Use `gpt-5.6-sol` at `medium` reasoning effort as the default primary
-on standard service. Use `gpt-5.6-luna` at `max` for clearly bounded independent
-implementation and exploration, and `gpt-5.6-terra` at `max` for more demanding
-independent work. Pass model and reasoning effort explicitly when spawning
-workers or explorers, with `fork_turns="none"`, so running sessions do not rely
-on reloading defaults. Preserve configured reviewer models, reasoning efforts,
-and review requirements. Explicit user selections take precedence. Choose the
-worker mix by task difficulty; start with one or two independent worker lanes
-and expand only when the decomposition supports useful parallel work.
-
 For parallel implementation, use persistent owners for bounded independent
 lanes, with the native `worker` role and `fork_turns="none"`. Each brief states
 the checkout and dirty baseline, exact ownership, interfaces and dependencies,
