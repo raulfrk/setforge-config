@@ -2,8 +2,9 @@
 
 Use `../scripts/plan_mode_handoff.py` only when global instructions authorize a
 Codex collaboration-mode handoff. The helper keeps the completed Codex root,
-process, thread, Herdr pane, model, and reasoning effort intact while moving
-between Default and Plan modes.
+process, thread, Herdr pane, and model intact while moving between Default and
+Plan modes. Codex may apply its configured Plan-mode reasoning effort when
+`/plan` is submitted.
 
 Before arming it, use the native agent list and require that this root has no
 running child work. Announce the handoff, create a private continuation file,
@@ -43,13 +44,15 @@ For a Plan target the helper sends `/plan` only when the verified mode is not
 already Plan. For a Default target, the standard plan-approval flow and the
 developer-level Default Mode instruction must already have restored Default
 Mode. The helper accepts the handoff only after a final `/status` verifies the
-same thread ID, pinned cwd, unchanged model and effort, and target collaboration
-mode. It then submits the continuation exactly once.
+same thread ID, pinned cwd, unchanged model, and target collaboration mode. For
+Plan, it also verifies that the displayed reasoning effort matches `/status`,
+allowing Codex's configured Plan-mode override. It then submits the
+continuation exactly once.
 
-The helper never opens `/model`, changes reasoning effort, sends `ctrl+c`, exits
-Codex, starts an agent, forks or resumes a thread, edits configuration, or uses
-a named profile. It retains a private unfinished marker when continuation
-delivery fails after the handoff is armed.
+The helper never opens `/model`, sets reasoning effort itself, sends `ctrl+c`,
+exits Codex, starts an agent, forks or resumes a thread, edits configuration,
+or uses a named profile. It retains a private unfinished marker when
+continuation delivery fails after the handoff is armed.
 
 Normal Plan exit still begins with the standard plan-approval flow. Run the
 Default handoff only after the resumed session has received the developer-level

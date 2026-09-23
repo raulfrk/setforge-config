@@ -454,7 +454,6 @@ def enter_plan_mode(
     pinned: tuple[str, str, str],
     expected_cwd: Path,
     model: str,
-    effort: str,
     deadline: float,
 ) -> None:
     before = read_pane(session, pinned[0], deadline)
@@ -468,8 +467,8 @@ def enter_plan_mode(
             screen != before
             and observed is not None
             and observed.model == model
-            and observed.effort == effort
             and same_cwd(expected_cwd, observed.cwd)
+            and observed.mode == "plan"
         ):
             return
         time.sleep(POLL_SECONDS)
@@ -602,7 +601,7 @@ def handoff(args: argparse.Namespace) -> PaneIdentity:
             log(f"NOOP /plan mode=plan already-active pane={pane.pane_id}")
         else:
             log(f"ACTION /plan pane={pane.pane_id}")
-            enter_plan_mode(args.session, pinned, args.cwd, model, effort, deadline)
+            enter_plan_mode(args.session, pinned, args.cwd, model, deadline)
     final_status = wait_status(
         args.session,
         pinned,
@@ -610,9 +609,19 @@ def handoff(args: argparse.Namespace) -> PaneIdentity:
         args.cwd,
         deadline,
         expected_model=model,
-        expected_effort=effort,
+        expected_effort=effort if args.target_mode == "default" else None,
         expected_mode=args.target_mode,
     )
+    if args.target_mode == "plan":
+        wait_surface(
+            args.session,
+            pinned,
+            args.cwd,
+            model,
+            final_status.effort,
+            deadline,
+            mode="plan",
+        )
     log(f"ACTION continuation pane={pane.pane_id} thread={final_status.thread_id}")
     prompt_continuation(args.session, pane.pane_id, continuation, deadline)
     pane = pinned_pane(args.session, pinned, deadline)
