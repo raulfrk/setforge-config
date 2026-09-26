@@ -264,6 +264,7 @@ class Harness:
         self.status = ""
         self.calls = []
         self.continuations = []
+        self.history_replays = 0
 
     def pane(self):
         return {
@@ -292,6 +293,10 @@ class Harness:
         if args[:2] == ["pane", "list"]:
             return json.dumps({"result": {"panes": [self.pane()]}})
         if args[:2] == ["pane", "read"]:
+            # Herdr harvests alternate-screen history by scrolling a detected
+            # idle agent when a recent read requests more rows than its screen.
+            if args[args.index("--source") + 1] in {"recent", "recent-unwrapped"}:
+                self.history_replays += 1
             return self.screen()
         if args[:2] == ["pane", "process-info"]:
             return json.dumps(
@@ -403,6 +408,15 @@ def test_handoff_submits_slash_commands_without_separate_key_events(monkeypatch,
     assert not any("send-text" in call or "send-keys" in call for call in harness.calls)
     commands = [call[-1] for call in harness.calls if call[3:5] == ["pane", "run"]]
     assert commands == ["/status", "/plan", "/status"]
+    assert harness.continuations == ["continue with the approved work"]
+
+
+def test_handoff_polling_does_not_scroll_alternate_screen_history(monkeypatch, tmp_path):
+    harness = Harness(tmp_path)
+    install_harness(monkeypatch, tmp_path, harness)
+    assert handoff.main(args(tmp_path, "plan")) == 0
+    assert harness.history_replays == 0
+    assert harness.mode == "plan"
     assert harness.continuations == ["continue with the approved work"]
 
 

@@ -148,9 +148,12 @@ def pinned_pane(
 
 
 def read_pane(session: str, pane_id: str, deadline: float, lines: int = 240) -> str:
+    # Recent/history reads can send mouse-wheel events to an idle Codex TUI
+    # while harvesting its alternate-screen history. Poll only the passive
+    # detection snapshot so observing readiness never scrolls the conversation.
     return run(
         prefix(session)
-        + ["pane", "read", pane_id, "--source", "recent-unwrapped", "--lines", str(lines)],
+        + ["pane", "read", pane_id, "--source", "detection", "--lines", str(lines)],
         deadline,
     )
 
@@ -431,7 +434,10 @@ def wait_status(
             last_error = exc
         time.sleep(POLL_SECONDS)
     detail = f": {last_error}" if last_error else ""
-    raise HandoffError(f"timed out waiting for verified Codex /status{detail}")
+    raise HandoffError(
+        f"timed out waiting for verified Codex /status{detail}. "
+        "Keep the status panel visible; enlarge the pane if it is clipped"
+    )
 
 
 def wait_surface(

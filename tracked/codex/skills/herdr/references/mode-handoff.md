@@ -48,6 +48,13 @@ footer fails with a specific diagnostic instead of guessing a mode or sending
 input. After CLI updates, run the repository's handoff regression tests and
 check a captured live footer before relying on the helper.
 
+All polling uses `herdr pane read --source detection`, which takes a passive
+snapshot without scrolling. Do not use `recent` or `recent-unwrapped` for this
+workflow: Herdr may send mouse-wheel events to harvest an idle agent's
+alternate-screen history, visibly replaying the conversation on every poll.
+The marker and complete `/status` panel must fit in the live pane. If the panel
+is clipped, enlarge the pane; never fall back to interactive history reads.
+
 Slash commands use `herdr pane run` to submit text and Enter together. Do not
 split them into `send-text`, a delay, and `send-keys`: that exposes Codex's
 autocomplete menu and unnecessarily repaints conversation history during the

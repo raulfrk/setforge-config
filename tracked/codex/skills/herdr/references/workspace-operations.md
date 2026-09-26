@@ -117,7 +117,15 @@ herdr pane wait-output <pane-id> \
   --timeout 120000
 ```
 
-Read recent output without terminal soft-wrap noise:
+Inspect current output without scrolling the agent's conversation:
+
+```bash
+herdr pane read <pane-id> --source detection --lines 120
+```
+
+Use passive `detection` reads for polling. Explicit history reads can scroll an
+idle alternate-screen agent up and back down to collect older output. Use the
+following only when that history traversal is intended:
 
 ```bash
 herdr pane read <pane-id> \
