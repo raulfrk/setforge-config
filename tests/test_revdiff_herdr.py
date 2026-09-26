@@ -1360,12 +1360,15 @@ class TestRevDiffHerdr:
             assert result.returncode == 0, f"{label}: {result.stderr}"
             assert not re.search(r"(?m)^revdiff ", self._calls()), label
 
-    def test_stop_hook_uses_current_turn_transcript_fallback(self) -> None:
+    @pytest.mark.parametrize("suffix", ["", "_continuation-id"])
+    def test_stop_hook_uses_current_turn_transcript_fallback(self, suffix) -> None:
         session_id = "session-test"
         turn_id = "turn-test"
-        transcript = self.temp / f"rollout-{session_id}.jsonl"
+        transcript = self.temp / f"rollout-{session_id}{suffix}.jsonl"
         transcript.write_text(
-            json.dumps(
+            json.dumps({"type": "session_meta", "payload": {"id": session_id}})
+            + "\n"
+            + json.dumps(
                 {
                     "type": "response_item",
                     "payload": {
@@ -1420,3 +1423,72 @@ class TestRevDiffHerdr:
             assert snapshot.read_text() == "# Transcript plan\n\nFallback Markdown."
         finally:
             snapshot.unlink(missing_ok=True)
+
+    @pytest.mark.parametrize("code", [1, 10, 130])
+    def test_stop_hook_does_not_accept_failed_or_empty_annotation_result(self, code):
+        result = subprocess.run(
+            ["python3", str(HOOK)],
+            input=json.dumps({
+                "hook_event_name": "Stop", "cwd": str(REPO_ROOT),
+                "last_assistant_message": "<proposed_plan># Review me</proposed_plan>",
+            }),
+            env=self._mixed_herdr_env(
+                PLUGIN_ROOT=str(PLUGIN_ROOT), TEST_REVDIFF_RC=str(code),
+            ),
+            text=True, capture_output=True, check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout)
+        assert payload["decision"] == "block"
+        assert "not accepted" in payload["reason"]
+
+    @pytest.mark.parametrize("wrong_session", [False, True])
+    def test_transcript_fallback_never_replays_old_plan_or_wrong_session(self, wrong_session):
+        spec = importlib.util.spec_from_file_location("plan_hook", HOOK)
+        hook = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(hook)
+        transcript = self.temp / "rollout-current.jsonl"
+        items = [{"type": "session_meta", "payload": {
+            "id": "other" if wrong_session else "current",
+        }}]
+        for turn, text in [
+            ("previous", "<proposed_plan># Previous turn</proposed_plan>"),
+            ("now", "<proposed_plan># Already reviewed</proposed_plan>"),
+            ("now", "Review failed; waiting for the user."),
+        ]:
+            items.append({"type": "response_item", "payload": {
+                "type": "message", "role": "assistant",
+                "content": [{"type": "output_text", "text": text}],
+                "internal_chat_message_metadata_passthrough": {"turn_id": turn},
+            }})
+        transcript.write_text("\n".join(map(json.dumps, items)) + "\n")
+        message, error = hook.message_from_transcript({
+            "session_id": "current", "turn_id": "now", "transcript_path": str(transcript),
+        })
+        if wrong_session:
+            assert message is None
+            assert "session" in error
+        else:
+            assert error is None
+            assert message == "Review failed; waiting for the user."
+
+    @pytest.mark.parametrize("failure", ["missing-revision", "invalid-transcript"])
+    def test_stop_hook_reports_unreadable_review_inputs_without_launching(self, failure):
+        event = {"hook_event_name": "Stop", "cwd": str(REPO_ROOT)}
+        if failure == "missing-revision":
+            event["last_assistant_message"] = (
+                "<proposed_plan><!-- previous revision: /tmp/plan-rev-missing-123.md -->\n"
+                "# Revision</proposed_plan>"
+            )
+        else:
+            transcript = self.temp / "future-rollout-name.jsonl"
+            transcript.write_text('{"type":"session_meta","payload":{"id":"current"}}\n{')
+            event.update(session_id="current", turn_id="now", transcript_path=str(transcript))
+        result = subprocess.run(
+            ["python3", str(HOOK)], input=json.dumps(event),
+            env=self._mixed_herdr_env(PLUGIN_ROOT=str(PLUGIN_ROOT)),
+            text=True, capture_output=True, check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["decision"] == "block"
+        assert not re.search(r"(?m)^revdiff ", self._calls())

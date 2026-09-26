@@ -218,7 +218,11 @@ def completion(text: str, marker: str) -> bool:
         for line in stripped
     ):
         raise HandoffError("a dialog or approval prompt appeared after the marker")
-    active = any(line.startswith(("• Working", "• Thinking")) for line in stripped)
+    active = any(
+        "esc to interrupt" in line.lower()
+        or line.startswith(("• Working", "• Thinking"))
+        for line in stripped
+    )
     return bool(prompts) and prompts[-1] == PLACEHOLDER and not active
 
 
@@ -229,7 +233,8 @@ def surface(screen: str) -> Surface | None:
         return None
     suffix = [line.strip() for line in lines[prompts[-1] + 1 :] if line.strip()]
     if any(
-        line.startswith(("• Working", "• Thinking", "Do you trust", "Allow command", "›"))
+        "esc to interrupt" in line.lower()
+        or line.startswith(("• Working", "• Thinking", "Do you trust", "Allow command", "›"))
         for line in suffix
     ):
         return None
@@ -237,14 +242,16 @@ def surface(screen: str) -> Surface | None:
     for line in suffix:
         pieces = [part.strip() for part in line.split("·")]
         route = pieces[0].split() if pieces else []
-        if len(pieces) >= 2 and len(route) == 2 and route[1] in EFFORTS:
+        # Service-tier labels (for example "fast") are presentation, not
+        # part of the model or reasoning-effort identity checked by /status.
+        if len(pieces) >= 2 and len(route) >= 2 and route[1] in EFFORTS:
             candidates.append((line, pieces))
     if not candidates:
         return None
     footer, pieces = candidates[-1]
-    model, effort = pieces[0].split()
+    model, effort = pieces[0].split()[:2]
     mode = None
-    if PLAN_INDICATOR.search(footer):
+    if any(PLAN_INDICATOR.search(line) for line in suffix):
         mode = "plan"
     elif re.search(r"(?:^| · )Main \[default\](?:$| · )", footer) or (
         "Plan mode" not in footer
@@ -266,6 +273,7 @@ def discover_marker_pane(
     stable_since = None
     previous = None
     pinned = None
+    diagnostic = "completed marker not found"
     while time.monotonic() < deadline:
         candidates: list[tuple[PaneIdentity, str]] = []
         for record in list_panes(session, deadline):
@@ -273,12 +281,23 @@ def discover_marker_pane(
                 continue
             pane = PaneIdentity(*location(record), record)
             try:
-                observed_cwd(session, pane, expected_cwd, deadline)
                 screen = read_pane(session, pane.pane_id, deadline)
-                if completion(screen, marker) and surface(screen) is not None:
-                    candidates.append((pane, screen))
             except HandoffError:
+                # A disappearing unrelated pane must not abort discovery.
                 continue
+            if marker_tail(screen, marker) is None:
+                continue
+            # SessionStart metadata can describe a different conversation when
+            # multiple TUIs share a daemon. The fresh marker locates the pane;
+            # /status below verifies the actual displayed thread before /plan.
+            observed_cwd(session, pane, expected_cwd, deadline)
+            if not completion(screen, marker):
+                diagnostic = "marker found, but Codex is still active"
+                continue
+            if surface(screen) is None:
+                diagnostic = "marker found, but the Codex footer format is unrecognized"
+                continue
+            candidates.append((pane, screen))
         if len(candidates) > 1:
             raise HandoffError("completed handoff marker appears in multiple Codex panes")
         if len(candidates) == 1:
@@ -302,7 +321,11 @@ def discover_marker_pane(
             previous = None
             stable_since = None
         time.sleep(POLL_SECONDS)
-    raise HandoffError("timed out waiting for the stable completed Codex marker")
+    raise HandoffError(
+        f"timed out waiting for the stable completed Codex marker: {diagnostic}. "
+        "Keep the original conversation loaded in a Herdr pane. If it was replaced "
+        "or closed, return to it and request a fresh handoff"
+    )
 
 
 def status_field(line: str) -> re.Match[str] | None:

@@ -40,3 +40,12 @@ python3 -m pytest -q
 Plugin tests live only in the repository's top-level `tests/` directory. They
 are not a SetForge tracked resource and are not part of the installed plugin
 payload.
+
+When updating the local plugin, preserve paths used by running conversations.
+Before `codex plugin add`, record the installed cache version and any older
+version aliases. The CLI can remove that version while a running thread still
+holds its hook command. After installation, verify the new payload against the
+reviewed source, then restore each missing old version path as a symlink to the
+compatible new version before ending the turn. Verify the complete alias chains
+and invoke the old hook paths with a benign Stop event. A new plugin version
+alone does not refresh commands already loaded by a running conversation.

@@ -5,6 +5,10 @@ tracked_files:
     src: codex/config.toml
     dst: ~/.codex/config.toml
 
+  codex_daemon_settings:
+    src: codex/app-server-daemon/settings.json
+    dst: ~/.codex/app-server-daemon/settings.json
+
   codex_global_agents:
     src: codex/AGENTS.md
     dst: ~/.codex/AGENTS.md
@@ -132,6 +136,7 @@ profiles:
   codex:
     tracked_files:
       - codex_config
+      - codex_daemon_settings
       - codex_global_agents
       - codex_agent_review_critical
       - codex_agent_review_general

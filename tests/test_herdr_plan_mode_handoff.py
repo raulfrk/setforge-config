@@ -79,6 +79,26 @@ def test_surface_parses_fixed_routes_and_modes(tmp_path):
     )
 
 
+@pytest.mark.parametrize("mode", ["default", "plan"])
+def test_handoff_accepts_fast_service_label(monkeypatch, tmp_path, mode):
+    harness = Harness(tmp_path, mode=mode)
+    original = harness.screen
+    harness.screen = lambda: original().replace(" medium ·", " medium fast ·")
+    install_harness(monkeypatch, tmp_path, harness)
+    monkeypatch.setattr(handoff, "TIMEOUT_SECONDS", 0.05)
+    assert handoff.main(args(tmp_path, "plan")) == 0
+    assert harness.continuations == ["continue with the approved work"]
+    assert harness.model == "gpt-5.6-sol"
+
+
+def test_completion_rejects_custom_working_label(tmp_path):
+    rendered = idle_screen(
+        "gpt-5.6-sol", str(tmp_path),
+        extra="• Reviewing proposed plan (2s • esc to interrupt)\n",
+    )
+    assert not handoff.completion(rendered, MARKER)
+
+
 @pytest.mark.parametrize(
     "extra,match",
     [
@@ -249,6 +269,7 @@ class Harness:
     def pane(self):
         return {
             "agent": "codex",
+            "agent_session": {"agent": "codex", "kind": "id", "value": self.thread},
             "agent_status": "idle",
             "cwd": self.cwd,
             "foreground_cwd": self.cwd,
@@ -435,9 +456,52 @@ def test_wrong_thread_aborts_before_mode_change(monkeypatch, tmp_path):
     monkeypatch.setattr(handoff, "TIMEOUT_SECONDS", 0.02)
     assert handoff.main(args(tmp_path, "plan")) == 1
     flat = [part for call in harness.calls for part in call]
+    assert "/status" in flat
+    assert "/plan" not in flat
+    assert harness.continuations == []
     assert "/model" not in flat
     assert "ctrl+c" not in flat
     assert "start" not in flat
+
+
+def test_stale_herdr_thread_metadata_does_not_override_fresh_status(monkeypatch, tmp_path):
+    harness = Harness(tmp_path)
+    original = harness.pane
+    harness.pane = lambda: {
+        **original(),
+        "agent_session": {"agent": "codex", "kind": "id", "value": "stale-thread"},
+    }
+    install_harness(monkeypatch, tmp_path, harness)
+    assert handoff.main(args(tmp_path, "plan")) == 0
+    assert harness.thread == THREAD
+    assert harness.continuations == ["continue with the approved work"]
+
+
+def test_missing_marker_never_controls_replacement_conversation(monkeypatch, tmp_path):
+    harness = Harness(tmp_path, thread="replacement-thread")
+    original = harness.screen
+    harness.screen = lambda: original().replace(MARKER, "unrelated-final")
+    install_harness(monkeypatch, tmp_path, harness)
+    monkeypatch.setattr(handoff, "TIMEOUT_SECONDS", 0.02)
+    events = []
+    monkeypatch.setattr(handoff, "log", events.append)
+    assert handoff.main(args(tmp_path, "plan")) == 1
+    assert "completed marker not found" in events[-1]
+    assert not any("send-text" in call or "send-keys" in call for call in harness.calls)
+    assert harness.continuations == []
+
+
+def test_unknown_footer_fails_with_diagnostic_without_terminal_input(monkeypatch, tmp_path):
+    harness = Harness(tmp_path)
+    original = harness.screen
+    harness.screen = lambda: original().replace(" medium ·", " unknown-format ·")
+    install_harness(monkeypatch, tmp_path, harness)
+    monkeypatch.setattr(handoff, "TIMEOUT_SECONDS", 0.01)
+    events = []
+    monkeypatch.setattr(handoff, "log", events.append)
+    assert handoff.main(args(tmp_path, "plan")) == 1
+    assert "footer format is unrecognized" in events[-1]
+    assert not any("send-text" in call or "send-keys" in call for call in harness.calls)
 
 
 def test_continuation_failure_keeps_same_process_and_retains_marker(monkeypatch, tmp_path):

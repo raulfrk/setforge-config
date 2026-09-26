@@ -39,6 +39,23 @@ The helper locates exactly one completed Codex pane using that unguessable
 rendered marker and the expected cwd. Before changing anything, it uses
 `/status` to require the supplied immutable thread ID and pins the pane, tab,
 workspace, and cwd. It never infers identity from a terminal title.
+Herdr's cached `agent_session` is not authoritative: SessionStart hooks in a
+shared Codex daemon can report another conversation's ID to an inherited pane.
+The fresh rendered marker locates the candidate; `/status` verifies its thread
+before `/plan` or continuation. Footer service labels such as `fast` are ignored;
+model and reasoning effort are still checked against `/status`. An unknown
+footer fails with a specific diagnostic instead of guessing a mode or sending
+input. After CLI updates, run the repository's handoff regression tests and
+check a captured live footer before relying on the helper.
+
+Switching focus between Herdr tabs is supported; the target tab need not be
+focused. Keep the original conversation loaded in its pane until the handoff
+finishes. Replacing it inside the same TUI or closing its TUI can unload the
+thread and hide the marker, so the helper times out without sending commands to
+the replacement conversation. On return, inspect the retained runtime log and
+collect the helper's exit status; `ARMED` alone is not success. Request a fresh
+handoff after a discovery failure. If an unfinished marker exists, inspect it
+first because a mode change or continuation may already have been attempted.
 
 For a Plan target the helper sends `/plan` only when the verified mode is not
 already Plan. For a Default target, the standard plan-approval flow and the

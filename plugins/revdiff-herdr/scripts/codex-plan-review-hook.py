@@ -27,6 +27,18 @@ def warn(message: str) -> None:
     respond({"systemMessage": f"RevDiff plan review skipped: {message}"})
 
 
+def review_failed(message: str) -> None:
+    respond({
+        "decision": "block",
+        "reason": (
+            f"RevDiff plan review failed: {message}. The plan was not accepted. "
+            "Do not implement it or interpret this failure as an annotation-free review. "
+            "Diagnose the failure or report the blocker to the user. Do not emit another "
+            "proposed_plan block until the failure is resolved."
+        ),
+    })
+
+
 def read_event() -> dict[str, Any] | None:
     try:
         event = json.load(sys.stdin)
@@ -63,7 +75,7 @@ def trusted_snapshot(path: Path) -> Path | None:
 
 
 def message_from_transcript(event: dict[str, Any]) -> tuple[str | None, str | None]:
-    """Return this turn's last plan message, or its last assistant message."""
+    """Return the latest assistant message for the verified session and turn."""
     transcript = event.get("transcript_path")
     session_id = event.get("session_id")
     turn_id = event.get("turn_id")
@@ -71,22 +83,27 @@ def message_from_transcript(event: dict[str, Any]) -> tuple[str | None, str | No
         return None, "transcript fallback requires transcript_path, session_id, and turn_id"
 
     path = Path(transcript)
-    if not path.name.endswith(f"-{session_id}.jsonl"):
-        return None, "transcript path does not match the current session"
     if not path.is_file():
         return None, "transcript file is unavailable"
 
     message: str | None = None
-    plan_message: str | None = None
+    verified_session = False
     try:
         with path.open(encoding="utf-8") as stream:
             for line in stream:
                 try:
                     item = json.loads(line)
                 except json.JSONDecodeError:
-                    continue
+                    return None, "transcript contains an incomplete or invalid JSON record"
                 payload = item.get("payload") if isinstance(item, dict) else None
                 if not isinstance(payload, dict):
+                    continue
+                if item.get("type") == "session_meta":
+                    if payload.get("id") != session_id:
+                        return None, "transcript metadata does not match the current session"
+                    verified_session = True
+                    continue
+                if not verified_session:
                     continue
                 metadata = payload.get("internal_chat_message_metadata_passthrough")
                 if not (
@@ -109,13 +126,13 @@ def message_from_transcript(event: dict[str, Any]) -> tuple[str | None, str | No
                 ]
                 if parts:
                     message = "\n".join(parts)
-                    if extract_plan(message) is not None:
-                        plan_message = message
-    except OSError:
+    except (OSError, UnicodeError):
         return None, "transcript file could not be read"
+    if not verified_session:
+        return None, "transcript has no session identity metadata"
     if message is None:
         return None, "transcript has no assistant message for the current turn"
-    return plan_message or message, None
+    return message, None
 
 
 def resolve_launcher(plugin_root: Path, data_dir: str, cwd: object) -> Path | None:
@@ -156,7 +173,10 @@ def main() -> None:
     if plan is None:
         transcript_message, error = message_from_transcript(event)
         if error is not None:
-            warn(error)
+            if isinstance(message, str) and message.strip() and not event.get("transcript_path"):
+                respond()
+            else:
+                review_failed(error)
             return
         plan = extract_plan(transcript_message or "")
         if plan is None:
@@ -167,23 +187,26 @@ def main() -> None:
 
     plugin_root_value = os.environ.get("PLUGIN_ROOT") or os.environ.get("CLAUDE_PLUGIN_ROOT")
     if not plugin_root_value:
-        warn("PLUGIN_ROOT is not set")
+        review_failed("PLUGIN_ROOT is not set")
         return
     if not shutil.which("revdiff"):
-        warn("revdiff binary is not available on PATH")
+        review_failed("revdiff binary is not available on PATH")
         return
 
     plugin_root = Path(plugin_root_value)
     data_dir = os.environ.get("PLUGIN_DATA") or os.environ.get("CLAUDE_PLUGIN_DATA", "")
     launcher = resolve_launcher(plugin_root, data_dir, event.get("cwd"))
     if launcher is None:
-        warn("no executable launch-revdiff.sh was found")
+        review_failed("no executable launch-revdiff.sh was found")
         return
 
     first_line, separator, rest = plan.partition("\n")
     marker = MARKER_RE.match(first_line)
     if marker:
         old_snapshot = trusted_snapshot(Path(marker.group(1)))
+        if old_snapshot is None:
+            review_failed("the previous revision snapshot is unavailable")
+            return
         plan = rest if separator else ""
     else:
         old_snapshot = None
@@ -209,22 +232,23 @@ def main() -> None:
             capture_output=True,
             text=True,
             timeout=345600,
+            cwd=event.get("cwd") if isinstance(event.get("cwd"), str) else None,
             check=False,
         )
     except KeyboardInterrupt:
         if new_snapshot is not None:
             new_snapshot.unlink(missing_ok=True)
-        warn("launcher was interrupted")
+        review_failed("launcher was interrupted")
         return
     except subprocess.TimeoutExpired:
         if new_snapshot is not None:
             new_snapshot.unlink(missing_ok=True)
-        warn("launcher timed out")
+        review_failed("launcher timed out")
         return
     except OSError:
         if new_snapshot is not None:
             new_snapshot.unlink(missing_ok=True)
-        warn(
+        review_failed(
             "plan snapshot could not be written"
             if operation == "snapshot"
             else "launcher could not be started"
@@ -234,13 +258,19 @@ def main() -> None:
     assert new_snapshot is not None
     if result.returncode not in SUCCESS_CODES:
         new_snapshot.unlink(missing_ok=True)
-        warn(f"launcher exited with status {result.returncode}")
+        detail = result.stderr.strip()[-2000:]
+        review_failed(f"launcher exited with status {result.returncode}" + (f": {detail}" if detail else ""))
+        return
+
+    annotations = result.stdout.strip()
+    if result.returncode == 10 and not annotations:
+        new_snapshot.unlink(missing_ok=True)
+        review_failed("launcher reported annotations but returned no annotation text")
         return
 
     if old_snapshot is not None:
         old_snapshot.unlink(missing_ok=True)
 
-    annotations = result.stdout.strip()
     if not annotations:
         new_snapshot.unlink(missing_ok=True)
         respond()
@@ -269,4 +299,4 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        warn("launcher was interrupted")
+        review_failed("launcher was interrupted")

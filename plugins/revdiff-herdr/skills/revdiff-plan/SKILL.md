@@ -44,6 +44,13 @@ The bundled Stop hook is the primary flow for Plan mode:
    before Codex receives the annotations.
 8. Quitting without annotations accepts the plan and removes its snapshot.
 
+The transcript fallback verifies the embedded session ID and selects only the
+latest assistant message in the current turn; rollout filenames are not an
+identity contract. Launcher failures, missing revision snapshots, and an
+annotation exit code with no annotation text block completion with a diagnostic.
+They do not mean the user accepted the plan. Diagnose or report the failure;
+do not implement the plan or repeatedly re-emit it to retry an unresolved error.
+
 When the terminal width stabilizes after a resize or client switch, the review
 automatically reopens at the new width. Existing annotations, including an
 empty annotation set, are preserved without returning control to Codex. Press

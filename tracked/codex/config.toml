@@ -2,6 +2,7 @@ model = "gpt-6-sol"
 tool_output_token_limit = 2000
 model_context_window = 1050000
 model_auto_compact_token_limit = 945000
+check_for_update_on_startup = false
 hide_agent_reasoning = false
 show_raw_agent_reasoning = true
 model_reasoning_summary = "detailed"
