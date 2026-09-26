@@ -19,7 +19,6 @@ from typing import Any, Mapping, Sequence
 PLACEHOLDER = "› Ask Codex to do anything"
 POLL_SECONDS = 0.25
 STABLE_SECONDS = 1.0
-INPUT_SETTLE_SECONDS = 0.1
 TIMEOUT_SECONDS = 120.0
 EFFORTS = frozenset(("low", "medium", "high", "xhigh", "max", "ultra"))
 PLAN_INDICATOR = re.compile(
@@ -386,23 +385,12 @@ def status_panel(screen: str) -> Status:
     )
 
 
-def send_keys(
-    session: str,
-    pane_id: str,
-    keys: Sequence[str],
-    deadline: float,
-) -> None:
-    if not keys:
-        return
-    run(prefix(session) + ["agent", "send-keys", pane_id, *keys], deadline)
-
-
 def submit_literal(session: str, pane_id: str, text: str, deadline: float) -> None:
     if not text.startswith("/") or any(char in text for char in "\r\n\x00"):
         raise HandoffError("only one literal slash command may be submitted")
-    run(prefix(session) + ["pane", "send-text", pane_id, text], deadline)
-    time.sleep(INPUT_SETTLE_SECONDS)
-    send_keys(session, pane_id, ["enter"], deadline)
+    # One native submission avoids exposing slash-command autocomplete between
+    # typing and Enter, which repaints older visible conversation content.
+    run(prefix(session) + ["pane", "run", pane_id, text], deadline)
 
 
 def wait_status(

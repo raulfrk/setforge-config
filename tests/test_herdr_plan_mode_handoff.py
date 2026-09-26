@@ -260,7 +260,6 @@ class Harness:
         self.mode = mode
         self.thread = thread
         self.fail_continuation = fail_continuation
-        self.pending = None
         self.status_serial = 0
         self.status = ""
         self.calls = []
@@ -298,28 +297,22 @@ class Harness:
             return json.dumps(
                 {"result": {"process_info": {"foreground_processes": [{"cwd": self.cwd}]}}}
             )
-        if args[:2] == ["pane", "send-text"]:
-            self.pending = args[-1]
-            return "{}"
-        if args[:2] == ["agent", "send-keys"]:
-            keys = args[3:]
-            if "enter" in keys and self.pending:
-                command_text = self.pending
-                self.pending = None
-                if command_text == "/status":
-                    self.status_serial += 1
-                    self.status = status_panel(
-                        self.model,
-                        self.cwd,
-                        self.mode,
-                        self.thread,
-                        self.status_serial,
-                        self.effort,
-                    )
-                elif command_text == "/plan":
-                    self.mode = "plan"
-                else:
-                    raise AssertionError(f"unexpected slash command: {command_text}")
+        if args[:2] == ["pane", "run"]:
+            command_text = args[-1]
+            if command_text == "/status":
+                self.status_serial += 1
+                self.status = status_panel(
+                    self.model,
+                    self.cwd,
+                    self.mode,
+                    self.thread,
+                    self.status_serial,
+                    self.effort,
+                )
+            elif command_text == "/plan":
+                self.mode = "plan"
+            else:
+                raise AssertionError(f"unexpected slash command: {command_text}")
             return json.dumps({"result": {"type": "ok"}})
         if args[:2] == ["agent", "prompt"]:
             if self.fail_continuation:
@@ -353,7 +346,6 @@ def install_harness(monkeypatch, tmp_path, harness):
     monkeypatch.setattr(handoff, "run", harness.run)
     monkeypatch.setattr(handoff, "POLL_SECONDS", 0)
     monkeypatch.setattr(handoff, "STABLE_SECONDS", 0)
-    monkeypatch.setattr(handoff, "INPUT_SETTLE_SECONDS", 0)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
 
 
@@ -402,6 +394,16 @@ def test_default_handoff_requires_default_mode_instruction(monkeypatch, tmp_path
     assert "/model" not in flat
     assert "/plan" not in flat
     assert harness.continuations == []
+
+
+def test_handoff_submits_slash_commands_without_separate_key_events(monkeypatch, tmp_path):
+    harness = Harness(tmp_path)
+    install_harness(monkeypatch, tmp_path, harness)
+    assert handoff.main(args(tmp_path, "plan")) == 0
+    assert not any("send-text" in call or "send-keys" in call for call in harness.calls)
+    commands = [call[-1] for call in harness.calls if call[3:5] == ["pane", "run"]]
+    assert commands == ["/status", "/plan", "/status"]
+    assert harness.continuations == ["continue with the approved work"]
 
 
 @pytest.mark.parametrize(
@@ -487,7 +489,7 @@ def test_missing_marker_never_controls_replacement_conversation(monkeypatch, tmp
     monkeypatch.setattr(handoff, "log", events.append)
     assert handoff.main(args(tmp_path, "plan")) == 1
     assert "completed marker not found" in events[-1]
-    assert not any("send-text" in call or "send-keys" in call for call in harness.calls)
+    assert all(call[3:5] in (["pane", "list"], ["pane", "read"]) for call in harness.calls)
     assert harness.continuations == []
 
 
@@ -501,7 +503,7 @@ def test_unknown_footer_fails_with_diagnostic_without_terminal_input(monkeypatch
     monkeypatch.setattr(handoff, "log", events.append)
     assert handoff.main(args(tmp_path, "plan")) == 1
     assert "footer format is unrecognized" in events[-1]
-    assert not any("send-text" in call or "send-keys" in call for call in harness.calls)
+    assert all(call[3:5] in (["pane", "list"], ["pane", "read"]) for call in harness.calls)
 
 
 def test_continuation_failure_keeps_same_process_and_retains_marker(monkeypatch, tmp_path):

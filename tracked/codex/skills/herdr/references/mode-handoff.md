@@ -48,6 +48,11 @@ footer fails with a specific diagnostic instead of guessing a mode or sending
 input. After CLI updates, run the repository's handoff regression tests and
 check a captured live footer before relying on the helper.
 
+Slash commands use `herdr pane run` to submit text and Enter together. Do not
+split them into `send-text`, a delay, and `send-keys`: that exposes Codex's
+autocomplete menu and unnecessarily repaints conversation history during the
+handoff. The fresh `/status` checks still run before and after the mode change.
+
 Switching focus between Herdr tabs is supported; the target tab need not be
 focused. Keep the original conversation loaded in its pane until the handoff
 finishes. Replacing it inside the same TUI or closing its TUI can unload the
