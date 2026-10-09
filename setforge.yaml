@@ -81,6 +81,94 @@ tracked_files:
     src: herdr/config.toml
     dst: ~/.config/herdr/config.toml
 
+  claude_global_instructions:
+    src: claude/CLAUDE.md
+    dst: ~/.claude/CLAUDE.md
+
+  claude_agent_review_correctness:
+    src: claude/agents/review-correctness.md
+    dst: ~/.claude/agents/review-correctness.md
+
+  claude_agent_review_critical:
+    src: claude/agents/review-critical.md
+    dst: ~/.claude/agents/review-critical.md
+
+  claude_agent_review_general:
+    src: claude/agents/review-general.md
+    dst: ~/.claude/agents/review-general.md
+
+  claude_settings:
+    src: claude/settings.json
+    dst: ~/.claude/settings.json
+
+  claude_skill_beads_adapt:
+    src: claude/skills/beads-adapt/SKILL.md
+    dst: ~/.claude/skills/beads-adapt/SKILL.md
+
+  claude_skill_beads_bootstrap:
+    src: claude/skills/beads-bootstrap/SKILL.md
+    dst: ~/.claude/skills/beads-bootstrap/SKILL.md
+
+  claude_skill_beads:
+    src: claude/skills/beads/SKILL.md
+    dst: ~/.claude/skills/beads/SKILL.md
+
+  claude_skill_beads_reference_project_config:
+    src: claude/skills/beads/references/project-config.md
+    dst: ~/.claude/skills/beads/references/project-config.md
+
+  claude_skill_cross_project_planning:
+    src: claude/skills/cross-project-planning/SKILL.md
+    dst: ~/.claude/skills/cross-project-planning/SKILL.md
+
+  claude_skill_development_platform_use:
+    src: claude/skills/development-platform-use/SKILL.md
+    dst: ~/.claude/skills/development-platform-use/SKILL.md
+
+  claude_skill_herdr:
+    src: claude/skills/herdr/SKILL.md
+    dst: ~/.claude/skills/herdr/SKILL.md
+
+  claude_skill_herdr_reference_workspace_operations:
+    src: claude/skills/herdr/references/workspace-operations.md
+    dst: ~/.claude/skills/herdr/references/workspace-operations.md
+
+  claude_skill_moshi_media_preview:
+    src: claude/skills/moshi-media-preview/SKILL.md
+    dst: ~/.claude/skills/moshi-media-preview/SKILL.md
+
+  claude_skill_parallel_implementation:
+    src: claude/skills/parallel-implementation/SKILL.md
+    dst: ~/.claude/skills/parallel-implementation/SKILL.md
+
+  claude_skill_review_gate:
+    src: claude/skills/review-gate/SKILL.md
+    dst: ~/.claude/skills/review-gate/SKILL.md
+
+  claude_skill_review_gate_reference_revdiff_returns:
+    src: claude/skills/review-gate/references/revdiff-returns.md
+    dst: ~/.claude/skills/review-gate/references/revdiff-returns.md
+
+  claude_skill_review_gate_reference_technical_checkpoints:
+    src: claude/skills/review-gate/references/technical-checkpoints.md
+    dst: ~/.claude/skills/review-gate/references/technical-checkpoints.md
+
+  claude_skill_setforge:
+    src: claude/skills/setforge/SKILL.md
+    dst: ~/.claude/skills/setforge/SKILL.md
+
+  claude_skill_setforge_reference_claude_profile:
+    src: claude/skills/setforge/references/claude-profile.md
+    dst: ~/.claude/skills/setforge/references/claude-profile.md
+
+  claude_skill_technical_investigation:
+    src: claude/skills/technical-investigation/SKILL.md
+    dst: ~/.claude/skills/technical-investigation/SKILL.md
+
+  claude_statusline:
+    src: claude/statusline.sh
+    dst: ~/.claude/statusline.sh
+
 packages:
   beads:
     type: github_release
@@ -173,6 +261,46 @@ profiles:
       - codex_global_agents
       - codex_skill_review_gate
       - codex_skill_review_gate_reference_technical_checkpoints
+
+  claude:
+    tracked_files:
+      - claude_global_instructions
+      - claude_agent_review_correctness
+      - claude_agent_review_critical
+      - claude_agent_review_general
+      - claude_settings
+      - claude_skill_beads_adapt
+      - claude_skill_beads_bootstrap
+      - claude_skill_beads
+      - claude_skill_beads_reference_project_config
+      - claude_skill_cross_project_planning
+      - claude_skill_development_platform_use
+      - claude_skill_herdr
+      - claude_skill_herdr_reference_workspace_operations
+      - claude_skill_moshi_media_preview
+      - claude_skill_parallel_implementation
+      - claude_skill_review_gate
+      - claude_skill_review_gate_reference_revdiff_returns
+      - claude_skill_review_gate_reference_technical_checkpoints
+      - claude_skill_setforge
+      - claude_skill_setforge_reference_claude_profile
+      - claude_skill_technical_investigation
+      - claude_statusline
+      - herdr_config
+    packages:
+      - beads
+      - revdiff
+      - worktrunk
+      # Add revdiff_herdr_claude once plugins/revdiff-herdr-claude is published
+      # to the GitHub marketplace; until then it is installed from this checkout.
+
+  claude-policy:
+    tracked_files:
+      - claude_skill_technical_investigation
+      - claude_skill_parallel_implementation
+      - claude_global_instructions
+      - claude_skill_review_gate
+      - claude_skill_review_gate_reference_technical_checkpoints
 
 schema_version: '6.5'
 minimum_version: '6.5'
