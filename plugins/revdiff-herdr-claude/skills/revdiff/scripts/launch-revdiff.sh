@@ -1,0 +1,1 @@
+../../../../revdiff-herdr/skills/revdiff/scripts/launch-revdiff.sh

@@ -1,0 +1,1 @@
+../../revdiff-herdr/scripts/resolve-launcher.sh

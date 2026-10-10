@@ -1,0 +1,1 @@
+../../../../revdiff-herdr/skills/revdiff/scripts/detect-ref.sh

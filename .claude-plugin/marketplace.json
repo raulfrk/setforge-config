@@ -1,0 +1,15 @@
+{
+  "name": "personal",
+  "description": "Raul's Claude Code plugins",
+  "owner": {
+    "name": "Raul"
+  },
+  "plugins": [
+    {
+      "name": "revdiff-herdr",
+      "source": "./plugins/revdiff-herdr-claude",
+      "description": "Review Claude Code plans, diffs, and Markdown in a dedicated Herdr tab",
+      "category": "development"
+    }
+  ]
+}
