@@ -1,7 +1,9 @@
 # RevDiff returns
 
-Capital `O` is an internal RevDiff reflow and does not trigger this skill. Act
-only after the completed review returns annotations.
+`O` exports annotations without quitting; automatic reflow does not complete a
+review. Act on annotations returned by a completed review or on a verified
+export the user explicitly asks to process. An export alone is not acceptance
+or completion.
 
 Interpret returned annotations in context. Answer questions directly, apply
 concrete requested edits within scope, and clarify material ambiguity. Punctuation

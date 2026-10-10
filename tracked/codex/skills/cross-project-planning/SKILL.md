@@ -26,16 +26,13 @@ permission to initialize one.
 
 ## Use the central project explicitly
 
-Never rely on current-directory or parent-directory discovery. Resolve and
-verify the fixed project directly:
-
-```sh
-git -C /home/raul/planning rev-parse --show-toplevel
-bd -C /home/raul/planning where --json
-```
-
-Canonicalize both returned paths and require the Beads path to equal
-`/home/raul/planning/.beads`. Stop and report any mismatch.
+Never rely on current-directory or parent-directory discovery. Load the base
+`beads` skill and perform its complete discovery procedure explicitly from
+`/home/raul/planning`. Require `BEADS_DIR` to be unset and apply its symlink and
+redirect checks before `bd where` or canonicalization. Reuse validated discovery
+only while its task, checkout, environment, and relevant paths remain unchanged.
+Require the canonical Git root to be the selected planning checkout and the
+Beads path to be its canonical `.beads` directory. Stop and report any mismatch.
 
 Use the base `beads` skill for creation proposals and approval, claiming,
 verification, closing, privacy, and configuration mechanics. A central issue

@@ -5,172 +5,130 @@ description: Coordinate independent reviews and consequential-action checkpoints
 
 # Review gate
 
-Determine whether the current phase needs independent review, coordinate any
-required read-only reviews, validate findings, and keep fixes minimal. The
-primary owns design, implementation, tests, corrections, integration, and
-acceptance. Delegate implementation only when useful independent work can run
-in parallel. Honor configured models and explicit user selections. Delegation,
-a multi-file change, and Plan Mode alone do not require independent review.
-Reviewers never edit and cannot independently review their own design or work.
+The primary owns design, implementation, corrections, integration, and acceptance.
+Reviewers are independent and never edit or review their own design/work. Honor
+configured roles/models and explicit user selections.
 
-Read-only is a behavioral instruction for reviewers, not a sandbox guarantee.
-On Codex 0.153.2, subagents inherit the primary agent's runtime permissions even
-when a role file declares `sandbox_mode = "read-only"`. Keep the role setting as
-intent, explicitly prohibit reviewer edits in every brief, and verify from the
-reviewer rollouts that they performed no edit or other mutating tool call.
+A read-only role setting is not enforced filesystem isolation in this setup;
+subagents may inherit the primary's runtime permissions. Prohibit edits and other
+mutations in every reviewer brief, and inspect the rollout's actual tool calls
+before accepting its result.
 
-Read [references/technical-checkpoints.md](references/technical-checkpoints.md)
-when the work may involve material design, a consequential material action,
-repeated corrections, or an inconclusive material spike. Read
-[references/revdiff-returns.md](references/revdiff-returns.md) when RevDiff
-feedback returns after an initial gate. If a known fixture or path contains
-feedback intended for later, do not inspect or incorporate it before it returns,
-and explicitly instruct every initial reviewer not to inspect that fixture or
-path. Never discard or defer actionable RevDiff feedback after it returns. Route
-implementation corrections to the existing owner; reviewers and design authors
-remain read-only.
+## Decide whether a gate is required
 
-## Select the mode and evidence
+Require independent `review_correctness` for actual material effects on
+architecture, component boundaries, public interfaces, data flow, security,
+credentials, migrations, destructive operations, or compatibility; unresolved
+nonlocal correctness; or an explicit independent-review request. Judge
+consequences, not keywords, file count, delegation, or Plan Mode alone.
+Routine locally observable work finishes with primary validation.
 
-Use this skill when actual material risk or an explicit request requires
-independent review, including a consequential-action checkpoint. For routine
-locally observable work, primary validation of the diff, behavior, and relevant
-checks suffices without invoking this skill. When review is required, assess a
-completed plan before presentation and completed file-changing work after its
-deterministic checks, before handoff, commit, or push.
+Read [technical-checkpoints.md](references/technical-checkpoints.md) for material
+design/actions, repeated corrections, or inconclusive material spikes. It owns
+the independent checkpoint requirements before consequential actions, after an
+inconclusive spike, and before a third correction when material/critical
+uncertainty remains. A reviewer cannot waive the required runnable proof.
+Block dependent work when required review is unavailable or validated findings
+remain unresolved.
 
-- **Plan mode:** assess the complete draft before its first presentation. Keep
-  the user request, repository facts, recorded decisions, spike evidence, and
-  full draft available.
-- **Implementation mode:** assess the final state after deterministic checks.
-  Keep the execution contract, exact current diff and paths, and actual
-  verification output available. The execution contract is the approved plan
-  plus accepted revisions, or the user request and recorded decisions when no
-  formal plan exists.
+Read [revdiff-returns.md](references/revdiff-returns.md) when annotations return.
+Do not inspect or incorporate feedback before it returns. If a known fixture
+contains later feedback, tell every initial reviewer not to inspect it. Do not
+discard actionable feedback after return.
 
-Require an independent `review_correctness` reviewer only when the
-actual proposed change and its consequences materially affect architecture,
-component boundaries, public interfaces, data flow, security boundaries,
-credentials, migrations, destructive data operations, or compatibility, or
-when nonlocal correctness remains unresolved, or the user explicitly requests
-independent review. Judge materiality from the change
-and its consequences, not keywords, file names, or the topic alone. Routine UI
-work and ordinary feature work with locally observable evidence still require
-primary validation but do not require an independent reviewer. Plan Mode alone
-does not make a phase material.
+## Select the phase and evidence
 
-## Build the review
+Review a complete draft plan before its first presentation, and a completed
+implementation after its deterministic checks, before handoff, commit, or push.
+Provide the full current plan or accessible diff, execution contract, relevant
+repository evidence, and actual check results. The contract is the approved plan
+and accepted revisions, or the user request and recorded decisions without a
+formal plan.
 
-When independent review is required, use one `review_correctness` thread
-for the coherent change. The same independent thread may cover checkpoints and
-successive phases, but each phase requires a fresh completion and verdict on
-its complete current evidence. An earlier checkpoint or plan verdict cannot
-certify a later diff. Record the phase, role, identity, evidence version, and
-verdict. The design author cannot serve as this reviewer.
+For a consequential-action checkpoint, provide the complete evidence, exact
+proposed action, and risk question. A current phase gate satisfies it only when
+it covers that same action, risk, and evidence.
 
-Its brief covers current requirements and correctness, verification adequacy,
-plan compliance, scope, and simplicity. In implementation mode it must flag
-missing commitments, unauthorized deviations, unproved claims, and extra scope.
-It returns `CLEAN` only when the complete current plan or implementation is
-ready. In plan mode include the complete draft—not a placeholder, outline, or
-summary. In implementation mode make the complete current diff, execution
-contract, and actual check results accessible.
+Group independently safe corrections for one coherent candidate into one
+checkpoint; setup details do not each require a full review cycle. Assess
+whether fixture changes affect the material assumption, boundary, or acceptance
+claim. Never batch past a required consequential-action or spike checkpoint.
+No new evidence bundle, manifest, recovery tool, or coordination software is
+required when existing revisions, diffs, and command evidence suffice.
 
-Ordinary source revisions, the relevant diff, and relevant command evidence are
-sufficient when they show the reviewed behavior. The gate itself does not
-require new evidence bundles, manifests, recovery tooling, or coordination
-software. Do not repeat a review solely because identical evidence was renamed
-or repackaged, or because a routine launcher correction cannot affect the
-reviewed action or risk. Relevant changed evidence still requires the fresh
-review specified below.
+## Assign the review
 
-Add a specialist only for a concrete extra risk or verification need. Actual
-credential exposure across logs, exceptions, or another transport surface
-always requires a bounded security specialist. A change that merely mentions
-credentials requires no specialist without a concrete exposure risk. Use
-`review_critical` for compliance, irreversible, security, or other high-risk
-review and `review_general` for other domain, product, or operational risks.
-Do not create a standing panel or taxonomy.
+Use one persistent `review_correctness` thread per coherent change, with
+`fork_turns="none"`. Reuse it for checkpoints and later phases, requiring a fresh
+completion on each phase's complete current evidence. Record phase, role,
+identity, evidence version, and verdict; prior plan approval cannot certify a
+later implementation.
 
-When spawning a configured reviewer type, use `fork_turns="none"`. Launch all
-selected reviewers before waiting, keep their identities, and collect a fresh
-completion from every selected reviewer before validating findings or making a
-correction. Follow-up dispatch output is stale lifecycle state when it repeats
-an old completed status; it is not a fresh result.
+The brief covers requirements/correctness, verification adequacy, plan compliance,
+scope, and simplicity. Implementation review must flag missing commitments,
+unauthorized deviations, unproved claims, and extra scope. Ask for `CLEAN` or
+findings with severity, location, evidence, impact, and smallest justified
+correction. A reuse finding must identify actual repetition or an existing
+capability and demonstrate lower net complexity.
 
-Require each reviewer to return `CLEAN` or findings with severity, location,
-evidence, impact, and the smallest justified correction. A reuse finding must
-name concrete repetition or an existing reusable capability and show lower net
-complexity.
+Add specialists only for a concrete risk or expertise gap. Actual credential
+exposure in logs, exceptions, or transport requires a bounded security specialist.
+Mentioning credentials alone does not. Use `review_critical` for security,
+compliance, irreversible, or other high-risk concerns and `review_general` for
+other domain/product/operational concerns; do not create a standing panel.
 
-## Resolve the gate
+Launch all selected reviewers before waiting. Collect every selected completion
+before validating the batch, changing files, or dispatching follow-ups. Stale
+completed status repeated by a follow-up dispatch is not a fresh result.
+Reviewers, workers, and design authors must not recursively run this gate or
+spawn reviewers.
 
-If independent review is not required, complete primary validation and record
-why the current phase is routine and locally observable. The gate is then clean
-without launching a reviewer.
+## Validate and correct
 
-When reviewers are required, wait for every selected task. A finding from one
-lane never short-circuits the batch: keep waiting until every selected lane has
-returned before validating findings, changing files, or launching follow-ups.
-Validate each finding independently; reject false positives and do not apply
-unsafe or speculative changes.
+The primary independently validates factual findings with bounded read-only
+evidence; a reviewer-only command is not primary validation. Compare suspected
+regressions with baseline. Report blocked validation rather than assuming it
+passed. Reject false positives and speculative or unsafe corrections.
 
-A reviewer suggestion is evidence to evaluate, not a new requirement and cannot
-enlarge the execution contract. Do not
-expand scope, add implementation-coupled tests, or introduce structure merely
-to satisfy a reviewer when the execution contract and observable verification
-are already covered.
+Mandatory findings demonstrate an unmet current requirement, established
+repository convention, or reproducible failure. Hypothetical alternatives,
+extra defense beyond the threat model, and stronger contracts are advisory at
+most. Reject additions that increase complexity without a current need.
+Reviewer suggestions cannot expand the execution contract or require
+implementation-coupled tests. Remove invalid harness assertions only with
+evidence that legitimate acceptance remains covered; never discard valid
+isolation, security, compatibility, or behavioral checks just to pass.
 
-The primary agent must independently validate factual findings with safe
-repository inspection or commands when possible. A command run only by a
-reviewer is not primary-agent validation. If validation is blocked, report that
-instead of silently accepting the claim.
+If no verified mandatory findings remain, the gate is clean; rejected or
+advisory findings do not trigger another round. Otherwise, send one consolidated
+correction set partitioned by owner and dependency. The primary revises its own
+plans/work; persistent workers correct their own lanes. Preserve ownership and
+rerun deterministic checks only when changes, failures, or unresolved concerns
+can affect them.
 
-Treat a finding as mandatory only when it demonstrates an unmet current
-requirement, a violated established repository convention, or a reproducible
-failure. Hypothetical alternate implementations, defense-in-depth beyond the
-stated threat model, and stronger test contracts than the reviewed draft or
-diff require are advisory at most; reject them when they add net complexity.
-Remove an invalid harness assertion only when evidence shows why it is invalid
-and the legitimate acceptance criteria remain covered. Do not discard valid
-isolation, security, compatibility, or behavioral checks merely to obtain a
-clean result.
+For follow-up, provide the current revision, relevant delta/checks, and full
+replacement plan or accessible current diff/contract. Reference unchanged
+evidence already in that reviewer thread rather than repasting it. Do not
+repeat review for identical evidence renamed/repackaged or a routine launcher
+change that cannot affect the action or risk.
 
-If no verified mandatory findings remain, the gate is clean. Rejected and
-advisory findings do not block it and do not trigger another round.
+Rerun `review_correctness` when material evidence for the phase changes. Rerun
+only affected specialists, recording applicability of retained verdicts. When a
+shared assumption changes or impact is unclear, rerun all selected specialists.
+Launch selected follow-ups together and collect their fresh completions before
+the next correction; reuse identities.
 
-When mandatory plan findings remain, the primary updates the complete plan.
-When implementation findings remain, route validated corrections to the current
-owner: the primary for its own work or the persistent worker for its delegated
-lane. Compare suspected regressions with the baseline before requesting changes.
-Reviewers and workers must not recursively spawn reviewers or run this gate.
-Rerun deterministic checks only when changes, failures, or unresolved concerns
-can affect their results.
+Resolve ordinary disagreement through primary validation. Report a blocker
+when independently verified requirements are irreconcilable, no safe correction
+exists, or required validation cannot run; never loop without progress or call
+a blocked gate clean.
 
-For follow-up review, provide the current revision, relevant delta and checks,
-plus the full replacement plan or an accessible current diff and execution
-contract. Unchanged evidence already available in the same reviewer thread may
-be referenced instead of pasted again. Require a fresh completion; stale
-dispatch state does not count.
+## Accept and hand off
 
-Rerun the `review_correctness` reviewer whenever material evidence for the
-current phase changes. Rerun only specialists affected by a change and record
-why retained specialist verdicts still apply. If a shared assumption changes or
-the impact is unclear, rerun every selected specialist. Launch all selected
-follow-ups before waiting and collect them all before the next correction.
-Reuse recorded identities rather than spawning replacements.
-
-Resolve ordinary reviewer disagreement through primary-agent validation. Stop
-and report a blocker only when independently verified requirements remain
-irreconcilable, no safe fix exists, or required validation cannot run. Never
-loop without making progress or declare a blocked gate clean.
-
-Before handoff, the primary independently validates the final worker evidence
-with read-only inspection or bounded diagnostics. When review was required,
-confirm a fresh independent verdict for this phase and current evidence, fresh
-completions from every selected affected specialist, documented applicability
-for retained specialist verdicts, and no verified mandatory finding. After a
-clean plan gate, present the complete plan. After a clean implementation gate,
-report the verified result. Offer or open RevDiff when requested or useful in
-the current review flow; it is not a mandatory extra step. The gate does not
-authorize a commit or push.
+The primary independently validates worker handoff evidence and final
+interactions. A required gate needs a fresh independent verdict for this phase
+and current evidence, fresh affected specialist completions, applicable retained
+verdicts, no verified mandatory findings, and a read-only reviewer trace.
+After a clean gate, present the complete plan or verified implementation.
+Offer RevDiff when useful; open it only when explicitly requested.
+Review does not authorize a commit, push, publication, or consequential action.

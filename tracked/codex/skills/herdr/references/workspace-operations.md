@@ -2,54 +2,50 @@
 
 ## Resolve the calling pane
 
-When these values are present, they identify the caller:
+When present, `HERDR_SOCKET_PATH`, `HERDR_WORKSPACE_ID`, `HERDR_TAB_ID`, and
+`HERDR_PANE_ID` locate the caller's Herdr context. Resolve the socket to exactly
+one running entry in `herdr session list --json`, then use that session name and
+explicit IDs for later commands. Do not silently fall back to the default session.
+These environment values locate a pane; they do not prove which Codex conversation
+is currently loaded there.
+
+When the caller context is absent, enumerate running sessions and their panes:
 
 ```bash
-test "${HERDR_ENV:-}" = 1
-printf '%s\n' \
-  "$HERDR_WORKSPACE_ID" \
-  "$HERDR_TAB_ID" \
-  "$HERDR_PANE_ID"
+herdr session list --json
+herdr --session <session-name> pane list
 ```
 
-If they are absent, use `CODEX_THREAD_ID` as the immutable identity:
+Use `CODEX_THREAD_ID` as the expected immutable conversation identity. A matching
+`agent_session.agent` / `agent_session.value` is only a candidate: shared-daemon
+SessionStart hooks can cache another conversation's identity in a pane. Cached
+metadata alone never authorizes sending input or other conversation-specific
+mutations, even when exactly one pane matches.
 
-1. Run `herdr session list --json`.
-2. For each running session, run:
+For Codex mode changes, use the verified identity flow in
+[mode-handoff.md](mode-handoff.md). For other operations, use the user's explicit
+session/pane target or current authoritative runtime identity. If the intended
+caller cannot be confirmed without disrupting another conversation, report the
+ambiguity and request the target instead of guessing. Never select by terminal
+title, display name, pane order, or UI focus, or send `/status` into a working
+agent merely to probe its identity.
 
-   ```bash
-   herdr --session <session-name> pane list
-   ```
-
-3. Match only a Codex pane whose `agent_session.agent` is `codex` and whose
-   `agent_session.value` exactly equals `CODEX_THREAD_ID`.
-4. Continue only when exactly one live pane matches.
-5. Use the returned session name and explicit workspace, tab, and pane IDs for
-   every later command.
-
-If zero or multiple panes match, report that caller identity cannot be resolved
-safely and stop. Never match by terminal title, display name, pane order, or the
-UI-focused pane.
-
-Recheck the exact immutable match immediately before a mutating command because
-pane IDs may change after moves.
-
-After detached resolution, prefix every later command with
-`herdr --session <resolved-session>` and target the resolved pane ID explicitly
-instead of using `--current`.
+Before mutation, recheck that the resolved session and pane still identify the
+intended target; use new IDs returned after moves. Prefix subsequent commands
+with `herdr --session <resolved-session>` and pass explicit target IDs instead
+of `--current`. The examples below assume that session has already been resolved.
 
 ## Inspect live state
 
 Use opaque IDs returned by Herdr:
 
 ```bash
-herdr workspace list
-herdr tab list --workspace "$HERDR_WORKSPACE_ID"
-herdr pane current --current
-herdr pane list --workspace "$HERDR_WORKSPACE_ID"
-herdr pane layout --current
-herdr pane process-info --current
-herdr agent list
+herdr --session <resolved-session> workspace list
+herdr --session <resolved-session> tab list --workspace <resolved-workspace-id>
+herdr --session <resolved-session> pane list --workspace <resolved-workspace-id>
+herdr --session <resolved-session> pane layout --pane <pane-id>
+herdr --session <resolved-session> pane process-info --pane <pane-id>
+herdr --session <resolved-session> agent list
 herdr session list --json
 ```
 
@@ -73,8 +69,8 @@ focus unchanged unless the user asks to switch.
 Create a tab:
 
 ```bash
-herdr tab create \
-  --workspace "$HERDR_WORKSPACE_ID" \
+herdr --session <resolved-session> tab create \
+  --workspace <resolved-workspace-id> \
   --cwd "$PWD" \
   --label "<label>" \
   --no-focus
@@ -83,14 +79,14 @@ herdr tab create \
 Inspect the caller's geometry before splitting:
 
 ```bash
-herdr pane layout --current
+herdr --session <resolved-session> pane layout --pane <pane-id>
 ```
 
 Split a wide pane to the right or a tall/narrow pane downward:
 
 ```bash
-herdr pane split \
-  --current \
+herdr --session <resolved-session> pane split \
+  --pane <pane-id> \
   --direction right \
   --cwd "$PWD" \
   --no-focus
@@ -106,21 +102,21 @@ the user requests that topology or it is necessary for the stated task.
 Run a command in an available shell pane:
 
 ```bash
-herdr pane run <pane-id> "<command>"
+herdr --session <resolved-session> pane run <pane-id> "<command>"
 ```
 
 Wait for a known output condition:
 
 ```bash
-herdr pane wait-output <pane-id> \
+herdr --session <resolved-session> pane wait-output <pane-id> \
   --match "<literal text>" \
-  --timeout 120000
+  --timeout 60000
 ```
 
 Inspect current output without scrolling the agent's conversation:
 
 ```bash
-herdr pane read <pane-id> --source detection --lines 120
+herdr --session <resolved-session> pane read <pane-id> --source detection --lines 120
 ```
 
 Use passive `detection` reads for polling. Explicit history reads can scroll an
@@ -128,7 +124,7 @@ idle alternate-screen agent up and back down to collect older output. Use the
 following only when that history traversal is intended:
 
 ```bash
-herdr pane read <pane-id> \
+herdr --session <resolved-session> pane read <pane-id> \
   --source recent-unwrapped \
   --lines 120
 ```
@@ -142,7 +138,7 @@ An agent requires an existing available shell pane. Starting an agent does not
 create layout:
 
 ```bash
-herdr agent start <unique-name> \
+herdr --session <resolved-session> agent start <unique-name> \
   --kind codex \
   --pane <pane-id>
 ```
@@ -150,7 +146,7 @@ herdr agent start <unique-name> \
 Pass native agent arguments only after `--`:
 
 ```bash
-herdr agent start <unique-name> \
+herdr --session <resolved-session> agent start <unique-name> \
   --kind codex \
   --pane <pane-id> \
   -- <agent-arguments>
@@ -159,34 +155,34 @@ herdr agent start <unique-name> \
 Prompt the agent and wait for a settled state:
 
 ```bash
-herdr agent prompt <unique-name> \
+herdr --session <resolved-session> agent prompt <unique-name> \
   "<task>" \
   --wait \
-  --timeout 120000
+  --timeout 60000
 ```
 
 Inspect the agent:
 
 ```bash
-herdr agent get <unique-name>
-herdr agent read <unique-name> \
-  --source recent-unwrapped \
+herdr --session <resolved-session> agent get <unique-name>
+herdr --session <resolved-session> agent read <unique-name> \
+  --source detection \
   --lines 120
 ```
 
 Wait for a specific state only when the workflow needs it:
 
 ```bash
-herdr agent wait <unique-name> \
+herdr --session <resolved-session> agent wait <unique-name> \
   --until blocked \
-  --timeout 120000
+  --timeout 60000
 ```
 
 Send logical keys for an interactive terminal UI:
 
 ```bash
-herdr agent send-keys <unique-name> esc
-herdr agent send-keys <unique-name> ctrl+c
+herdr --session <resolved-session> agent send-keys <unique-name> esc
+herdr --session <resolved-session> agent send-keys <unique-name> ctrl+c
 ```
 
 Do not answer an approval or user-decision prompt on the user's behalf. Inspect

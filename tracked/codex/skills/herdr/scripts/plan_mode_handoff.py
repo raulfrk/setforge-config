@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from datetime import datetime
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -29,6 +30,7 @@ STATUS_FIELD = re.compile(
     r"^(Session|Model|Reasoning(?: effort)?|Directory|Collaboration mode):"
     r"\s*(.*?)\s*$"
 )
+PLAN_REJECTION = "'/plan' is disabled while a task is in progress."
 
 
 class HandoffError(RuntimeError):
@@ -359,8 +361,20 @@ def status_panel(screen: str) -> Status:
          if lines[index].strip().startswith(("╰", "└"))),
         None,
     )
+    plain_top = next(
+        (index for index in range(session_index - 1, max(-1, session_index - 45), -1)
+         if re.fullmatch(r">_ OpenAI Codex \(v\d+\.\d+\.\d+\)", lines[index].strip())),
+        None,
+    )
+    if plain_top is not None and (top is None or plain_top > top):
+        top = plain_top
+        bottom = next(
+            (index for index in range(session_index + 1, min(len(lines), session_index + 45))
+             if lines[index].strip() == PLACEHOLDER),
+            None,
+        )
     if top is None or bottom is None:
-        raise HandoffError("Codex /status panel has incomplete borders")
+        raise HandoffError("Codex /status panel is incomplete or clipped")
     fields: dict[str, str] = {}
     for line in lines[top + 1 : bottom]:
         match = status_field(line)
@@ -394,6 +408,68 @@ def submit_literal(session: str, pane_id: str, text: str, deadline: float) -> No
     # One native submission avoids exposing slash-command autocomplete between
     # typing and Enter, which repaints older visible conversation content.
     run(prefix(session) + ["pane", "run", pane_id, text], deadline)
+
+
+def native_reader(endpoint: Path) -> Any:
+    if not endpoint.exists():
+        return None
+    # Reuse the installed read-only native transport; do not resume a thread or
+    # alter its settings just to establish whether its turn has finished.
+    source = Path(__file__).resolve().parents[2] / "main-session/scripts/main_session.py"
+    try:
+        spec = importlib.util.spec_from_file_location("handoff_native", source)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.Native(str(endpoint))
+    except Exception as exc:
+        raise HandoffError(f"could not read native Codex readiness: {exc}") from exc
+
+
+def wait_completed(
+    session: str,
+    pinned: tuple[str, str, str],
+    expected_thread: str,
+    expected_cwd: Path,
+    marker: str,
+    deadline: float,
+    native: Any,
+    *,
+    changed_from: str | None = None,
+) -> None:
+    previous = None
+    stable_since = None
+    while time.monotonic() < deadline:
+        pane = pinned_pane(session, pinned, deadline)
+        observed_cwd(session, pane, expected_cwd, deadline)
+        screen = read_pane(session, pane.pane_id, deadline)
+        ready = completion(screen, marker) and surface(screen) is not None
+        if native is not None:
+            try:
+                thread = native.read(expected_thread)
+            except Exception as exc:
+                raise HandoffError(f"could not read native Codex readiness: {exc}") from exc
+            if thread.get("id") != expected_thread or not same_cwd(expected_cwd, thread.get("cwd", "")):
+                raise HandoffError("native Codex thread identity or cwd changed")
+            status = thread.get("status", {})
+            state = status.get("type")
+            if state not in ("idle", "active") or status.get("activeFlags"):
+                raise HandoffError("native Codex thread is unloaded, blocked, or in an unknown state")
+            ready = ready and state == "idle"
+        else:
+            # A rejection requires evidence that the TUI has since progressed;
+            # an unchanged idle-looking marker was the original failure.
+            ready = ready and (changed_from is None or screen != changed_from)
+        status = pane.record.get("agent_status", pane.record.get("status"))
+        ready = ready and status in (None, "idle", "done", "unknown")
+        now = time.monotonic()
+        if ready and screen == previous and stable_since is not None:
+            if now - stable_since >= STABLE_SECONDS:
+                return
+        else:
+            previous = screen
+            stable_since = now if ready else None
+        time.sleep(POLL_SECONDS)
+    raise HandoffError("timed out waiting for completed Codex turn; no command was retried")
 
 
 def wait_status(
@@ -472,13 +548,47 @@ def enter_plan_mode(
     expected_cwd: Path,
     model: str,
     deadline: float,
+    expected_thread: str,
+    marker: str,
+    native: Any,
 ) -> None:
     before = read_pane(session, pinned[0], deadline)
+    rejection_count = " ".join(before.split()).count(PLAN_REJECTION)
+    retried = False
     submit_literal(session, pinned[0], "/plan", deadline)
     while time.monotonic() < deadline:
         pane = pinned_pane(session, pinned, deadline)
         observed_cwd(session, pane, expected_cwd, deadline)
         screen = read_pane(session, pane.pane_id, deadline)
+        # A command timeout is ambiguous and escapes without retrying. Only a
+        # newly rendered explicit rejection proves this submission had no effect.
+        count = " ".join(screen.split()).count(PLAN_REJECTION)
+        if count > rejection_count:
+            if retried:
+                raise HandoffError("/plan was rejected again after the once-only recovery")
+            log(f"RECOVERY /plan rejected-active pane={pane.pane_id}")
+            wait_completed(
+                session, pinned, expected_thread, expected_cwd, marker, deadline,
+                native, changed_from=screen,
+            )
+            status = wait_status(
+                session, pinned, expected_thread, expected_cwd, deadline,
+                expected_model=model,
+            )
+            if status.mode == "plan":
+                return
+            if status.mode != "default":
+                raise HandoffError("unexpected mode during /plan recovery")
+            wait_completed(session, pinned, expected_thread, expected_cwd, marker, deadline, native)
+            before = read_pane(session, pinned[0], deadline)
+            rejection_count = " ".join(before.split()).count(PLAN_REJECTION)
+            retried = True
+            log(f"RETRY /plan pane={pane.pane_id}")
+            submit_literal(session, pinned[0], "/plan", deadline)
+            continue
+        if not completion(screen, marker):
+            time.sleep(POLL_SECONDS)
+            continue
         observed = surface(screen)
         if (
             screen != before
@@ -565,6 +675,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--cwd", type=Path, required=True)
     parser.add_argument("--marker", required=True)
     parser.add_argument("--continuation-file", type=Path, required=True)
+    parser.add_argument(
+        "--app-server-socket", type=Path,
+        default=Path.home() / ".codex/app-server-control/app-server-control.sock",
+    )
     args = parser.parse_args(argv)
     if not args.cwd.expanduser().is_dir():
         parser.error("--cwd must name an existing directory")
@@ -585,7 +699,7 @@ def prompt_continuation(
         raise HandoffError("continuation response pane identity mismatch")
 
 
-def handoff(args: argparse.Namespace) -> PaneIdentity:
+def handoff(args: argparse.Namespace, native: Any = None) -> PaneIdentity:
     continuation = read_continuation(args.continuation_file)
     require_no_unfinished(args)
     log(
@@ -595,6 +709,7 @@ def handoff(args: argparse.Namespace) -> PaneIdentity:
     deadline = time.monotonic() + TIMEOUT_SECONDS
     pane = discover_marker_pane(args.session, args.marker, args.cwd, deadline)
     pinned = (pane.pane_id, pane.tab_id, pane.workspace_id)
+    wait_completed(args.session, pinned, args.thread_id, args.cwd, args.marker, deadline, native)
     initial = wait_status(
         args.session,
         pinned,
@@ -607,6 +722,7 @@ def handoff(args: argparse.Namespace) -> PaneIdentity:
         f"route={initial.model}/{initial.effort}/{initial.mode}"
     )
     wait_surface(args.session, pinned, args.cwd, initial.model, initial.effort, deadline)
+    wait_completed(args.session, pinned, args.thread_id, args.cwd, args.marker, deadline, native)
     model, effort = initial.model, initial.effort
     if args.target_mode == "default" and initial.mode != "default":
         raise HandoffError(
@@ -618,7 +734,10 @@ def handoff(args: argparse.Namespace) -> PaneIdentity:
             log(f"NOOP /plan mode=plan already-active pane={pane.pane_id}")
         else:
             log(f"ACTION /plan pane={pane.pane_id}")
-            enter_plan_mode(args.session, pinned, args.cwd, model, deadline)
+            enter_plan_mode(
+                args.session, pinned, args.cwd, model, deadline,
+                args.thread_id, args.marker, native,
+            )
     final_status = wait_status(
         args.session,
         pinned,
@@ -640,6 +759,7 @@ def handoff(args: argparse.Namespace) -> PaneIdentity:
             mode="plan",
         )
     log(f"ACTION continuation pane={pane.pane_id} thread={final_status.thread_id}")
+    wait_completed(args.session, pinned, args.thread_id, args.cwd, args.marker, deadline, native)
     prompt_continuation(args.session, pane.pane_id, continuation, deadline)
     pane = pinned_pane(args.session, pinned, deadline)
     remove_unfinished(marker_path)
@@ -648,8 +768,10 @@ def handoff(args: argparse.Namespace) -> PaneIdentity:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    native = None
     try:
-        pane = handoff(args)
+        native = native_reader(args.app_server_socket)
+        pane = handoff(args, native)
         log(
             f"SUCCESS target={args.target_mode} thread={args.thread_id} "
             f"pane={pane.pane_id} continuation=sent"
@@ -658,6 +780,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (HandoffError, OSError, UnicodeError, ValueError) as exc:
         log(f"FAILED {exc}")
         return 1
+    finally:
+        if native is not None:
+            native.close()
 
 
 if __name__ == "__main__":

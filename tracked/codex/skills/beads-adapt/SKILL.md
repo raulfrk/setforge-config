@@ -19,7 +19,8 @@ file. Never reinitialize it or turn this procedure into a migration framework.
 Inspect `metadata.json`, `bd config show`, installed Beads hooks, Dolt remotes,
 `sync.remote`, Git ignore provenance, tracked `.beads` paths, staged changes,
 and the exhaustive issue graph from the base skill. Show the exact detected
-state and proposed delta, then obtain explicit approval before mutation.
+state and proposed delta, then obtain any missing explicit approval before
+mutation.
 
 If the database already has embedded/in-process mode, the canonical seven
 values and provenance, no `sync.remote`, no hooks or remotes, no tracked

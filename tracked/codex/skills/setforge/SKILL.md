@@ -1,6 +1,6 @@
 ---
 name: setforge
-description: Inspect, author, reconcile, deploy, verify, snapshot, and roll back SetForge profiles and project injections. Use when the user mentions SetForge, setforge.yaml, profile deployment, tracked-file drift, host-local changes, durable ownership, or SetForge-managed resources.
+description: Inspect, author, reconcile, deploy, verify, snapshot, and roll back SetForge profiles and project injections. Use for changes to Raul's Codex settings, global instructions, skills, agents, or plugins, and when the user mentions SetForge or SetForge-managed resources.
 ---
 
 # SetForge
@@ -8,6 +8,9 @@ description: Inspect, author, reconcile, deploy, verify, snapshot, and roll back
 SetForge manages versioned profile sources, live resources, and private
 reconciliation state. Establish which source, profile, and host are in scope
 before interpreting drift or changing anything.
+
+For changes to Raul's Codex configuration, read
+[references/codex-profile.md](references/codex-profile.md) before planning or editing.
 
 ## Establish the target
 
@@ -86,9 +89,9 @@ setforge install \
 ```
 
 Inspect every planned write, package/plugin change, ownership action, and
-reconciliation decision. Use `compare --check --strict` only when exact live
-equality is required. Use `--no-fetch` only when the checked-out source is the
-intended authority.
+reconciliation decision. Use `compare --check --strict` only when no reported
+drift in managed resources is required. Use `--no-fetch` only when the
+checked-out source is the intended authority.
 
 Do not use `--auto=use-tracked` unless replacing the corresponding live content
 is approved. Do not use `--no-secrets-scan` merely for convenience; if the user
@@ -114,11 +117,13 @@ After deployment:
 
 ```bash
 setforge validate --profile="$profile" --config="$manifest"
-setforge compare --profile="$profile" --config="$manifest" --check --strict
+setforge compare --profile="$profile" --config="$manifest" --check
 setforge stage --list --profile="$profile" --config="$manifest"
 setforge status --profile="$profile" --config="$manifest"
 setforge transitions list --profile="$profile"
 ```
+
+Add `--strict` to the comparison when no managed drift is expected.
 
 Verify pinned executables independently with `command -v`, `type -a`, version,
 and digest where applicable. Run a second identical dry install when
@@ -142,6 +147,9 @@ setforge project sync /path/to/project --dry-run
 setforge project remove <project-profile> /path/to/project --dry-run
 ```
 
+`project sync /path` considers every recorded profile injection at that path;
+review the full preview before applying.
+
 Choose `--git-hidden` for host-private injected files and `--git-tracked` for
 normal project content. Preview collision resolution and removal before apply;
 removal restores the state recorded immediately before that injection.
@@ -156,8 +164,10 @@ setforge ownership recover --config="$manifest"
 ```
 
 Use `transitions show`, `revert`, and `snapshot restore` only after confirming
-the exact profile and affected resources. Snapshot restore is additive and does
-not delete live-only files. Transition reverts and snapshots do not guarantee
+the exact profile and affected resources. `revert` targets the latest transition
+by default; `--to-before=<id>` also reverts every newer transition in that
+profile. Review the full sequence before applying. Snapshot restore is additive
+and does not delete live-only files. Transition reverts and snapshots do not guarantee
 restoration of provisioned package bytes; preserve a separate byte-for-byte
 backup for consequential package replacement.
 
@@ -168,6 +178,7 @@ permanently strips retired host-local markers.
 ## Cleanup safety
 
 Treat `cleanup` and `cleanup-orphans` as destructive review surfaces. Preview
-and inspect every candidate. Never remove a protected, active, user-owned, or
-merely unfamiliar resource, and prefer explicit retention when ownership is
-uncertain.
+and inspect every candidate. As incidental cleanup, never remove a protected,
+active, user-owned, or merely unfamiliar resource. Explicitly requested
+retirement must still follow the exact-target ownership and recovery safeguards
+above. Prefer explicit retention when ownership is uncertain.

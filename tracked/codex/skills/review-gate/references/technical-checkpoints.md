@@ -22,14 +22,6 @@ evidence, proposed action, and exact question, and require a fresh verdict. A
 current phase gate may satisfy the checkpoint only when it covers the same
 risk, action, and complete current evidence.
 
-Ordinary source revisions, the relevant diff, and relevant command evidence are
-sufficient when they show the reviewed behavior. The checkpoint itself does not
-require new bundles, manifests, or recovery tooling; require them only when the
-task or its safety contract requires them. Identical evidence that was only
-renamed or repackaged, and routine launcher corrections that cannot affect the
-reviewed action or risk, do not require another review. Changed evidence
-relevant to the action or risk still requires a fresh verdict.
-
 Before a third implementation correction for the same unresolved issue after
 two unsuccessful corrections, the primary reassesses the evidence and approach.
 Require an independent `review_correctness` checkpoint when material or critical

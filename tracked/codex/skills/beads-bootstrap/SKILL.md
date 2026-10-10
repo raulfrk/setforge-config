@@ -17,9 +17,9 @@ move the procedure there before proposing or running any mutation. Never create
 a worktree-local Beads database. Require `BEADS_DIR` to be unset and reject a
 primary `.beads` symlink or `redirect` file before initialization.
 
-1. Use the base skill's validated discovery for this unchanged task and checkout;
-   otherwise resolve `git rev-parse --show-toplevel` and run `bd where --json`
-   from the primary checkout root.
+1. Perform the base skill's complete discovery procedure from the primary
+   checkout root. Reuse validated discovery only while the task, checkout,
+   environment, and relevant paths remain unchanged.
 2. Treat `no beads project found` as absence. If a database exists, do not
    initialize: report whether its seven values conform and route drift to the
    `beads-adapt` skill.

@@ -1,5 +1,5 @@
-model = "gpt-6-astra"
-model_reasoning_effort = "low"
+model = "gpt-6.1-sol"
+model_reasoning_effort = "high"
 service_tier = "default"
 sandbox_mode = "read-only"
 

@@ -1,6 +1,6 @@
 ---
 name: beads
-description: Manage private Beads project work and configuration with explicit creation approval, stealth initialization, repository adaptation, reviewer-friendly decomposition, and a claim-verify-close lifecycle. Use when the user mentions Beads, bd, Beads issues or epics, Beads project configuration, bootstrapping Beads, or adapting an existing Beads repository.
+description: Manage private Beads issues and project configuration, or perform required tracker discovery. Use beads-bootstrap for new setup and beads-adapt for existing repository conversion.
 ---
 
 # Beads
@@ -10,6 +10,11 @@ to the work; do not turn issue tracking into a controller or coordination
 framework.
 
 ## Establish the active project
+
+When global guidance requires tracker discovery, load this skill before running
+it. Complete the canonical-path checks below before inspecting project
+configuration or issues. If no project exists, continue without initializing or
+proposing one.
 
 Establish the current Git root and primary worktree once per task and checkout.
 Reuse a validated discovery while the relevant environment and paths remain
@@ -21,18 +26,18 @@ git rev-parse --show-toplevel
 git worktree list --porcelain
 ```
 
-Resolve the primary worktree from the first `worktree` entry returned by
-`git worktree list --porcelain`. Before canonicalizing anything, require
-`BEADS_DIR` to be unset. If the primary `.beads` path exists, require it to be a
-real directory rather than a symlink and reject a `redirect` file there; an
+Resolve the primary worktree from the first `worktree` entry returned by `git
+worktree list --porcelain`. Before canonicalizing anything, require
+`BEADS_DIR` to be unset. If the primary `.beads` path exists, require it to be
+a real directory rather than a symlink and reject a `redirect` file there; an
 absent path is valid at this stage. When the current checkout differs from the
-primary, reject any worktree-local `.beads` path before canonicalization. After
-those lexical checks, run `bd where --json`. Treat the recognized
-`no beads project found` result as normal absence, not permission to initialize.
-If discovery succeeds, canonicalize the paths and require the returned Beads
-`path` to equal the primary worktree's canonical `<git-root>/.beads`. This is
-the expected native location from both the primary checkout and a linked Git
-worktree. Stop on any mismatch.
+primary, reject any worktree-local `.beads` path before canonicalization.
+After those lexical checks, run `bd where --json` from the current checkout
+root. Treat the recognized `no beads project found` result as normal absence,
+not permission to initialize. If discovery succeeds, canonicalize the paths
+and require the returned Beads `path` to equal the primary worktree's
+canonical `<git-root>/.beads`. This is the expected native location from both
+the primary checkout and a linked Git worktree. Stop on any mismatch.
 
 Only after path validation succeeds, inspect project configuration with
 `bd config show`. Do not parse `bd info --json`; in Beads 1.1.2 it emits
@@ -61,25 +66,9 @@ approval ceremony. Apply the global destructive-action safeguards to deletion.
 
 ## Initialize privately
 
-Every approved initialization uses:
-
-```sh
-bd init --stealth --non-interactive --skip-agents --skip-hooks \
-  --prefix <project-prefix>
-```
-
-Do not silently reinitialize an existing database. After initialization,
-verify that `.beads/` is untracked and ignored by the repository-local
-`.git/info/exclude`, not by a tracked project file:
-
-```sh
-git check-ignore -v .beads
-git ls-files .beads
-git status --short --untracked-files=all
-```
-
-The second command must produce no output, and Git status must not expose the
-database.
+Before approved initialization, load `beads-bootstrap` for the stealth
+initialization command and complete verification procedure. Do not silently
+reinitialize an existing database; use `beads-adapt` for an approved conversion.
 
 ## Configure the project
 
@@ -101,26 +90,55 @@ snapshots.
 
 ## Work an existing Bead
 
-For selected existing work:
+Discovery is not an issue read. For work that maps to an existing Bead:
 
-1. Read the exact Bead, its acceptance criteria, dependencies, and current
-   notes before claiming or implementing it. Claim only after that read; do not
-   combine claim-before-read as `bd update <id> --claim && bd show <id>`.
-2. Before changing acceptance text, appending progress, or closing, refresh the
-   exact Bead when its complete authoritative state is not already current in
-   context.
-3. Run the acceptance checks and inspect their observable results.
+1. Read that exact Bead, its acceptance criteria, dependencies, and current notes
+   before substantive work, claiming, and the first update or close in the session.
+   Do not combine claim-before-read as `bd update <id> --claim && bd show <id>`.
+2. Refresh after a handoff or context recovery when authoritative issue state is
+   not fully present, after an external change, and at a meaningful work phase
+   when the last exact read predates that phase. Before changing acceptance text,
+   appending progress, or closing, refresh if the complete authoritative state is
+   not current in context. Reuse a current complete read; do not reread solely
+   because another turn passed.
+3. Run the acceptance checks and inspect their observable results. Do not rerun
+   valid checks merely to reconstruct context.
 4. Close with `bd close <id> --reason <verified-result>` only after the checks
    succeed. If verification fails, keep it open and report the failure.
 
-Keep Bead updates decision-relevant. Append concise deltas at verified
-boundaries and reference retained artifacts instead of copying full reports.
-Record evidence on the owning leaf; update an epic or sibling only when its own
-status, dependency, acceptance criteria, or decision materially changes. Do
-not broadcast an identical checkpoint across a graph merely for visibility. If
-an exact Bead read is truncated, use bounded field-specific JSON projections
-to recover its acceptance criteria and relevant recent notes before relying on
-it.
+For material tracked work, use the owning leaf as the durable resume point, not
+a per-command transcript. When a material decision, verified result or failure,
+phase change, or unattended long-running operation changes what should happen
+next, keep a concise current checkpoint in `notes`; use native comments for
+chronological decisions and evidence, linking retained reports instead of copying
+them. Refer to existing acceptance criteria rather than repeating them.
+
+The current checkpoint identifies the original outcome and stage, candidate Git
+binding, verified evidence and its applicability, remaining criteria or
+uncertainty, authorization/HOLD boundaries, and next safe action with any live
+process handle. Include non-obvious decision rationale. For a detour, state
+whether it blocks the original work or is an approved follow-up and the condition
+for returning; completing it does not complete the original outcome.
+
+Before replacing notes containing history, preserve that history in native
+comments with its original provenance and verify preservation. Do not discard
+decisions, approvals, criteria, or evidence. Do not consolidate another active
+owner's notes without an agreed handoff. Use `bd comments --help` for exact
+syntax; comments do not replace current issue state.
+
+After compaction, restart, or handoff, read the latest checkpoint and compare it
+with actual Git and process state before resuming. Reconcile discrepancies; a note
+is not proof that a process finished. Read relevant comments or linked artifacts
+when a material decision or acceptance question remains unresolved. At later phase
+boundaries, reread only potentially changed issue state. Do not write or reread
+solely because another turn passed.
+
+Keep updates decision-relevant and reference retained artifacts instead of
+copying full reports. Update an epic or sibling only when its own status,
+dependency, acceptance criteria, or decision materially changes; do not
+broadcast the same checkpoint across the graph. If an exact read is truncated,
+use bounded field-specific JSON projections to recover acceptance criteria and
+relevant recent notes before relying on it.
 
 ## Decompose for review
 
