@@ -197,6 +197,19 @@ tracked_files:
     src: claude/statusline.sh
     dst: ~/.claude/statusline.sh
 
+  # The cache-guard mod loads from Claude Code's skills folder as a plugin.
+  claude_mod_cache_guard_manifest:
+    src: claude/mods/cache-guard/.claude-plugin/plugin.json
+    dst: ~/.claude/skills/cache-guard/.claude-plugin/plugin.json
+
+  claude_mod_cache_guard_hooks:
+    src: claude/mods/cache-guard/hooks/hooks.json
+    dst: ~/.claude/skills/cache-guard/hooks/hooks.json
+
+  claude_mod_cache_guard_register:
+    src: claude/mods/cache-guard/hooks/register.ts
+    dst: ~/.claude/skills/cache-guard/hooks/register.ts
+
 packages:
   beads:
     type: github_release
@@ -316,6 +329,9 @@ profiles:
       - claude_skill_setforge
       - claude_skill_setforge_reference_claude_profile
       - claude_skill_technical_investigation
+      - claude_mod_cache_guard_manifest
+      - claude_mod_cache_guard_hooks
+      - claude_mod_cache_guard_register
       - claude_statusline
       - herdr_config
     packages:
