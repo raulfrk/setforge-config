@@ -10,6 +10,12 @@
       "source": "./plugins/revdiff-herdr-claude",
       "description": "Review Claude Code plans, diffs, and Markdown in a dedicated Herdr tab",
       "category": "development"
+    },
+    {
+      "name": "paste-command",
+      "source": "./plugins/paste-command",
+      "description": "Run or paste the '! command' lines in a reply from buttons under it",
+      "category": "development"
     }
   ]
 }

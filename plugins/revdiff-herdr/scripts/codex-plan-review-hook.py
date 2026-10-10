@@ -15,6 +15,17 @@ from typing import Any
 
 PLAN_RE = re.compile(r"<proposed_plan>\s*(.*?)\s*</proposed_plan>", re.DOTALL)
 MARKER_RE = re.compile(r"^\s*<!--\s*previous revision:\s*(.+?)\s*-->\s*$")
+# Match the observed native diagnostic envelope, never identity or message
+# records. Unrecognized damaged records remain fatal to transcript selection.
+INCOMPLETE_EVENT_RE = re.compile(
+    r'^\{"timestamp":"[^"\\\r\n]+",(?:"ordinal":\d+,)?'
+    r'"type":"event_msg","payload":\{"type":"item_completed",'
+)
+INCOMPLETE_REASONING_RE = re.compile(
+    r'^\{"timestamp":"[^"\\\r\n]+",(?:"ordinal":\d+,)?'
+    r'"type":"response_item","payload":\{"type":"reasoning",'
+    r'"id":"rs_[0-9a-f]+","summary":\[\{"type":"summary_text","text":'
+)
 SNAPSHOT_PREFIX = "plan-rev-"
 SUCCESS_CODES = {0, 10}
 
@@ -88,13 +99,23 @@ def message_from_transcript(event: dict[str, Any]) -> tuple[str | None, str | No
 
     message: str | None = None
     verified_session = False
+    damaged = False
     try:
         with path.open(encoding="utf-8") as stream:
             for line in stream:
                 try:
                     item = json.loads(line)
                 except json.JSONDecodeError:
-                    return None, "transcript contains an incomplete or invalid JSON record"
+                    if not verified_session or not (
+                        INCOMPLETE_EVENT_RE.match(line) or INCOMPLETE_REASONING_RE.match(line)
+                    ):
+                        return None, "transcript contains an incomplete or invalid JSON record"
+                    # A later complete current-turn message can establish the
+                    # latest reply despite older damage. Never reuse a message
+                    # from before damage, which could hide a newer plan.
+                    message = None
+                    damaged = True
+                    continue
                 payload = item.get("payload") if isinstance(item, dict) else None
                 if not isinstance(payload, dict):
                     continue
@@ -126,10 +147,13 @@ def message_from_transcript(event: dict[str, Any]) -> tuple[str | None, str | No
                 ]
                 if parts:
                     message = "\n".join(parts)
+                    damaged = False
     except (OSError, UnicodeError):
         return None, "transcript file could not be read"
     if not verified_session:
         return None, "transcript has no session identity metadata"
+    if damaged:
+        return None, "transcript contains an incomplete or invalid JSON record after the latest verified message"
     if message is None:
         return None, "transcript has no assistant message for the current turn"
     return message, None
@@ -185,7 +209,7 @@ def main() -> None:
             respond()
             return
 
-    plugin_root_value = os.environ.get("PLUGIN_ROOT") or os.environ.get("CLAUDE_PLUGIN_ROOT")
+    plugin_root_value = os.environ.get("PLUGIN_ROOT")
     if not plugin_root_value:
         review_failed("PLUGIN_ROOT is not set")
         return
@@ -194,7 +218,7 @@ def main() -> None:
         return
 
     plugin_root = Path(plugin_root_value)
-    data_dir = os.environ.get("PLUGIN_DATA") or os.environ.get("CLAUDE_PLUGIN_DATA", "")
+    data_dir = os.environ.get("PLUGIN_DATA", "")
     launcher = resolve_launcher(plugin_root, data_dir, event.get("cwd"))
     if launcher is None:
         review_failed("no executable launch-revdiff.sh was found")

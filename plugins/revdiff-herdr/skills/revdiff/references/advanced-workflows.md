@@ -34,6 +34,21 @@ user instructions. Existing explicit user directions remain valid, but do not
 repeat completed work. Clarify any consequential edit whose authorship or intent
 cannot be established.
 
+## Explain proposed edits inline
+
+For requested changes with agent explanations, show the actual candidate diff.
+Attach short `AGENT RATIONALE:` notes to changed lines using the preload format
+above. Explain the reason, relevant evidence, and any relocated instruction's
+destination. Keep the original preload to distinguish your notes from later user
+feedback; an unchanged agent note is not approval.
+
+Use an existing Git review context for `--annotations`. The installed launcher
+can fail to resolve preloaded annotations for a standalone `--only` file outside
+Git. For an isolated candidate, keep the user's current file contents as the index
+baseline and review only the unstaged task delta; no baseline commit is needed.
+Do not stage over existing user changes to manufacture that baseline. `--stdin`
+cannot be combined with `--annotations`.
+
 ## Load stored review history
 
 For requests such as "use my latest revdiff annotations" or recovery after a
@@ -77,26 +92,22 @@ session.
 
 ## Recover after launcher timeout or a manual flush
 
-A launcher timeout does not discard the live overlay. Do not retry or open a
-duplicate review. Tell the user briefly that the waiting process timed out but
-their annotations are safe, then wait for them to say whether to load the notes
-or stop. Their reply indicates that they have quit, or flushed with `O` and
-returned to the conversation.
+A launcher timeout leaves completion uncertain; the review may still be open.
+Preserve its process handle, output path, and review identity. Do not retry or
+open a duplicate review. Report only what existing evidence establishes; do not
+claim annotations are safe or the review accepted merely because output is
+missing or empty.
 
-If they ask to continue, read the newest atomic output file first:
+Recover from the retained process and exact output path first. If those are
+unavailable, use output-file discovery or `$SCRIPT_DIR/read-latest-history.sh`
+only after matching the result to the original review target and session.
+The newest file or history entry can belong to another concurrent review.
+Missing or empty sources do not prove a clean quit: keep completion unresolved
+until the original process result or equivalent review-specific evidence
+establishes it. Reuse existing authorization for read-only recovery.
 
-```bash
-output_file="$(ls -t "${TMPDIR:-/tmp}"/revdiff-output-* 2>/dev/null | head -1)"
-if [ -n "$output_file" ] && [ -f "$output_file" ]; then
-  cat "$output_file"
-fi
-```
-
-If it is empty or missing, run `$SCRIPT_DIR/read-latest-history.sh` and use its
-annotations. Only when both sources are empty did the user quit without notes.
-The newest file can belong to another concurrent review, so verify its target
-before acting.
-
-Pressing `O` writes a complete atomic snapshot without quitting. When the user
-says they flushed notes, use the same output-file lookup, process the comments,
-and do not relaunch; they can reload with `R` after the edits.
+Pressing `O` exports annotations without quitting. When the user asks to process
+a flushed export, verify that it belongs to this review, interpret its comments,
+and do not relaunch; they can reload with `R` after edits. An export does not
+establish review completion or acceptance. Preserve preload authorship when
+interpreting recovered or exported annotations.

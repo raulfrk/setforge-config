@@ -1214,6 +1214,51 @@ class TestRevDiffHerdr:
         assert result.returncode == 0, result.stderr
         assert "herdr tab focus" not in self._calls()
 
+    @pytest.mark.parametrize("selection", ["codex", "argument", "bundled"])
+    def test_launcher_resolver_uses_only_codex_override_sources(self, selection):
+        overrides = {}
+        for name in ("codex", "argument", "legacy"):
+            directory = self.temp / name
+            launcher = directory / "scripts/launch-revdiff.sh"
+            launcher.parent.mkdir(parents=True)
+            launcher.write_text("#!/bin/sh\nexit 0\n")
+            launcher.chmod(0o755)
+            overrides[name] = directory
+
+        env = self._env(CLAUDE_PLUGIN_DATA=str(overrides["legacy"]))
+        env.pop("PLUGIN_DATA", None)
+        command = [str(PLUGIN_ROOT / "scripts/resolve-launcher.sh"), "launch-revdiff.sh"]
+        expected = MANUAL_LAUNCHER
+        if selection != "bundled":
+            env["PLUGIN_DATA"] = str(overrides["codex"])
+            expected = overrides[selection] / "scripts/launch-revdiff.sh"
+        if selection == "argument":
+            command.append(str(overrides["argument"]))
+
+        result = subprocess.run(command, env=env, text=True, capture_output=True)
+
+        assert result.returncode == 0, result.stderr
+        assert Path(result.stdout.strip()) == expected.resolve()
+
+    def test_stop_hook_requires_codex_plugin_root(self):
+        env = self._mixed_herdr_env(CLAUDE_PLUGIN_ROOT=str(PLUGIN_ROOT))
+        env.pop("PLUGIN_ROOT", None)
+        result = subprocess.run(
+            ["python3", str(HOOK)],
+            input=json.dumps({
+                "hook_event_name": "Stop",
+                "cwd": str(REPO_ROOT),
+                "last_assistant_message": "<proposed_plan>Codex plan</proposed_plan>",
+            }),
+            env=env, text=True, capture_output=True,
+        )
+
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout)
+        assert payload["decision"] == "block"
+        assert "PLUGIN_ROOT is not set" in payload["reason"]
+        assert self._calls() == ""
+
     def test_stop_hook_extracts_markdown_and_blocks_with_annotations(self) -> None:
         event = {
             "hook_event_name": "Stop",
@@ -1492,3 +1537,78 @@ class TestRevDiffHerdr:
         assert result.returncode == 0, result.stderr
         assert json.loads(result.stdout)["decision"] == "block"
         assert not re.search(r"(?m)^revdiff ", self._calls())
+
+    @pytest.mark.parametrize("case", [
+        "status", "plan", "stripped-plan", "old-plan-then-status",
+        "damage-before-identity", "wrong-session", "other-turn",
+        "damage-after-status", "damage-after-plan", "partial-tail",
+        "damaged-identity", "unknown-damage",
+        "recognized-tail-status", "recognized-tail-plan",
+    ])
+    @pytest.mark.parametrize("damage_kind", ["event", "reasoning", "reasoning-ordinal"])
+    def test_stop_hook_requires_current_message_after_transcript_damage(self, case, damage_kind):
+        def message(turn, text):
+            return json.dumps({"type": "response_item", "payload": {
+                "type": "message", "role": "assistant",
+                "content": [{"type": "output_text", "text": text}],
+                "internal_chat_message_metadata_passthrough": {"turn_id": turn},
+            }})
+
+        identity = json.dumps({"type": "session_meta", "payload": {"id": "current"}})
+        plan = "<proposed_plan># Current plan\n\nReview this.</proposed_plan>"
+        final = plan if case in {"plan", "stripped-plan", "damage-after-plan", "recognized-tail-plan"} else "Status reply."
+        lines = [identity]
+        if case == "old-plan-then-status":
+            lines.append(message("now", plan))
+        if damage_kind == "event":
+            damage = ('{"timestamp":"2026-09-26T20:09:29.760Z","ordinal":1,'
+                      '"type":"event_msg","payload":{"type":"item_completed","text":"truncated')
+        else:
+            ordinal = '"ordinal":314202,' if damage_kind == "reasoning-ordinal" else ""
+            damage = ('{"timestamp":"2026-09-29T11:23:30.653Z",' + ordinal +
+                      '"type":"response_item","payload":{"type":"reasoning","id":"rs_0123",'
+                      '"summary":[{"type":"summary_text","text":"truncated')
+        lines += [damage,
+            message(
+            "previous" if case == "other-turn" else "now", final,
+        )]
+        if case == "damaged-identity":
+            lines[1] = '{"type":"session_meta","payload":{"id":"other"'
+        if case == "unknown-damage":
+            lines[1] = "{"
+        if case == "damage-before-identity":
+            lines.insert(0, "{")
+        if case == "wrong-session":
+            lines.append(json.dumps({"type": "session_meta", "payload": {"id": "other"}}))
+        if case in {"damage-after-status", "damage-after-plan", "partial-tail"}:
+            lines.append('{"type":"response_item","payload":')
+        if case in {"recognized-tail-status", "recognized-tail-plan"}:
+            lines.append(damage)
+        transcript = self.temp / "rollout-current.jsonl"
+        transcript.write_text("\n".join(lines) + ("" if case == "partial-tail" else "\n"))
+        before = transcript.read_bytes()
+        event = {
+            "hook_event_name": "Stop", "cwd": str(REPO_ROOT),
+            "session_id": "current", "turn_id": "now",
+            "transcript_path": str(transcript),
+            # Native Plan mode can strip the plan from this field.
+            "last_assistant_message": "Here is the plan." if case == "stripped-plan" else None,
+        }
+        result = subprocess.run(
+            ["python3", str(HOOK)], input=json.dumps(event),
+            env=self._mixed_herdr_env(PLUGIN_ROOT=str(PLUGIN_ROOT)),
+            text=True, capture_output=True, check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout)
+        launched = bool(re.search(r"(?m)^revdiff ", self._calls()))
+        if case in {"plan", "stripped-plan"}:
+            assert launched
+            assert payload.get("decision") != "block"
+        elif case in {"status", "old-plan-then-status"}:
+            assert not launched
+            assert payload == {}
+        else:
+            assert not launched
+            assert payload["decision"] == "block"
+        assert transcript.read_bytes() == before

@@ -5,6 +5,12 @@ prefix = "ctrl+a"
 goto = ["prefix+g", "ctrl+g"]
 
 [ui]
-mobile_width_threshold = 100
-sidebar_collapsed_mode = "hidden"
-agent_panel_sort = "priority"
+mobile_width_threshold = 85
+sidebar_collapsed_mode = "compact"
+agent_panel_sort = "spaces"
+
+[[keys.command]]
+key = 'ctrl+j'
+type = 'plugin_action'
+command = 'attention-sessions.open'
+description = 'Open Attention & Sessions'

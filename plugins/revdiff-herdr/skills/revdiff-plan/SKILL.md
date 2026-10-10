@@ -66,26 +66,26 @@ the Stop hook did not open one.
 
 ### 1. Extract the last response
 
-Run:
+Resolve the requested conversation's rollout from available identity metadata.
+Before extracting, verify that its embedded `session_meta.payload.id` matches
+the requested immutable thread ID, or the current thread ID when reviewing this
+conversation. Do not select a rollout by modification time: the extractor's
+automatic discovery and `--skip-current` are only heuristics and can select
+another conversation. Ask for the target only when it remains genuinely unclear.
 
-```bash
-$SCRIPT_DIR/extract-last-message.sh --skip-current
-```
-
-The extractor uses a best-effort session-file heuristic. If it selects the
-wrong session, use the explicit rollout path supplied by the user:
-
-```bash
-$SCRIPT_DIR/extract-last-message.sh /path/to/rollout.jsonl
-```
-
-Write the output to a canonical Markdown snapshot:
+Pass the verified path explicitly and write the output to a canonical Markdown
+snapshot:
 
 ```bash
 TMPBASE="${TMPDIR:-/tmp}"
 CURRENT_PLAN=$(mktemp "$TMPBASE/revdiff-plan-XXXXXX.md")
-$SCRIPT_DIR/extract-last-message.sh --skip-current > "$CURRENT_PLAN"
+REVIEW_ROLLOUT="<verified absolute rollout path>"
+$SCRIPT_DIR/extract-last-message.sh "$REVIEW_ROLLOUT" > "$CURRENT_PLAN"
 ```
+
+Check that the extracted text is the requested response, not a subsequent
+progress update. If necessary, select that exact message from the verified
+rollout before opening the review.
 
 ### 2. Open the first review
 
@@ -130,8 +130,9 @@ $PLAN_LAUNCHER \
 
 The launcher renders both inputs at the same current width and opens a native
 one-file comparison. Each iteration compares only with the immediately
-preceding plan. The same `O` reflow and `q` completion controls apply. Continue
-until the launcher returns no annotations.
+preceding plan. Reflow follows stabilized terminal-width changes; `O` exports
+annotations and `q` finishes the review. Continue until the launcher completes
+successfully without annotations.
 
 ### 5. Clean up and report
 
@@ -139,6 +140,7 @@ Remove every manual temp snapshot after the review completes, then present the
 final plan if it changed. Preserve snapshots while a review is still active so
 the next comparison has the correct baseline.
 
-If a launcher command times out but the RevDiff tab remains open, tell the user
-that the review may still be active and wait for them to finish before checking
-the launcher output. Do not launch a duplicate review.
+For a timeout or lost result, follow the RevDiff
+[recovery guidance](../revdiff/references/advanced-workflows.md#recover-after-launcher-timeout-or-a-manual-flush).
+Preserve snapshots and unresolved completion status until the original review's
+result is established; do not launch a duplicate review.

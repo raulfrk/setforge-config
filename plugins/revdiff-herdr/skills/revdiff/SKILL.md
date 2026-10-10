@@ -59,6 +59,13 @@ For informational questions, answer directly from the relevant reference:
 For a PR diff, patch, or pasted unified diff that is not the working tree, read
 the advanced-workflows reference and use its stdin flow instead of ref detection.
 
+When the user asks for suggested changes with agent annotations, prepare actual
+file edits within the authorized scope and review their diff with preloaded
+rationale. Use a document-only proposal only when requested. Preserve existing
+edits as the baseline, isolate overlapping work when needed, and read the
+advanced-workflows reference for the preload procedure. This request does not
+expand which files or systems the user authorized you to change.
+
 ### 2. Launch RevDiff
 
 Use the single public launcher:

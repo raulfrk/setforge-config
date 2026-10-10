@@ -3,10 +3,9 @@
 # usage: resolve-launcher.sh <launcher-name> [data-dir]
 # outputs absolute path of the first-found executable launcher
 #
-# No project (.claude/...) layer by design: this script can be invoked
-# automatically by hooks (e.g. revdiff-planning's ExitPlanMode), and a
-# repo-controlled executable layer would let an untrusted repo run
-# arbitrary code on routine Claude actions. User layer + bundled only.
+# No project-controlled launcher layer: the Codex Stop hook invokes this
+# resolver automatically. Only the user's Codex plugin data directory and
+# this installed bundle may supply executable launchers.
 set -euo pipefail
 
 name="${1:-}"
@@ -14,7 +13,7 @@ if [ -z "$name" ]; then
     echo "error: usage: resolve-launcher.sh <launcher-name> [data-dir]" >&2
     exit 1
 fi
-data_dir="${2:-${CLAUDE_PLUGIN_DATA:-}}"
+data_dir="${2:-${PLUGIN_DATA:-}}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 abspath() { (cd "$(dirname "$1")" && printf '%s/%s\n' "$(pwd)" "$(basename "$1")"); }
