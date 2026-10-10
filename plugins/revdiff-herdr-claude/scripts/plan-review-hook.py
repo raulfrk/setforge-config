@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any
 
 MARKER_RE = re.compile(r"^\s*<!--\s*previous revision:\s*(.+?)\s*-->\s*$")
-WEB_MARK_RE = re.compile(r"^\s*<!--\s*web-plan\s*-->\s*$")
 SNAPSHOT_PREFIX = "plan-rev-"
 SUCCESS_CODES = {0, 10}
 
@@ -30,16 +29,12 @@ def ask(reason: str = "") -> None:
     print(json.dumps({"hookSpecificOutput": output}, separators=(",", ":")))
 
 
-def reviewer_name(web: bool) -> str:
-    return "the web plan page" if web else "RevDiff"
-
-
-def review_failed(message: str, web: bool = False) -> None:
+def review_failed(message: str) -> None:
     # The native approval prompt still follows, so a failed review must be
     # visible there instead of looking like an annotation-free review.
     ask(
-        f"{'Web plan' if web else 'RevDiff plan'} review failed: {message}. "
-        f"The plan was NOT reviewed in {reviewer_name(web)}; "
+        f"RevDiff plan review failed: {message}. "
+        "The plan was NOT reviewed in RevDiff; "
         "this is not an annotation-free review."
     )
 
@@ -109,37 +104,32 @@ def main() -> None:
         review_failed("the hook event contained no plan text")
         return
 
-    # Only the mark on the first line (after any revision marker) selects the
-    # web reviewer; the mark stays in the plan snapshot.
     first_line, separator, rest = plan.partition("\n")
     marker = MARKER_RE.match(first_line)
     if marker:
         plan = rest if separator else ""
-    web = bool(WEB_MARK_RE.match(plan.partition("\n")[0]))
-    reviewer = reviewer_name(web)
-    script = "web-plan-review.py" if web else "launch-revdiff.sh"
 
     plugin_root_value = os.environ.get("CLAUDE_PLUGIN_ROOT")
     if not plugin_root_value:
-        review_failed("CLAUDE_PLUGIN_ROOT is not set", web)
+        review_failed("CLAUDE_PLUGIN_ROOT is not set")
         return
-    if not web and not shutil.which("revdiff"):
+    if not shutil.which("revdiff"):
         review_failed("revdiff binary is not available on PATH")
         return
 
     cwd = event.get("cwd")
     launcher = resolve_launcher(
-        Path(plugin_root_value), os.environ.get("CLAUDE_PLUGIN_DATA", ""), cwd, script
+        Path(plugin_root_value), os.environ.get("CLAUDE_PLUGIN_DATA", ""), cwd, "launch-revdiff.sh"
     )
     if launcher is None:
-        review_failed(f"no executable {script} was found", web)
+        review_failed("no executable launch-revdiff.sh was found")
         return
 
     old_snapshot = None
     if marker:
         old_snapshot = trusted_snapshot(Path(marker.group(1)))
         if old_snapshot is None:
-            review_failed("the previous revision snapshot is unavailable", web)
+            review_failed("the previous revision snapshot is unavailable")
             return
 
     new_snapshot: Path | None = None
@@ -169,12 +159,12 @@ def main() -> None:
     except KeyboardInterrupt:
         if new_snapshot is not None:
             new_snapshot.unlink(missing_ok=True)
-        review_failed("launcher was interrupted", web)
+        review_failed("launcher was interrupted")
         return
     except subprocess.TimeoutExpired:
         if new_snapshot is not None:
             new_snapshot.unlink(missing_ok=True)
-        review_failed("launcher timed out", web)
+        review_failed("launcher timed out")
         return
     except OSError:
         if new_snapshot is not None:
@@ -182,8 +172,7 @@ def main() -> None:
         review_failed(
             "plan snapshot could not be written"
             if operation == "snapshot"
-            else "launcher could not be started",
-            web,
+            else "launcher could not be started"
         )
         return
 
@@ -192,15 +181,14 @@ def main() -> None:
         new_snapshot.unlink(missing_ok=True)
         detail = result.stderr.strip()[-2000:]
         review_failed(
-            f"launcher exited with status {result.returncode}" + (f": {detail}" if detail else ""),
-            web,
+            f"launcher exited with status {result.returncode}" + (f": {detail}" if detail else "")
         )
         return
 
     annotations = result.stdout.strip()
     if result.returncode == 10 and not annotations:
         new_snapshot.unlink(missing_ok=True)
-        review_failed("launcher reported annotations but returned no annotation text", web)
+        review_failed("launcher reported annotations but returned no annotation text")
         return
 
     if old_snapshot is not None:
@@ -208,11 +196,11 @@ def main() -> None:
 
     if not annotations:
         new_snapshot.unlink(missing_ok=True)
-        ask(f"Plan reviewed in {reviewer} with no annotations.")
+        ask("Plan reviewed in RevDiff with no annotations.")
         return
 
     deny(
-        f"The user reviewed the plan in {reviewer} and added annotations. "
+        "The user reviewed the plan in RevDiff and added annotations. "
         "Revise the plan to address every annotation, then call ExitPlanMode again "
         "with the complete revised plan for another review.\n\n"
         f"{annotations}\n\n"
@@ -221,12 +209,6 @@ def main() -> None:
         "this conversation; older markers belong to unrelated planning tasks and "
         "would compare against the wrong baseline:\n"
         f"<!-- previous revision: {new_snapshot} -->"
-        + (
-            "\nKeep <!-- web-plan --> on the line directly after the previous-revision "
-            "marker so the revised plan is still reviewed as a web plan."
-            if web
-            else ""
-        )
     )
 
 

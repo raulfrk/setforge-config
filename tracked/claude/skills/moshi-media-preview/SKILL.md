@@ -35,9 +35,9 @@ skip this workflow and use the normal inline image/file delivery available.
   destination paths; do not serve a repository, home, config, or general
   artifact directory. Use ordinary copied files, simple filenames, and escaped
   labels/URLs in a small generated `index.html`; keep it self-contained.
-- For requests such as "make a review page" or "draw a diagram" in a confirmed
-  Moshi session, create the requested content in that private directory. In Plan
-  Mode, plans go through `revdiff-herdr:web-plan`, not this skill. Use a readable, phone-friendly HTML page with a
+- For requests such as "make a review page", "show this plan as a page", or
+  "draw a diagram" in a confirmed Moshi session, create the requested content
+  in that private directory. Use a readable, phone-friendly HTML page with a
   clear title, viewport metadata, and simple CSS. For diagrams, prefer inline
   SVG or HTML/CSS; use an existing local renderer when the format requires it.
   Include only content relevant to the request. Keep scripts, fonts, images,

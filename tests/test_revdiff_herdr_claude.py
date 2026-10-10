@@ -15,13 +15,10 @@ HOOK = PLUGIN_ROOT / "scripts/plan-review-hook.py"
 EXTRACTOR = PLUGIN_ROOT / "skills/revdiff-plan/scripts/extract-last-message.sh"
 
 
-WEB_MARK = "<!-- web-plan -->"
-
-
 @pytest.fixture
 def review(tmp_path: Path):
-    """Run the hook against fake reviewers in the plugin data override layer."""
-    # A private plugin root keeps the bundled web-plan-review.py out of reach.
+    """Run the hook against a fake reviewer in the plugin data override layer."""
+    # A private plugin root keeps the bundled launchers out of reach.
     plugin_root = tmp_path / "plugin"
     (plugin_root / "scripts").mkdir(parents=True)
     (plugin_root / "scripts/resolve-launcher.sh").symlink_to(
@@ -37,7 +34,6 @@ def review(tmp_path: Path):
     snapshots = tmp_path / "tmp"
     snapshots.mkdir()
     calls = tmp_path / "calls.log"
-    web_calls = tmp_path / "web-calls.log"
 
     def fake_reviewer(script: Path, log: Path, rc: int, annotations: str) -> None:
         script.write_text(
@@ -53,16 +49,10 @@ def review(tmp_path: Path):
         *,
         launcher_rc: int = 0,
         annotations: str = "",
-        web_rc: int | None = None,
-        web_annotations: str = "",
         tool_name: str = "ExitPlanMode",
         path: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         fake_reviewer(data / "scripts/launch-revdiff.sh", calls, launcher_rc, annotations)
-        web_script = data / "scripts/web-plan-review.py"
-        web_script.unlink(missing_ok=True)
-        if web_rc is not None:
-            fake_reviewer(web_script, web_calls, web_rc, web_annotations)
         env = {
             **os.environ,
             "PATH": path if path is not None else f"{fake_bin}:{os.environ['PATH']}",
@@ -86,7 +76,6 @@ def review(tmp_path: Path):
         )
 
     run.calls = calls
-    run.web_calls = web_calls
     run.snapshots = snapshots
     return run
 
@@ -104,7 +93,6 @@ def test_review_without_annotations_continues_to_native_approval(review) -> None
         "Plan reviewed in RevDiff with no annotations."
     )
     assert review.calls.read_text().startswith(f"--only={review.snapshots}/plan-rev-")
-    assert not review.web_calls.exists()
     assert list(review.snapshots.iterdir()) == []
 
 
@@ -115,7 +103,6 @@ def test_annotations_block_exit_and_keep_snapshot_for_next_revision(review) -> N
     assert result.stdout == ""
     assert result.stderr.startswith("The user reviewed the plan in RevDiff and added annotations. ")
     assert "## plan.md:1 ( )\nwhy?" in result.stderr
-    assert "web-plan" not in result.stderr
     (snapshot,) = review.snapshots.iterdir()
     assert f"<!-- previous revision: {snapshot} -->" in result.stderr
     assert snapshot.read_text() == "# Plan\n"
@@ -166,128 +153,11 @@ def test_failed_review_is_reported_as_not_reviewed(review, kwargs, message) -> N
     assert list(review.snapshots.iterdir()) == []
 
 
-def test_web_plan_is_reviewed_by_the_web_reviewer(review) -> None:
-    result = review(f"{WEB_MARK}\n<h1>Plan</h1>\n", web_rc=0)
-
-    assert result.returncode == 0
-    assert decision(result)["permissionDecision"] == "ask"
-    assert decision(result)["permissionDecisionReason"] == (
-        "Plan reviewed in the web plan page with no annotations."
-    )
-    assert review.web_calls.read_text().startswith(f"--only={review.snapshots}/plan-rev-")
-    assert not review.calls.exists()
-    assert list(review.snapshots.iterdir()) == []
-
-
-def test_web_mark_tolerates_whitespace(review) -> None:
-    result = review("  <!--   web-plan-->  \n<h1>Plan</h1>\n", web_rc=0)
-
-    assert decision(result)["permissionDecisionReason"].startswith("Plan reviewed in the web plan page")
-    assert review.web_calls.exists()
-    assert not review.calls.exists()
-
-
-def test_web_revision_compares_snapshots_and_keeps_the_mark(review) -> None:
-    review(f"{WEB_MARK}\n<h1>Plan</h1>\n", web_rc=10, web_annotations="change it")
-    (old,) = review.snapshots.iterdir()
-    review.web_calls.write_text("")
-
-    result = review(
-        f"<!-- previous revision: {old} -->\n{WEB_MARK}\n<h1>Plan v2</h1>\n",
-        web_rc=10,
-        web_annotations="again",
-    )
-
-    assert result.returncode == 2
-    old_arg, new_arg = review.web_calls.read_text().splitlines()
-    assert old_arg == f"--compare-old={old}"
-    (new,) = review.snapshots.iterdir()
-    assert new_arg == f"--compare-new={new}"
-    assert new.read_text() == f"{WEB_MARK}\n<h1>Plan v2</h1>\n"
-    assert not review.calls.exists()
-
-
-@pytest.mark.parametrize(
-    "plan",
-    [
-        "# Plan\n\n<div><h1>Looks like HTML</h1></div>\n",
-        f"# Plan\n{WEB_MARK}\n",
-        f"# Plan\n\nText\n{WEB_MARK}\n<p>x</p>\n",
-        f"<p>{WEB_MARK}</p>\n",
-    ],
-)
-def test_only_the_first_line_mark_selects_the_web_reviewer(review, plan: str) -> None:
-    result = review(plan, web_rc=0)
-
-    assert decision(result)["permissionDecision"] == "ask"
-    assert "RevDiff" in decision(result)["permissionDecisionReason"]
-    assert review.calls.read_text().startswith(f"--only={review.snapshots}/plan-rev-")
-    assert not review.web_calls.exists()
-
-
-def test_revdiff_revision_ignores_a_mark_below_the_first_plan_line(review) -> None:
-    review("# Plan\n", launcher_rc=10, annotations="change it")
-    (old,) = review.snapshots.iterdir()
-
-    review(f"<!-- previous revision: {old} -->\n# Plan v2\n{WEB_MARK}\n", web_rc=0)
-
-    assert review.calls.read_text().splitlines()[-2] == f"--compare-old={old}"
-    assert not review.web_calls.exists()
-
-
-def test_web_plan_does_not_need_the_revdiff_binary(review) -> None:
-    result = review(f"{WEB_MARK}\n<h1>Plan</h1>\n", web_rc=0, path="/usr/bin:/bin")
-
-    assert decision(result)["permissionDecisionReason"].startswith("Plan reviewed in the web plan page")
-    assert review.web_calls.exists()
-
-
-def test_web_annotations_block_exit_and_ask_to_keep_the_mark(review) -> None:
-    result = review(
-        f"{WEB_MARK}\n<h1>Plan</h1>\n", web_rc=10, web_annotations="## plan.html:1\nwhy?"
-    )
-
-    assert result.returncode == 2
-    assert result.stdout == ""
-    assert result.stderr.startswith("The user reviewed the plan in the web plan page and added annotations. ")
-    assert "## plan.html:1\nwhy?" in result.stderr
-    (snapshot,) = review.snapshots.iterdir()
-    assert f"<!-- previous revision: {snapshot} -->\n" in result.stderr
-    assert f"Keep {WEB_MARK} on the line directly after the previous-revision marker" in result.stderr
-    assert snapshot.read_text() == f"{WEB_MARK}\n<h1>Plan</h1>\n"
-    assert not review.calls.exists()
-
-
-@pytest.mark.parametrize(
-    ("web_rc", "message"),
-    [
-        (1, "launcher exited with status 1"),
-        (10, "returned no annotation text"),
-        (None, "no executable web-plan-review.py was found"),
-    ],
-)
-def test_failed_web_review_is_reported_as_not_reviewed_and_never_uses_revdiff(
-    review, web_rc, message
-) -> None:
-    result = review(f"{WEB_MARK}\n<h1>Plan</h1>\n", web_rc=web_rc)
-
-    reason = decision(result)["permissionDecisionReason"]
-    assert result.returncode == 0
-    assert decision(result)["permissionDecision"] == "ask"
-    assert reason.startswith("Web plan review failed: ")
-    assert "The plan was NOT reviewed in the web plan page; this is not an annotation-free review." in reason
-    assert message in reason
-    assert "RevDiff" not in reason
-    assert not review.calls.exists()
-    assert list(review.snapshots.iterdir()) == []
-
-
-def test_hook_status_message_does_not_name_revdiff() -> None:
+def test_hook_runs_on_exit_plan_mode() -> None:
     hooks = json.loads((PLUGIN_ROOT / "hooks/hooks.json").read_text())
 
     (entry,) = hooks["hooks"]["PreToolUse"]
     assert entry["matcher"] == "ExitPlanMode"
-    assert "RevDiff" not in entry["hooks"][0]["statusMessage"]
 
 
 def test_other_tools_are_ignored(review) -> None:

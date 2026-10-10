@@ -276,10 +276,8 @@ Git/process state. Discovery is not an issue read.
 
 Keep routine work out of Plan Mode. For substantial planning, enter Plan Mode
 with the native tool and think the design through thoroughly there; leave it
-only through the standard plan approval. Load `revdiff-herdr:web-plan` before writing the
-plan; it decides whether the plan is Markdown or an HTML page for Moshi. The
-`revdiff-herdr` plugin opens each completed plan for review at that point, in
-RevDiff or as that local web page: address every returned annotation and
+only through the standard plan approval. The `revdiff-herdr` plugin opens each
+completed plan in RevDiff at that point: address every returned annotation and
 never treat a failed or skipped review as acceptance. Never bypass a pending
 approval or active collaboration rules.
 

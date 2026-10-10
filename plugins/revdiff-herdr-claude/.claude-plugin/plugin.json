@@ -1,6 +1,6 @@
 {
   "name": "revdiff-herdr",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Review Claude Code plans, diffs, and Markdown in a dedicated Herdr tab",
   "author": {
     "name": "Raul"

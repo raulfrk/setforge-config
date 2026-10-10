@@ -132,7 +132,6 @@ interactions. A required gate needs a fresh independent verdict for this phase
 and current evidence, fresh affected specialist completions, applicable retained
 verdicts, no verified mandatory findings, and no reviewer-made changes.
 After a clean gate, present the complete plan or verified implementation.
-Leaving Plan Mode opens the plan for review (RevDiff or the web-plan page)
-through the `revdiff-herdr` plugin; otherwise open RevDiff only when
-explicitly requested.
+Leaving Plan Mode opens the plan in RevDiff through the `revdiff-herdr` plugin;
+otherwise open RevDiff only when explicitly requested.
 Review does not authorize a commit, push, publication, or consequential action.
