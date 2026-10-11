@@ -21,6 +21,17 @@ not copy the complete live file into the fragment or classify those keys as
 `SHARED`. Instructions, agents, skills, and the status-line script use ordinary
 tracked-file reconciliation.
 
+`setforge stage claude_settings` offers one whole-document unit for this JSON
+file: choose Keep local once, and re-run it when `stage --list` shows a pending
+unit again. A fragment edit next to host-only keys can still end in `merge
+conflict kept live, base not advanced`, which applies nothing even though the
+dry-run says `noop`. Resolve it with `install --file=claude_settings
+--reconcile-user-sections` and the Edit choice, back up the live file first, and
+return only the conflicting region from the editor (SetForge keeps the lines
+around it; a whole document breaks the JSON). Then confirm `jq empty` passes and
+the `hooks` block is unchanged. Never use `--auto=use-tracked` on this file: on
+a conflict it replaces the whole live file with the fragment.
+
 Inspect the source checkout for existing changes, then compare the relevant
 tracked file with its live destination and SetForge's reconciliation state.
 Preserve unrelated edits and host-local intent. Make the requested change in
