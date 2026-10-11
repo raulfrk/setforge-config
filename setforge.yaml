@@ -129,10 +129,6 @@ tracked_files:
     src: claude/settings.json
     dst: ~/.claude/settings.json
 
-  claude_skill_beads_adapt:
-    src: claude/skills/beads-adapt/SKILL.md
-    dst: ~/.claude/skills/beads-adapt/SKILL.md
-
   claude_skill_beads_bootstrap:
     src: claude/skills/beads-bootstrap/SKILL.md
     dst: ~/.claude/skills/beads-bootstrap/SKILL.md
@@ -373,7 +369,6 @@ profiles:
       - claude_agent_review_critical
       - claude_agent_review_general
       - claude_settings
-      - claude_skill_beads_adapt
       - claude_skill_beads_bootstrap
       - claude_skill_beads
       - claude_skill_beads_reference_project_config

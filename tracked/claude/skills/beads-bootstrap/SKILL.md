@@ -1,6 +1,6 @@
 ---
 name: beads-bootstrap
-description: Bootstrap a new Git repository with an approved private, stealth Beads database and the canonical reviewer-friendly project configuration. Use for new-repository Beads setup; use beads-adapt when a database already exists.
+description: Bootstrap a new Git repository with an approved private, stealth Beads database and the canonical reviewer-friendly project configuration. Use for new-repository Beads setup.
 ---
 
 # Bootstrap Beads privately
@@ -21,8 +21,7 @@ primary `.beads` symlink or `redirect` file before initialization.
    checkout root. Reuse validated discovery only while the task, checkout,
    environment, and relevant paths remain unchanged.
 2. Treat `no_beads_directory` as absence. If a database exists, do not
-   initialize: report whether its seven values conform and route drift to the
-   `beads-adapt` skill.
+   initialize: report whether its seven values conform.
 3. Propose the exact repository prefix, this initialization command, and the
    canonical configuration command from the reference:
 

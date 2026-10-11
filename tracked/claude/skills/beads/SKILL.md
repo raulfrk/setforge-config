@@ -1,6 +1,6 @@
 ---
 name: beads
-description: Manage private Beads issues and project configuration, or perform required tracker discovery. Use beads-bootstrap for new setup and beads-adapt for existing repository conversion.
+description: Manage private Beads issues and project configuration, or perform required tracker discovery. Use beads-bootstrap for new setup.
 ---
 
 # Beads
@@ -46,8 +46,7 @@ human-readable output. Use native `bd` commands and consult
 
 For configuration meaning, provenance, and the sole approved command, read
 [the project configuration reference](references/project-config.md). For a new
-repository use the `beads-bootstrap` skill. For conversion of existing state
-use the `beads-adapt` skill.
+repository use the `beads-bootstrap` skill.
 
 ## Authorization
 
@@ -76,7 +75,7 @@ approval ceremony. Apply the global destructive-action safeguards to deletion.
 
 Before approved initialization, load `beads-bootstrap` for the stealth
 initialization command and complete verification procedure. Do not silently
-reinitialize an existing database; use `beads-adapt` for an approved conversion.
+reinitialize an existing database.
 
 ## Configure the project
 
