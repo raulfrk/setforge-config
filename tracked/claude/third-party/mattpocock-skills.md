@@ -15,6 +15,7 @@ commit to update.
 | `wizard` | `skills/engineering/wizard/{SKILL.md,template.sh}` | model or user |
 | `writing-for-agents` | `skills/productivity/writing-for-agents/{SKILL.md,SKILL-MECHANICS.md}` | model or user |
 | `retro` | `skills/engineering/retro/SKILL.md` | user only |
+| `domain-modeling` | `skills/engineering/domain-modeling/{SKILL.md,ADR-FORMAT.md,GLOSSARY-FORMAT.md}` | model or user |
 
 `grill-me` only calls `grilling`, and `retro` calls `writing-for-agents`, so each
 group deploys together. The upstream `agents/openai.yaml` files are for Codex

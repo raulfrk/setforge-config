@@ -225,6 +225,34 @@ tracked_files:
     src: claude/skills/writing-for-agents/SKILL-MECHANICS.md
     dst: ~/.claude/skills/writing-for-agents/SKILL-MECHANICS.md
 
+  claude_skill_domain_modeling:
+    src: claude/skills/domain-modeling/SKILL.md
+    dst: ~/.claude/skills/domain-modeling/SKILL.md
+
+  claude_skill_domain_modeling_adr_format:
+    src: claude/skills/domain-modeling/ADR-FORMAT.md
+    dst: ~/.claude/skills/domain-modeling/ADR-FORMAT.md
+
+  claude_skill_domain_modeling_glossary_format:
+    src: claude/skills/domain-modeling/GLOSSARY-FORMAT.md
+    dst: ~/.claude/skills/domain-modeling/GLOSSARY-FORMAT.md
+
+  claude_skill_i_have_adhd:
+    src: claude/skills/i-have-adhd/SKILL.md
+    dst: ~/.claude/skills/i-have-adhd/SKILL.md
+
+  claude_skill_ponytail:
+    src: claude/skills/ponytail/SKILL.md
+    dst: ~/.claude/skills/ponytail/SKILL.md
+
+  claude_skill_ponytail_audit:
+    src: claude/skills/ponytail-audit/SKILL.md
+    dst: ~/.claude/skills/ponytail-audit/SKILL.md
+
+  claude_skill_source_driven_development:
+    src: claude/skills/source-driven-development/SKILL.md
+    dst: ~/.claude/skills/source-driven-development/SKILL.md
+
   claude_statusline:
     src: claude/statusline.sh
     dst: ~/.claude/statusline.sh
@@ -369,6 +397,13 @@ profiles:
       - claude_skill_wizard_template
       - claude_skill_writing_for_agents
       - claude_skill_writing_for_agents_skill_mechanics
+      - claude_skill_domain_modeling
+      - claude_skill_domain_modeling_adr_format
+      - claude_skill_domain_modeling_glossary_format
+      - claude_skill_i_have_adhd
+      - claude_skill_ponytail
+      - claude_skill_ponytail_audit
+      - claude_skill_source_driven_development
       - claude_mod_cache_guard_manifest
       - claude_mod_cache_guard_hooks
       - claude_mod_cache_guard_register
