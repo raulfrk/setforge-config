@@ -7,7 +7,8 @@
   "skillOverrides": {
     "artifact-design": "user-invocable-only",
     "artifact-capabilities": "user-invocable-only",
-    "artifact-diagramming": "user-invocable-only"
+    "artifact-diagramming": "user-invocable-only",
+    "ponytail": "user-invocable-only"
   },
   "permissions": {
     "defaultMode": "bypassPermissions"
