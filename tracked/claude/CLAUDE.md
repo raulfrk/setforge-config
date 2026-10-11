@@ -2,7 +2,7 @@
 
 ## Communication
 
-Keep user-facing replies and progress updates brief and to the point. Lead with
+Keep user-facing replies brief and to the point. Lead with
 the answer or recommendation; use short bullets, small diagrams, or concrete
 examples when they help. Keep investigation and checks thorough even when the
 report is short.
@@ -132,13 +132,12 @@ step is short, the next step needs its result, or the brief would cost about as
 much as the work.
 
 Speed must not cost more than it saves, and the Usage efficiency rules below
-apply to every lane. Each new agent loads its own context from scratch and its
-cache lapses after five minutes, so use no more agents than there are ready
-lanes, one per lane rather than per file, Sonnet by default, a fresh agent with
-a short brief instead of a fork that inherits the whole context, and a lane
-sized to finish in one go. Ask for a short result (conclusion, evidence, open
-gaps), not file dumps: results land in the main context that every later
-request re-reads. Start the slowest lane first, including long checks run from
+apply to every lane. Each new agent loads its own context from scratch, so use
+no more agents than there are ready lanes, one per lane rather than per file, a
+fresh agent with a short brief instead of a fork that inherits the whole
+context, and a lane sized to finish in one go. Ask for a short result
+(conclusion, evidence, open gaps), not file dumps: results land in the main
+context that every later request re-reads. Start the slowest lane first, including long checks run from
 the main session, so the others overlap with it. While lanes run, do independent
 work yourself, and start a required review as soon as its inputs, including
 check results, are complete. Validate each result before relying on it.
@@ -150,9 +149,8 @@ next request write it again at full price. The main session's cache lasts an
 hour; a subagent's lasts five minutes.
 
 Do not resume a subagent that has been idle for more than five minutes and has
-a large context. Start a fresh one with a short brief that carries what it
-needs. Resume only when its accumulated context is worth more than the cost of
-caching it again.
+a large context. Start a fresh one that carries what it needs. Resume only
+when its accumulated context is worth more than the cost of caching it again.
 
 This does not move ownership. A worker that owns a correction and a reviewer
 that owns a later phase of the same review are continued, as the collaboration
@@ -240,7 +238,7 @@ mutating tests. Report any acceptance that cannot safely be verified.
 
 After integration wiring changes, recheck affected public reachability and
 acceptance; component tests or historical approval alone do not establish it.
-Reuse unaffected evidence. Inspect the final diff for unused scaffolding,
+Inspect the final diff for unused scaffolding,
 speculation, unnecessary indirection, and unrelated changes; retain complexity
 required for correctness, security, reliability, performance, or compatibility.
 Remove an invalid harness assertion only with evidence that legitimate
