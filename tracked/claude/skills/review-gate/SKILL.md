@@ -68,8 +68,11 @@ later implementation.
 
 The brief covers requirements/correctness, verification adequacy, plan compliance,
 scope, and simplicity. Implementation review must flag missing commitments,
-unauthorized deviations, unproved claims, and extra scope. Ask for `CLEAN` or
-findings with severity, location, evidence, impact, and smallest justified
+unauthorized deviations, unproved claims, and extra scope. It also flags a check
+made to pass by weakening it (`skip`/`xfail`, a deleted or loosened assertion,
+`# noqa`, `# type: ignore`, `//nolint`, `failed_when: false`, `|| true`, a lowered
+threshold) and a bug fix whose test was not shown failing before the fix. Ask for
+`CLEAN` or findings with severity, location, evidence, impact, and smallest justified
 correction. A reuse finding must identify actual repetition or an existing
 capability and demonstrate lower net complexity.
 
