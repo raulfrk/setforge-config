@@ -7,15 +7,15 @@ These files are unmodified copies, deployed to `~/.claude/skills/` by the
 `claude` profile. Compare with upstream before changing them; re-copy at a new
 commit to update.
 
-| Deployed skill | Upstream path | Invocation |
-| --- | --- | --- |
-| `wait-what` | `skills/productivity/wait-what/SKILL.md` | user only |
-| `grill-me` | `skills/productivity/grill-me/SKILL.md` | user only |
-| `grilling` | `skills/productivity/grilling/SKILL.md` | model or user |
-| `wizard` | `skills/engineering/wizard/{SKILL.md,template.sh}` | model or user |
-| `writing-for-agents` | `skills/productivity/writing-for-agents/{SKILL.md,SKILL-MECHANICS.md}` | model or user |
-| `retro` | `skills/engineering/retro/SKILL.md` | user only |
-| `domain-modeling` | `skills/engineering/domain-modeling/{SKILL.md,ADR-FORMAT.md,GLOSSARY-FORMAT.md}` | model or user |
+| Deployed skill | Upstream path |
+| --- | --- |
+| `wait-what` | `skills/productivity/wait-what/SKILL.md` |
+| `grill-me` | `skills/productivity/grill-me/SKILL.md` |
+| `grilling` | `skills/productivity/grilling/SKILL.md` |
+| `wizard` | `skills/engineering/wizard/{SKILL.md,template.sh}` |
+| `writing-for-agents` | `skills/productivity/writing-for-agents/{SKILL.md,SKILL-MECHANICS.md}` |
+| `retro` | `skills/engineering/retro/SKILL.md` |
+| `domain-modeling` | `skills/engineering/domain-modeling/{SKILL.md,ADR-FORMAT.md,GLOSSARY-FORMAT.md}` |
 
 `grill-me` only calls `grilling`, and `retro` calls `writing-for-agents`, so each
 group deploys together. The upstream `agents/openai.yaml` files are for Codex

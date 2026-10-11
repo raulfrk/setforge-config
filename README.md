@@ -40,12 +40,6 @@ plugin's scripts, so both agents share one RevDiff and Herdr implementation;
 only the hook, manifest, and skill text differ. Claude Code copies the linked
 contents into its plugin cache on install.
 
-Until the Claude plugin is pushed to GitHub, it is installed from this checkout
-(`claude plugin marketplace add <checkout>`), and the `revdiff_herdr_claude`
-package stays out of the `claude` profile: SetForge 1.3.9 cannot journal a
-directory marketplace. After publishing, remove the local marketplace, add the
-package to the profile, and run `setforge lock` and `setforge install`.
-
 Two Codex settings have no Claude Code counterpart and are not reproduced: a
 separate reasoning effort for Plan Mode, and the thread ID as terminal title.
 

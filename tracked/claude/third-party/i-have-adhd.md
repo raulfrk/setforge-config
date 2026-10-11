@@ -9,9 +9,9 @@ commit to update.
 
 The always-on SessionStart hook and the Codex and Gemini agent files are not copied.
 
-| Deployed skill | Upstream path | Invocation |
-| --- | --- | --- |
-| `i-have-adhd` | `skills/i-have-adhd/SKILL.md` | user only |
+| Deployed skill | Upstream path |
+| --- | --- |
+| `i-have-adhd` | `skills/i-have-adhd/SKILL.md` |
 ```
 MIT License
 

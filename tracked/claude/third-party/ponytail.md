@@ -9,10 +9,10 @@ commit to update.
 
 The upstream hooks, status line, commands and the other `ponytail-*` skills are not copied.
 
-| Deployed skill | Upstream path | Invocation |
-| --- | --- | --- |
-| `ponytail` | `skills/ponytail/SKILL.md` | model or user |
-| `ponytail-audit` | `skills/ponytail-audit/SKILL.md` | model or user |
+| Deployed skill | Upstream path |
+| --- | --- |
+| `ponytail` | `skills/ponytail/SKILL.md` |
+| `ponytail-audit` | `skills/ponytail-audit/SKILL.md` |
 ```
 MIT License
 

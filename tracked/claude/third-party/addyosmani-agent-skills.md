@@ -9,9 +9,9 @@ commit to update.
 
 The repo's hooks and other skills are not copied.
 
-| Deployed skill | Upstream path | Invocation |
-| --- | --- | --- |
-| `source-driven-development` | `skills/source-driven-development/SKILL.md` | model or user |
+| Deployed skill | Upstream path |
+| --- | --- |
+| `source-driven-development` | `skills/source-driven-development/SKILL.md` |
 ```
 MIT License
 

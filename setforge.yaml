@@ -408,8 +408,6 @@ profiles:
       - beads
       - revdiff
       - worktrunk
-      # Add revdiff_herdr_claude once plugins/revdiff-herdr-claude is published
-      # to the GitHub marketplace; until then it is installed from this checkout.
 
   claude-policy:
     tracked_files:
