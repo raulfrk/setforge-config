@@ -55,6 +55,13 @@ Initialization, creation, and configuration require explicit authorization of
 the exact operation or bounded batch. Reuse authorization already supplied in
 the conversation or by a standing user instruction; do not ask again when
 entering a supporting skill or reference.
+
+Standing authorization: in a repository that already has a Beads project, create
+one Bead for each fix, feature, bug or other trackable work item without asking.
+Create it before or as the work starts, claim it, and keep it open until its
+acceptance checks pass. Initialization, configuration, child Beads and other
+graph expansion still need the authorization above.
+
 When details are missing, present the repository, prefix or settings as applicable,
 and each proposed Bead's title, type, purpose, acceptance criteria, and parent or
 dependency relationships before asking. Ask again only when the target or scope
