@@ -193,6 +193,38 @@ tracked_files:
     src: claude/skills/technical-investigation/SKILL.md
     dst: ~/.claude/skills/technical-investigation/SKILL.md
 
+  claude_skill_grill_me:
+    src: claude/skills/grill-me/SKILL.md
+    dst: ~/.claude/skills/grill-me/SKILL.md
+
+  claude_skill_grilling:
+    src: claude/skills/grilling/SKILL.md
+    dst: ~/.claude/skills/grilling/SKILL.md
+
+  claude_skill_retro:
+    src: claude/skills/retro/SKILL.md
+    dst: ~/.claude/skills/retro/SKILL.md
+
+  claude_skill_wait_what:
+    src: claude/skills/wait-what/SKILL.md
+    dst: ~/.claude/skills/wait-what/SKILL.md
+
+  claude_skill_wizard:
+    src: claude/skills/wizard/SKILL.md
+    dst: ~/.claude/skills/wizard/SKILL.md
+
+  claude_skill_wizard_template:
+    src: claude/skills/wizard/template.sh
+    dst: ~/.claude/skills/wizard/template.sh
+
+  claude_skill_writing_for_agents:
+    src: claude/skills/writing-for-agents/SKILL.md
+    dst: ~/.claude/skills/writing-for-agents/SKILL.md
+
+  claude_skill_writing_for_agents_skill_mechanics:
+    src: claude/skills/writing-for-agents/SKILL-MECHANICS.md
+    dst: ~/.claude/skills/writing-for-agents/SKILL-MECHANICS.md
+
   claude_statusline:
     src: claude/statusline.sh
     dst: ~/.claude/statusline.sh
@@ -329,6 +361,14 @@ profiles:
       - claude_skill_setforge
       - claude_skill_setforge_reference_claude_profile
       - claude_skill_technical_investigation
+      - claude_skill_grill_me
+      - claude_skill_grilling
+      - claude_skill_retro
+      - claude_skill_wait_what
+      - claude_skill_wizard
+      - claude_skill_wizard_template
+      - claude_skill_writing_for_agents
+      - claude_skill_writing_for_agents_skill_mechanics
       - claude_mod_cache_guard_manifest
       - claude_mod_cache_guard_hooks
       - claude_mod_cache_guard_register
