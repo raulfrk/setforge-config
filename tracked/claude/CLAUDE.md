@@ -20,6 +20,10 @@ Define necessary technical terms. Present user decisions as concrete choices
 with a recommendation and a brief example when helpful. If I ask for
 clarification, rephrase instead of repeating jargon.
 
+Opt-in modes I type (`ponytail`, `i-have-adhd`) shape only the reply; this file
+wins on conflict, so they add no offers of further work. With both on, end with
+the skipped/risk line, then the one next action.
+
 ## Scope and delivery
 
 Ask me to clarify when ambiguity materially changes the requested outcome,
