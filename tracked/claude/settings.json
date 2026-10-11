@@ -3,6 +3,12 @@
   "effortLevel": "medium",
   "showThinkingSummaries": true,
   "crossSessionInbound": "accept",
+  "syncClaudeAiSkills": false,
+  "skillOverrides": {
+    "artifact-design": "user-invocable-only",
+    "artifact-capabilities": "user-invocable-only",
+    "artifact-diagramming": "user-invocable-only"
+  },
   "permissions": {
     "defaultMode": "bypassPermissions"
   },
