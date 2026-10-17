@@ -8,16 +8,15 @@ description: Coordinate delegated implementation with persistent worker ownershi
 Split implementation into lanes and start the ready ones together, as Parallel
 execution in CLAUDE.md says. A lane is ready with disjoint ownership and proven
 interfaces; defer dependent work until its interfaces are proven, since separate
-worktrees do not make it ready. Keep primary ownership and configured
-roles/models as required by global guidance.
+worktrees do not make it ready.
 
 ## Assign workers
 
 Use fresh `general-purpose` agents as persistent worker owners, not forks.
 Continue the same worker with SendMessage for corrections in its lane; start a
 fresh one for new or unrelated work (Usage efficiency in CLAUDE.md). Pick the
-model at spawn by the Opus criteria in CLAUDE.md, defaulting to Sonnet
-(`model: "sonnet"`); it cannot change later. Each brief
+model at spawn by CLAUDE.md's model rule, Opus by default (`model: "opus"`);
+it cannot change later. Each brief
 identifies the checkout and dirty baseline, exact ownership, interfaces and
 dependencies, applicable instructions, current evidence, and independent
 acceptance checks. Tell workers they are not alone: preserve others' changes
@@ -43,7 +42,5 @@ commands and results, and unresolved blockers or questions. The primary
 independently validates the handoff, integrates completed work, and verifies
 interactions between the implementations.
 
-Keep corrections with the existing owner under the global correction rules;
-the primary retains acceptance and does not silently take over a worker's
-lane. Use `review-gate` when the global risk triggers require independent
-review; delegation alone does not require it.
+Corrections and acceptance follow CLAUDE.md's ownership rules. Delegation
+alone does not require `review-gate`.

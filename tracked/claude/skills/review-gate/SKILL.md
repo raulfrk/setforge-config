@@ -5,9 +5,8 @@ description: Coordinate independent reviews and consequential-action checkpoints
 
 # Review gate
 
-The primary owns design, implementation, corrections, integration, and acceptance.
-Reviewers are independent and never edit or review their own design/work. Honor
-configured roles/models and explicit user selections.
+Ownership, model choice, and correction ownership follow CLAUDE.md. Reviewers
+are independent and never edit or review their own design or work.
 
 The reviewer agents have no file-editing tools, but they keep Bash and inherit
 the primary's runtime permissions, so the role is not enforced filesystem
@@ -23,13 +22,18 @@ nonlocal correctness; or an explicit independent-review request. Judge
 consequences, not keywords, file count, delegation, or Plan Mode alone.
 Routine locally observable work finishes with primary validation.
 
-Read [technical-checkpoints.md](references/technical-checkpoints.md) for material
-design/actions, repeated corrections, or inconclusive material spikes. It owns
-the independent checkpoint requirements before consequential actions, after an
-inconclusive spike, and before a third correction when material/critical
-uncertainty remains. A reviewer cannot waive the required runnable proof.
-Block dependent work when required review is unavailable or validated findings
-remain unresolved.
+Also require a focused independent `review-correctness` checkpoint:
+
+- before a consequential action in those material risk classes;
+- after an inconclusive material spike, before choosing the next attempt; a
+  reviewer cannot waive the runnable proof, so a revised critical path still
+  passes its stated proof before production edits;
+- after two failed attempts on the same issue (the retry rule in CLAUDE.md).
+
+Block dependent work when a required review is unavailable or validated
+findings remain unresolved. Read
+[technical-checkpoints.md](references/technical-checkpoints.md) when a material
+design needs a separate design author.
 
 Read [revdiff-returns.md](references/revdiff-returns.md) when annotations return.
 Do not inspect or incorporate feedback before it returns. If a known fixture
@@ -38,8 +42,8 @@ discard actionable feedback after return.
 
 ## Select the phase and evidence
 
-Review a complete draft plan before its first presentation (in Plan Mode,
-before calling ExitPlanMode), and a completed
+Review a complete draft plan before its first presentation (before
+ExitPlanMode when in Plan Mode), and a completed
 implementation after its deterministic checks, before handoff, commit, or push.
 Provide the full current plan or accessible diff, execution contract, relevant
 repository evidence, and actual check results. The contract is the approved plan
@@ -90,8 +94,8 @@ spawn reviewers.
 
 ## Validate and correct
 
-The primary independently validates factual findings with bounded read-only
-evidence; a reviewer-only command is not primary validation. Compare suspected
+Validate factual findings with your own bounded read-only evidence; a
+reviewer-only command is not primary validation. Compare suspected
 regressions with baseline. Report blocked validation rather than assuming it
 passed. Reject false positives and speculative or unsafe corrections.
 
@@ -106,9 +110,8 @@ isolation, security, compatibility, or behavioral checks just to pass.
 
 If no verified mandatory findings remain, the gate is clean; rejected or
 advisory findings do not trigger another round. Otherwise, send one consolidated
-correction set partitioned by owner and dependency. The primary revises its own
-plans/work; persistent workers correct their own lanes. Preserve ownership and
-rerun deterministic checks only when changes, failures, or unresolved concerns
+correction set partitioned by owner and dependency, each going to its current
+owner. Rerun deterministic checks only when changes, failures, or unresolved concerns
 can affect them.
 
 For follow-up, provide the current revision, relevant delta/checks, and full
@@ -130,11 +133,8 @@ a blocked gate clean.
 
 ## Accept and hand off
 
-The primary independently validates worker handoff evidence and final
-interactions. A required gate needs a fresh independent verdict for this phase
+A required gate needs a fresh independent verdict for this phase
 and current evidence, fresh affected specialist completions, applicable retained
 verdicts, no verified mandatory findings, and no reviewer-made changes.
 After a clean gate, present the complete plan or verified implementation.
-Leaving Plan Mode opens the plan in RevDiff through the `revdiff-herdr` plugin;
-otherwise open RevDiff only when explicitly requested.
-Review does not authorize a commit, push, publication, or consequential action.
+Review authorizes nothing by itself; the hard gates in CLAUDE.md still apply.

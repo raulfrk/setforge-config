@@ -38,20 +38,18 @@ Do not make every eventual UI journey a prerequisite for proving a storage or
 protocol assumption. Keep the original user-facing checks explicitly pending;
 CLI acknowledgments or component tests never substitute for those checks.
 
-After two inconclusive attempts without a behavior-level signal, reassess the
-experiment's scope and fixture before another full attempt. Prefer a smaller
-question or an established public path, with stated new evidence and unchanged
-legitimate acceptance criteria. Do not keep varying setup blindly; retain the
-required review and authorization checkpoints below.
+Two inconclusive attempts without a behavior-level signal trigger the retry
+rule in CLAUDE.md. When reassessing, prefer a smaller question or an
+established public path, with stated new evidence and unchanged legitimate
+acceptance criteria.
 
 Do not create or modify production code that depends on the unproved assumption
 until the experiment meets its stated success threshold. Independent, already
 proved work can continue within its existing authorization and ownership.
 If the experiment fails or is inconclusive, stop dependent implementation and
 report the blocker, or revise the approach and prove the revised critical path.
-After an inconclusive material spike, use `review-gate` for the required
-independent checkpoint before choosing another implementation attempt; a review
-cannot waive the runnable proof.
+After an inconclusive material spike, load `review-gate` for its checkpoint
+before choosing another attempt.
 
 Keep spike code disposable and separate from production; never silently promote
 it into the final design. Do not spike routine work whose behavior is already

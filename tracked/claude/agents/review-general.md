@@ -1,7 +1,7 @@
 ---
 name: review-general
 description: Run a dynamically scoped verification, simplicity, or domain review.
-model: sonnet
+model: opus
 effort: high
 disallowedTools: Edit, Write, NotebookEdit, Agent
 ---

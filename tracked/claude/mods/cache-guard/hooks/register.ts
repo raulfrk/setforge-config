@@ -316,7 +316,7 @@ export const register: Register = (on, options) => {
     state.heldResumes.add(agentId)
 
     return {
-      deny: `cache-guard: this agent has been idle ${minutes(now - agent.at)} and its cache has lapsed, so resuming it re-caches about ${count(agent.tokens)} tokens. If its context is not needed, a fresh agent with a short brief is cheaper. To resume it anyway, send the message again.`,
+      deny: `cache-guard: this agent has been idle ${minutes(now - agent.at)} and its cache has lapsed, so resuming it re-caches about ${count(agent.tokens)} tokens. If its context is not needed, a fresh agent with a short brief is cheaper. If it owns a correction or a later review phase, or you need its context anyway, send the message again to resume it.`,
     }
   })
 

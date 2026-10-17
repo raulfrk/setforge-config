@@ -237,6 +237,14 @@ tracked_files:
     src: claude/skills/domain-modeling/GLOSSARY-FORMAT.md
     dst: ~/.claude/skills/domain-modeling/GLOSSARY-FORMAT.md
 
+  claude_skill_session_controller:
+    src: claude/skills/session-controller/SKILL.md
+    dst: ~/.claude/skills/session-controller/SKILL.md
+
+  claude_skill_session_controller_status:
+    src: claude/skills/session-controller/scripts/session_status.py
+    dst: ~/.claude/skills/session-controller/scripts/session_status.py
+
   claude_skill_i_have_adhd:
     src: claude/skills/i-have-adhd/SKILL.md
     dst: ~/.claude/skills/i-have-adhd/SKILL.md
@@ -400,6 +408,8 @@ profiles:
       - claude_skill_domain_modeling
       - claude_skill_domain_modeling_adr_format
       - claude_skill_domain_modeling_glossary_format
+      - claude_skill_session_controller
+      - claude_skill_session_controller_status
       - claude_skill_i_have_adhd
       - claude_skill_ponytail
       - claude_skill_ponytail_audit

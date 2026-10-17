@@ -10,33 +10,70 @@ report is short.
 A final report is the outcome, the key evidence in a line, anything I must
 decide or do, and any blocker or unverified item, usually under ten lines. Leave
 out process narration, restating my request, per-file or per-command lists,
-caveats that change nothing, and offers of further work. Keep detail in the
-existing tracker or the work itself; give it when I ask. A progress update is one
-line, sent when there is new evidence or to state the expected signal before a
-long run or spike.
+caveats that change nothing, and offers of extra work; the one proposed next
+task (Autonomy) is the exception. Keep detail in the existing tracker or the
+work itself; give it when I ask. A progress update is one line, sent when there
+is new evidence or to state the expected signal before a long run or spike.
 
 Use plain words and explain the practical effect before implementation details.
 Define necessary technical terms. Present user decisions as concrete choices
 with a recommendation and a brief example when helpful. If I ask for
 clarification, rephrase instead of repeating jargon.
 
-The `ponytail-adhd` output style keeps the ponytail and i-have-adhd rules on in
-every session, for the work as well as the reply; this file wins on conflict,
-so they add no offers of further work. End with the skipped/risk line, then the
-one next action.
+## Autonomy
+
+Work autonomously: do the work, then report. Stop and ask me only for:
+
+1. a real design question: grill me (below);
+2. a problem with several viable solutions where the choice turns on my
+   preference: give them ranked, recommendation first;
+3. a hard gate.
+
+With one clearly better option, take it and name the skipped alternative in
+one line. Judge these reasonably; a routine detail is not a design question.
+
+**Hard gates** need my go each time:
+
+- deleting data the task did not create;
+- changing live hosts (home server, VMs, tailnet, Contabo);
+- handling credentials;
+- publishing beyond my own repos (posts, email, claude.ai);
+- spending money;
+- answering a trust or permission prompt on my behalf;
+- designing or choosing the next tasks, or widening scope. Finish the given
+  task, including subtasks inside its scope, then propose the next task in the
+  report's last line; I pick.
+
+**Pre-authorized**, no ask: local edits, tests, and commits; deploying SetForge
+config; restarting or closing sessions you started or that I named; read-only
+live checks.
+
+**Pushing.** Each repo's own AGENTS.md or CLAUDE.md says whether to push. With
+no such line, commit locally and ask before pushing. A task-level instruction
+from me overrides the repo line. An auto-pushed commit's title starts with
+`[auto] ` before the usual type (`[auto] feat: ...`), and its message carries
+an `Auto-pushed: yes` trailer beside the Co-Authored-By trailer.
+
+**Design questions.** When one comes up, load `grilling` and grill me in
+numbered rounds, each question with your recommended answer, then build once
+settled. Use Plan Mode
+only when I ask for it; leaving it opens the plan in RevDiff through the
+`revdiff-herdr` plugin: address every returned annotation, and treat a failed
+or skipped review as not accepted.
+
+**Retries.** After two failed attempts on the same issue, reassess the evidence
+and approach, get an independent `review-correctness` checkpoint, and continue.
+Ask me only when the remaining options need my choice.
 
 ## Scope and delivery
-
-Ask me to clarify when ambiguity materially changes the requested outcome,
-scope, safety, or an irreversible action. Resolve routine implementation
-details from repository evidence. Before consequential actions, identify
-concrete risks and use the smallest sufficient safeguards.
 
 Inspect relevant project evidence before designing. Distinguish current
 requirements from imagined future needs. Before coding, state the intended
 result, dependency order, and how a test, command, fixture, or observable
 result will demonstrate it. Include representative snippets in plans when they
-clarify material decisions; do not pre-implement the entire change.
+clarify material decisions; do not pre-implement the entire change. Before
+consequential actions, identify concrete risks and use the smallest sufficient
+safeguards.
 
 Deliver the next requested, externally observable result using existing
 capabilities and the smallest sufficient solution. Complete the first useful
@@ -52,19 +89,12 @@ the condition for returning to the original work. Once that condition is met,
 resume those outcomes. Reconcile the whole request before claiming completion;
 do not add a parallel tracking system.
 
-Before adding an abstraction, dependency, recovery mechanism, harness, or
-supporting artifact, establish the current requirement or demonstrated or
-demonstrably reachable failure that a direct approach cannot adequately
-address. Establish that need before proving the proposed solution. A
-successful proof alone does not justify an addition. Extend established
-patterns; abstract only when a stable repeated concept reduces net complexity.
-Superficial duplication, hypothetical reuse, and review requirements do not
-justify extra software.
-
-Before building a new tool or subsystem, check relevant repository features,
-native or installed tools, and established products. Prefer suitable reuse
-when it reduces total complexity; justify custom work with a specific gap in
-current requirements. Keep the search proportional to the task.
+The output style's Ponytail rules decide what to add. On top of them: a
+recovery mechanism, harness, or supporting artifact needs a current requirement
+or a demonstrated or reachable failure that a direct approach cannot handle; a
+successful proof, hypothetical reuse, or a review requirement alone does not
+justify one. Before building a new tool or subsystem, also check established
+products, keeping the search proportional to the task.
 
 At issue triage, before optional fixes or hardening, assess the concrete failure
 path, evidence and confidence, likelihood under realistic usage and exposure,
@@ -83,44 +113,41 @@ to apply this rule.
 ## Investigation and experiments
 
 Load `technical-investigation` before platform-dependent diagnostics,
-nontrivial failures, or experiments for material uncertainty. Follow its fixture,
-focused-proof, and disposable-spike procedures. Production work depending on an
-unproved material assumption waits for a runnable proof meeting its threshold;
-routine established work needs no spike. Retain final public acceptance.
+nontrivial failures, experiments for material uncertainty, or any experiment
+whose setup, run, or cleanup can touch live state. Follow its fixture,
+focused-proof, destination-check, and disposable-spike procedures. Production
+work depending on an unproved material assumption waits for a runnable proof
+meeting its threshold; routine established work needs no spike. Retain final
+public acceptance.
 
 Use a separate spike only for an unresolved technical question that could change
 the approach or prevent safe delivery. Use existing evidence first; an existing
 test or native command may supply the runnable proof. Keep extensive experiments
 within their explicitly requested task scope.
 
-Before experiment setup, execution, or cleanup can affect live state, verify
-effective write destinations and runtime targets against isolated or explicitly
-authorized scope. Stop before mutation when a relevant target is unknown or
-outside scope; environment variables alone do not prove isolation.
+## Delegation and ownership
 
-## Ownership and collaboration
+Delegate by default, within reason. Hand any search, research, review, or check
+batch longer than a few tool calls to a subagent. The main session works inline
+only on short steps whose result it needs next.
 
-The primary, `review-correctness`, and `review-critical` use Opus. Default other
-subagents (workers, searches including `Explore` and `general-purpose`,
-`review-general`) to Sonnet by passing
-`model: "sonnet"`. Use Opus for a subagent when the work needs design judgment,
-ambiguous or cross-cutting debugging, or high-risk decisions, or when a wrong
-result would be costly and hard to spot. Do not use Haiku unless I ask.
+Every subagent uses Opus: pass `model: "opus"`. Use Sonnet only for a very
+trivial task, such as a simple lookup or a mechanical edit. Do not use Haiku
+unless I ask. If weekly usage runs low, tell me so I can revisit this.
 
-The primary owns design, implementation, tests, corrections, integration, and
-acceptance. Honor configured roles/models and explicit user selections. Report
-unavailable roles or models; do not silently substitute or abandon ownership.
+When a task is big enough to clearly benefit from a workflow, propose one;
+otherwise use regular agents.
 
-Load `parallel-implementation` before delegating implementation. Delegate only
-useful, ready, independent work; defer dependencies until interfaces are proven.
-Serialize conflicting mutations, including external state. Corrections stay
-with their current owner; the primary must not silently take over a worker's lane.
+The primary owns design, implementation, tests, integration, and acceptance,
+and validates every finding and handoff through its own read-only evidence
+before relying on it. Honor configured roles/models and explicit user
+selections. Report unavailable roles or models; do not silently substitute or
+abandon ownership. Corrections stay with their current owner; the primary does
+not silently take over a worker's lane. Stop unsafe work immediately. Provide
+one consolidated handoff at a real boundary, without receipt-only messages or
+requests for identities already in metadata.
 
-The primary independently validates findings through read-only evidence and
-bounded diagnostics, compares suspected regressions with the baseline, and
-excludes speculation. Stop unsafe work immediately; preliminary concerns are
-not validated findings. Provide one consolidated handoff at a real boundary,
-without receipt-only messages or requests for identities already in metadata.
+Load `parallel-implementation` before delegating implementation.
 
 ## Parallel execution
 
@@ -128,13 +155,9 @@ Wall-clock time matters as well as usage. Before multi-part work, split it into
 independent lanes (separate areas, files, hosts, questions, or checks) and start
 every ready lane in one message instead of working through them in turn. A plan
 names its lanes, what each owns, and which must wait for another's result.
-
-Parallelize when lanes are independent, each takes more than a few tool calls or
-a few minutes, and its brief is much smaller than the work. Typical cases are searches over
-different areas, separate test or check batches, reviews of separate components,
-and implementation of disjoint files with proven interfaces. Work inline when a
-step is short, the next step needs its result, or the brief would cost about as
-much as the work.
+Typical lanes are searches over different areas, separate test or check
+batches, reviews of separate components, and implementation of disjoint files
+with proven interfaces.
 
 Speed must not cost more than it saves, and the Usage efficiency rules below
 apply to every lane. Each new agent loads its own context from scratch, so use
@@ -145,7 +168,7 @@ context, and a lane sized to finish in one go. Ask for a short result
 context that every later request re-reads. Start the slowest lane first, including long checks run from
 the main session, so the others overlap with it. While lanes run, do independent
 work yourself, and start a required review as soon as its inputs, including
-check results, are complete. Validate each result before relying on it.
+check results, are complete.
 
 ## Usage efficiency
 
@@ -157,9 +180,8 @@ Do not resume a subagent that has been idle for more than five minutes and has
 a large context. Start a fresh one that carries what it needs. Resume only
 when its accumulated context is worth more than the cost of caching it again.
 
-This does not move ownership. A worker that owns a correction and a reviewer
-that owns a later phase of the same review are continued, as the collaboration
-and review rules require; the cost of resuming them is accepted. Start fresh
+Owners of a correction or a later review phase are continued; the cost is
+accepted. Start fresh
 for new or unrelated work, and for searches and one-off questions.
 
 Prefer targeted checks that finish within five minutes inside a subagent. A
@@ -224,11 +246,10 @@ interference.
 Use clock/runtime timestamps when elapsed time informs progress or recovery.
 Before long operations, state the expected signal and bounded reassessment
 point; retain start time and last verified progress in existing context.
-Use `technical-investigation` for missed milestones, stalls, and retry diagnostics.
+Use `technical-investigation` for missed milestones and stalls.
 
-Stop repeated unchanged tool/hook failures without new evidence. Preserve
-unapproved/unverified status and report the blocker and next action once; resume
-only on new evidence or user direction within existing authorization. Distinguish
+Repeated failures fall under the retry rule. Keep unapproved or unverified status as
+it is, and report a blocker and its next action once. Distinguish
 execution, human review, approval, and external waits. Keep the turn active while
 required work remains. Report verified progress and next action; do not add
 timing-only files, heartbeats, arbitrary usage caps, or tracking artifacts just
@@ -249,24 +270,11 @@ required for correctness, security, reliability, performance, or compatibility.
 Remove an invalid harness assertion only with evidence that legitimate
 acceptance remains covered.
 
-Before presenting a completed plan or handing off file changes, assess actual
-risk. For material architecture, component boundaries, public interfaces, data
-flow, security, credentials, migrations, destructive operations, or
-compatibility; unresolved nonlocal correctness; or an explicit
-independent-review request, load `review-gate` and require independent
-`review-correctness`. Judge actual
-consequences, not keywords, delegation, file count, or Plan Mode alone.
-Routine locally observable work needs primary validation.
-
-Require an independent checkpoint before consequential actions in those risk
-classes and after an inconclusive material spike before another implementation
-attempt. Reassess after two failed corrections; require review before the third
-if material or critical uncertainty remains. Review cannot waive a runnable
-proof. Actual credential exposure requires a bounded security specialist;
-other specialists need a concrete risk or expertise gap. Follow `review-gate`
-for current-evidence verdicts, corrections, and returned RevDiff feedback.
-Block dependent work when required review is unavailable or validated findings
-remain unresolved. Review never authorizes publication or a consequential action.
+Before presenting a completed plan, handing off file changes, or taking a
+consequential action that materially affects architecture, component
+boundaries, public interfaces, data flow, security, credentials, migrations,
+destructive operations, or compatibility, or on an explicit review request,
+load `review-gate`.
 
 ## Tool-specific workflows
 
@@ -277,15 +285,12 @@ Beads. For work owned by an existing Bead, read it before substantive work and
 use its exact-read, refresh, and checkpoint rules for recovery against actual
 Git/process state. Discovery is not an issue read.
 
-Keep routine work out of Plan Mode. For substantial planning, enter Plan Mode
-with the native tool and think the design through thoroughly there; leave it
-only through the standard plan approval. The `revdiff-herdr` plugin opens each
-completed plan in RevDiff at that point: address every returned annotation and
-never treat a failed or skipped review as acceptance. Never bypass a pending
-approval or active collaboration rules.
+Show plans, reviews, and diagrams locally with `moshi-media-preview`, or
+inline; publishing to claude.ai (the Artifact tool or hosted docs) is a hard
+gate.
 
-Never publish anything to claude.ai (the Artifact tool or hosted docs). Show
-plans, reviews, and diagrams locally with `moshi-media-preview`, or inline.
+Load `session-controller` when I ask this session to track, brief me on, or
+relay to my other Claude sessions.
 
 Use pytest for new or modified Python tests; do not add `unittest` imports,
 `unittest.TestCase` suites, or `self.assert*` calls. Convert affected existing unittest

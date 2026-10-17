@@ -58,8 +58,13 @@ entering a supporting skill or reference.
 Standing authorization: in a repository that already has a Beads project, create
 one Bead for each fix, feature, bug or other trackable work item without asking.
 Create it before or as the work starts, claim it, and keep it open until its
-acceptance checks pass. Initialization, configuration, child Beads and other
-graph expansion still need the authorization above.
+acceptance checks pass.
+
+Standing authorization also covers child Beads one level under the current
+task's Bead, for subtasks inside its scope. Record anything found along the way
+outside that scope in a "Follow-ups" list in the parent Bead's notes, not as a
+new Bead; the user decides which become Beads. Initialization, configuration,
+deeper nesting, and other graph expansion still need the authorization above.
 
 When details are missing, present the repository, prefix or settings as applicable,
 and each proposed Bead's title, type, purpose, acceptance criteria, and parent or
@@ -147,11 +152,11 @@ relevant recent notes before relying on it.
 
 ## Decompose for review
 
-When `custom.workflow.decomposition` is `reviewer-friendly`, propose child
-Beads only when independently reviewable pieces materially improve review. The
-user approves each child creation, individually or as part of an exact bounded
-batch; reuse that approval. Use the shallowest useful hierarchy with at
-most three nesting levels. Avoid file-based splits, one-child epics,
+When `custom.workflow.decomposition` is `reviewer-friendly`, create child
+Beads only when independently reviewable pieces materially improve review. One
+level under the task's Bead is pre-authorized (Authorization); a deeper level
+needs approval, individually or as an exact bounded batch. Use the shallowest
+useful hierarchy with at most three nesting levels. Avoid file-based splits, one-child epics,
 placeholder layers, and dependencies that do not represent real ordering.
 
 With `commit.mode = per-bead`, one leaf Bead produces one coherent commit. If
