@@ -10,7 +10,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = REPO_ROOT / "plugins/revdiff-herdr-claude"
-CODEX_PLUGIN_ROOT = REPO_ROOT / "plugins/revdiff-herdr"
+SHARED_ROOT = REPO_ROOT / "plugins/revdiff-herdr"
 HOOK = PLUGIN_ROOT / "scripts/plan-review-hook.py"
 EXTRACTOR = PLUGIN_ROOT / "skills/revdiff-plan/scripts/extract-last-message.sh"
 
@@ -167,14 +167,14 @@ def test_other_tools_are_ignored(review) -> None:
     assert not review.calls.exists()
 
 
-def test_shared_launchers_are_the_codex_plugin_files() -> None:
+def test_shared_launchers_are_the_shared_plugin_files() -> None:
     links = [path for path in PLUGIN_ROOT.rglob("*") if path.is_symlink()]
 
     assert links
     for link in links:
-        assert link.resolve(strict=True).is_relative_to(CODEX_PLUGIN_ROOT), link
+        assert link.resolve(strict=True).is_relative_to(SHARED_ROOT), link
     assert (PLUGIN_ROOT / "skills/revdiff/scripts/launch-revdiff.sh").resolve() == (
-        CODEX_PLUGIN_ROOT / "skills/revdiff/scripts/launch-revdiff.sh"
+        SHARED_ROOT / "skills/revdiff/scripts/launch-revdiff.sh"
     )
 
 

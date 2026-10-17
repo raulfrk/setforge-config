@@ -318,7 +318,7 @@ Exit status: `0` = no annotations, discarded annotations, or default mode; `10` 
 
 ## Questions and Edit Requests
 
-For this custom Codex plugin, annotation meaning comes from the comment and
+For this custom plugin, annotation meaning comes from the comment and
 referenced context, not a keyword list or punctuation convention. Questions
 such as "why is this needed?" are answered directly in chat. Concrete requests
 such as "rename this function" authorize that scoped edit. Material ambiguity

@@ -3,9 +3,9 @@
 # usage: resolve-launcher.sh <launcher-name> [data-dir]
 # outputs absolute path of the first-found executable launcher
 #
-# No project-controlled launcher layer: the Codex Stop hook invokes this
-# resolver automatically. Only the user's Codex plugin data directory and
-# this installed bundle may supply executable launchers.
+# No project-controlled launcher layer: the Plan hook invokes this resolver
+# automatically. Only the plugin data directory passed by the hook and this
+# installed bundle may supply executable launchers.
 set -euo pipefail
 
 name="${1:-}"
@@ -13,7 +13,7 @@ if [ -z "$name" ]; then
     echo "error: usage: resolve-launcher.sh <launcher-name> [data-dir]" >&2
     exit 1
 fi
-data_dir="${2:-${PLUGIN_DATA:-}}"
+data_dir="${2:-}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 abspath() { (cd "$(dirname "$1")" && printf '%s/%s\n' "$(pwd)" "$(basename "$1")"); }

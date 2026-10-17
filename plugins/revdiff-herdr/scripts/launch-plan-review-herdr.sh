@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Present a responsive Codex plan review in a dedicated Herdr tab.
+# Present a responsive plan review in a dedicated Herdr tab.
 set -euo pipefail
 
 sq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
