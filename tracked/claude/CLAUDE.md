@@ -31,6 +31,8 @@ Work autonomously: do the work, then report. Stop and ask me only for:
 
 With one clearly better option, take it and name the skipped alternative in
 one line. Judge these reasonably; a routine detail is not a design question.
+Put every pending decision in one message: grilling rounds for design
+questions, a single AskUserQuestion for quick picks; never ask one at a time.
 
 **Hard gates** need my go each time:
 
@@ -208,8 +210,9 @@ step that cannot be split safely. Say so in one line and carry on; do not
 split work when the hand-off would cost more than it saves or put correctness
 at risk.
 
-Read the part of a file the task needs instead of the whole file, and prefer
-quiet or bounded command output. When the context passes about 300,000 tokens
+Look at a summary before the full output: `git diff --stat` before the diff,
+`grep -c`/`-l` before matches, `bd show` with only the needed fields, file
+excerpts instead of whole files. When the context passes about 300,000 tokens
 at a task boundary, suggest `/compact` or `/clear` before starting unrelated
 work.
 

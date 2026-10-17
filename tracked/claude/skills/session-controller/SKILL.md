@@ -46,6 +46,20 @@ Logs hold pasted credentials (OAuth callback URLs, tokens, SSH keys). Read them
 only through the script or an equally redacting, bounded extraction; never
 print, quote, or copy raw log text into replies, notes, Beads, or repos.
 
+## Session names
+
+Sessions use fixed names. Start or restart one with
+`claude -n <name> --resume <id>` (restart steps: the `herdr` skill). A restart
+without `-n` changes the name `ListAgents` shows.
+
+| Name | Session id | Herdr tab |
+|---|---|---|
+| `infra-migration` | `80c94d45-46ee-4bbe-820e-ec28ef6ebb95` | `w5:t3` |
+| `herdr-plugin` | `ce13c085-849f-4e61-9686-9d4aa7d7d4e5` | `w5:t4` |
+| `infra` | `c4e604a4-7a77-4c29-bb6f-6462ed46922e` | `w5:t5` |
+
+Update a row when a `--fork-session` restart gives the session a new id.
+
 ## Act on request
 
 Each action below happens only when Raul asks for it:

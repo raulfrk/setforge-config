@@ -567,6 +567,11 @@ def test_uncertain_mode_delivery_never_retries_or_continues(monkeypatch, tmp_pat
     assert list((tmp_path / "state" / "codex-mode-handoff").glob("*.json"))
 
 
+@pytest.mark.xfail(
+    importlib.util.find_spec("websocket") is None,
+    strict=True,
+    reason="the native readiness read imports websocket-client, which the test interpreter lacks",
+)
 def test_public_handoff_reads_only_native_state_on_isolated_socket(monkeypatch, tmp_path):
     from websockets.sync.server import unix_serve
 

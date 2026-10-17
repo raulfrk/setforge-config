@@ -59,6 +59,8 @@ Standing authorization: in a repository that already has a Beads project, create
 one Bead for each fix, feature, bug or other trackable work item without asking.
 Create it before or as the work starts, claim it, and keep it open until its
 acceptance checks pass.
+`bd create --silent` can print an empty ID although the Bead was created; check
+`bd list` before retrying so the retry does not make a duplicate.
 
 Standing authorization also covers child Beads one level under the current
 task's Bead, for subtasks inside its scope. Record anything found along the way

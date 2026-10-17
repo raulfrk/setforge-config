@@ -32,6 +32,10 @@ infra job logs JOB_ID
 infra job artifacts JOB_ID
 ```
 
+Before submitting a long suite or gate, run a quick smoke test: the smallest
+command that proves the change works, such as the one affected test or build
+target. Submit the long run once it passes.
+
 Replace the example's placeholders with the current project and its documented
 argv. From another machine, use the existing strict devbox SSH alias and pass
 the command with proper shell quoting; never weaken host-key checking.
