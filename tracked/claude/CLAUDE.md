@@ -212,9 +212,7 @@ at risk.
 
 Look at a summary before the full output: `git diff --stat` before the diff,
 `grep -c`/`-l` before matches, `bd show` with only the needed fields, file
-excerpts instead of whole files. When the context passes about 500,000 tokens
-at a task boundary, suggest `/compact` or `/clear` before starting unrelated
-work.
+excerpts instead of whole files.
 
 ## Evidence and execution
 
