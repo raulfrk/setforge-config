@@ -1,6 +1,7 @@
 {
   "model": "opus",
   "effortLevel": "medium",
+  "outputStyle": "ponytail-adhd",
   "showThinkingSummaries": true,
   "crossSessionInbound": "accept",
   "syncClaudeAiSkills": false,

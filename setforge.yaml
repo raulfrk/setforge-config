@@ -129,6 +129,10 @@ tracked_files:
     src: claude/settings.json
     dst: ~/.claude/settings.json
 
+  claude_output_style_ponytail_adhd:
+    src: claude/output-styles/ponytail-adhd.md
+    dst: ~/.claude/output-styles/ponytail-adhd.md
+
   claude_skill_beads_bootstrap:
     src: claude/skills/beads-bootstrap/SKILL.md
     dst: ~/.claude/skills/beads-bootstrap/SKILL.md
@@ -369,6 +373,7 @@ profiles:
       - claude_agent_review_critical
       - claude_agent_review_general
       - claude_settings
+      - claude_output_style_ponytail_adhd
       - claude_skill_beads_bootstrap
       - claude_skill_beads
       - claude_skill_beads_reference_project_config

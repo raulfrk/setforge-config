@@ -7,6 +7,9 @@ These files are unmodified copies, deployed to `~/.claude/skills/` by the
 `claude` profile. Compare with upstream before changing them; re-copy at a new
 commit to update.
 
+`tracked/claude/output-styles/ponytail-adhd.md` carries an adapted copy of
+these rules; update it by hand when you re-copy.
+
 The upstream hooks, status line, commands and the other `ponytail-*` skills are not copied.
 
 | Deployed skill | Upstream path |
