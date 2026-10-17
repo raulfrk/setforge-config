@@ -37,10 +37,10 @@ def create_baseline_repo(
 ) -> Path:
     """Create the clean tracked Markdown file required by RevDiff context mode."""
     repo.mkdir()
-    review_file = repo / "codex-plan.md"
+    review_file = repo / "review-plan.md"
     write_projection(source, review_file, mapping, width)
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-    subprocess.run(["git", "add", "codex-plan.md"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "review-plan.md"], cwd=repo, check=True)
     subprocess.run(
         [
             "git",
@@ -220,7 +220,7 @@ def render_generation(
     geometry: int,
     pending_annotations: str | None,
 ) -> Path:
-    new_map = temp / "codex-plan.map.json"
+    new_map = temp / "review-plan.map.json"
     old_map = temp / "previous-plan.map.json" if args.old is not None else None
     if args.old is None:
         run_cwd = temp / f"context-{generation}"
@@ -243,7 +243,7 @@ def render_generation(
             pending_annotations,
             read_mapping(new_map),
             read_mapping(old_map) if old_map is not None else None,
-            "codex-plan.md",
+            "review-plan.md",
         )
         if projected:
             preload.write_text(projected, encoding="utf-8")
@@ -255,7 +255,7 @@ def render_generation(
 def revdiff_command(args: argparse.Namespace, temp: Path, generation: int) -> list[str]:
     command = [
         str(args.revdiff),
-        "--only=codex-plan.md",
+        "--only=review-plan.md",
         f"--output={temp / f'output-{generation}.md'}",
         f"--history-dir={temp / f'history-{generation}'}",
     ]
@@ -284,7 +284,7 @@ def generation_annotations(
     old_map = temp / "previous-plan.map.json" if args.old is not None else None
     return remap_annotations(
         raw,
-        read_mapping(temp / "codex-plan.map.json"),
+        read_mapping(temp / "review-plan.map.json"),
         read_mapping(old_map) if old_map is not None else None,
     )
 

@@ -110,7 +110,7 @@ class TestRevDiffHerdr:
                 cp "$only" "$TEST_ONLY_CAPTURE"
             fi
             if [[ -n ${TEST_OLD_CAPTURE:-} && -d .git ]]; then
-                git show HEAD:codex-plan.md > "$TEST_OLD_CAPTURE"
+                git show HEAD:review-plan.md > "$TEST_OLD_CAPTURE"
             fi
             if [[ -n $only && -n ${TEST_NEW_CAPTURE:-} && -d .git ]]; then
                 cp "$only" "$TEST_NEW_CAPTURE"
@@ -416,7 +416,7 @@ class TestRevDiffHerdr:
 
         assert result.returncode == 0, result.stderr
         calls = self._calls()
-        assert "--only=codex-plan.md" in calls
+        assert "--only=review-plan.md" in calls
         assert "--compare-old" not in calls
         assert old_capture.read_text() == "# Plan\n\nOld text.\n"
         assert (
@@ -493,12 +493,12 @@ class TestRevDiffHerdr:
             "path: /tmp/repo\n"
             "commit: abc123\n\n"
             "## Annotations\n\n"
-            "## codex-plan.md:2 (+)\nkeep this\n\n"
-            "---\n\n## Diff\n\ndiff --git a/codex-plan.md b/codex-plan.md\n"
+            "## review-plan.md:2 (+)\nkeep this\n\n"
+            "---\n\n## Diff\n\ndiff --git a/review-plan.md b/review-plan.md\n"
         )
 
         assert PLAN_RUNTIME.extract_history_annotations(history) == (
-            "## codex-plan.md:2 (+)\nkeep this"
+            "## review-plan.md:2 (+)\nkeep this"
         )
 
     def test_normal_empty_exit_clears_stale_canonical_output(self) -> None:
@@ -536,7 +536,7 @@ class TestRevDiffHerdr:
             ],
             env=self._mixed_herdr_env(
                 HERDR_PANE_ID="w-test:p1",
-                TEST_ANNOTATIONS="## codex-plan.md:2 ( )\nreplacement",
+                TEST_ANNOTATIONS="## review-plan.md:2 ( )\nreplacement",
                 TEST_REVDIFF_RC="10",
             ),
             text=True,
@@ -700,7 +700,7 @@ class TestRevDiffHerdr:
         result = subprocess.run(
             [str(PLAN_LAUNCHER), str(self.plan)],
             env=self._mixed_herdr_env(
-                TEST_ANNOTATIONS="## codex-plan.md:2 ( )\nclarify the heading",
+                TEST_ANNOTATIONS="## review-plan.md:2 ( )\nclarify the heading",
                 TEST_REVDIFF_RC="10",
             ),
             text=True,
@@ -717,7 +717,7 @@ class TestRevDiffHerdr:
             env=self._mixed_herdr_env(
                 TEST_ANNOTATIONS=(
                     "## previous-plan.md:2 (-)\nold heading note\n\n"
-                    "## codex-plan.md:2 (+)\nnew heading note"
+                    "## review-plan.md:2 (+)\nnew heading note"
                 ),
                 TEST_REVDIFF_RC="10",
             ),
@@ -735,17 +735,17 @@ class TestRevDiffHerdr:
     def test_shared_comparison_path_round_trips_current_and_deletion_lines(self) -> None:
         new_map = {
             "source": str(self.plan),
-            "projected": "codex-plan.md",
+            "projected": "review-plan.md",
             "line_map": [1, 1, 2, 3],
         }
         old_map = {
             "source": str(self.old_plan),
-            "projected": "codex-plan.md",
+            "projected": "review-plan.md",
             "line_map": [1, 1, 2, 3],
         }
         projected = (
-            "## codex-plan.md:1-2 ( )\ncurrent\n\n"
-            "## codex-plan.md:1-2 (-)\ndeleted"
+            "## review-plan.md:1-2 ( )\ncurrent\n\n"
+            "## review-plan.md:1-2 (-)\ndeleted"
         )
 
         canonical = remap_annotations(projected, new_map, old_map)
@@ -754,22 +754,22 @@ class TestRevDiffHerdr:
             f"## {self.old_plan.name}:1 (-)\ndeleted"
         )
         reprojected = project_annotations(
-            canonical, new_map, old_map, "codex-plan.md"
+            canonical, new_map, old_map, "review-plan.md"
         )
         assert reprojected == (
-            "## codex-plan.md:1 ( )\ncurrent\n\n"
-            "## codex-plan.md:1 (-)\ndeleted"
+            "## review-plan.md:1 ( )\ncurrent\n\n"
+            "## review-plan.md:1 (-)\ndeleted"
         )
 
     def test_ranges_and_file_annotations_round_trip(self) -> None:
         mapping = {
             "source": str(self.plan),
-            "projected": "codex-plan.md",
+            "projected": "review-plan.md",
             "line_map": [1, 2, 3, 4],
         }
         projected = (
-            "## codex-plan.md:1-3 (+)\nrange\n\n"
-            "## codex-plan.md (file-level)\nwhole file"
+            "## review-plan.md:1-3 (+)\nrange\n\n"
+            "## review-plan.md (file-level)\nwhole file"
         )
 
         canonical = remap_annotations(projected, mapping)
@@ -778,12 +778,12 @@ class TestRevDiffHerdr:
             f"## {self.plan.name} (file-level)\nwhole file"
         )
         assert project_annotations(
-            canonical, mapping, projected_name="codex-plan.md"
+            canonical, mapping, projected_name="review-plan.md"
         ) == projected
 
     def test_annotated_reflow_restarts_and_preloads_without_losing_output(self) -> None:
         preload = self.temp / "preload.md"
-        annotation = "## codex-plan.md:2 ( )\nkeep this"
+        annotation = "## review-plan.md:2 ( )\nkeep this"
         rc, output, count, _ = self._run_resize_runtime(
             annotation,
             TEST_PRELOAD_CAPTURE=str(preload),
@@ -797,7 +797,7 @@ class TestRevDiffHerdr:
 
     def test_comparison_reflow_uses_temp_git_and_preserves_deletion_side(self) -> None:
         preload = self.temp / "comparison-preload.md"
-        annotation = "## codex-plan.md:2 (-)\nkeep deletion"
+        annotation = "## review-plan.md:2 (-)\nkeep deletion"
         before = subprocess.run(
             ["git", "status", "--porcelain=v1"],
             cwd=REPO_ROOT,
@@ -821,7 +821,7 @@ class TestRevDiffHerdr:
         assert rc == 10
         assert output.read_text() == f"## {self.old_plan.name}:1 (-)\nkeep deletion"
         assert count.read_text() == "2"
-        assert "## codex-plan.md:1 (-)" in preload.read_text()
+        assert "## review-plan.md:1 (-)" in preload.read_text()
         assert after == before
 
     def test_comparison_ignores_host_git_hooks(self) -> None:
@@ -858,7 +858,7 @@ class TestRevDiffHerdr:
         [
             ("", ""),
             (
-                "## codex-plan.md:4 ( )\nkeep after resize",
+                "## review-plan.md:4 ( )\nkeep after resize",
                 "## plan.md:3 ( )\nkeep after resize",
             ),
         ],
@@ -884,7 +884,7 @@ class TestRevDiffHerdr:
         assert "pane send-keys" not in self._calls()
 
     def test_resize_oscillation_collapses_to_one_reflow(self) -> None:
-        annotation = "## codex-plan.md:2 ( )\nstill here"
+        annotation = "## review-plan.md:2 ( )\nstill here"
         rc, output, count, _ = self._run_resize_runtime(
             annotation,
             resize_columns=(69, 120, 69),
@@ -917,7 +917,7 @@ class TestRevDiffHerdr:
         assert (generations / "generation-1.txt").read_text().startswith("# Plan")
 
     def test_active_annotation_defers_resize_until_modal_closes(self) -> None:
-        annotation = "## codex-plan.md:2 ( )\nfinish first"
+        annotation = "## review-plan.md:2 ( )\nfinish first"
         rc, output, count, _ = self._run_resize_runtime(annotation, modal=True)
 
         assert rc == 10
@@ -945,7 +945,7 @@ class TestRevDiffHerdr:
         assert count.read_text() == "1"
 
     def test_reflow_failure_returns_the_last_canonical_flush(self) -> None:
-        annotation = "## codex-plan.md:2 ( )\nrecover me"
+        annotation = "## review-plan.md:2 ( )\nrecover me"
         rc, output, _, _ = self._run_resize_runtime(
             annotation,
             TEST_DELETE_AFTER_HANDOFF=str(self.plan),
@@ -1016,7 +1016,7 @@ class TestRevDiffHerdr:
 
         assert result.returncode == 0, result.stderr
         calls = self._calls()
-        assert "--only=codex-plan.md" in calls
+        assert "--only=review-plan.md" in calls
         assert "--description=#\\ Review\\ notes" in calls
         assert "--compare-old" not in calls
 
@@ -1034,7 +1034,7 @@ class TestRevDiffHerdr:
             check=False,
         )
         assert context.returncode == 0, context.stderr
-        assert "--only=codex-plan.md" in self._calls()
+        assert "--only=review-plan.md" in self._calls()
         assert "herdr tab create" in self._calls()
 
         self.log.write_text("")
@@ -1050,7 +1050,7 @@ class TestRevDiffHerdr:
             check=False,
         )
         assert comparison.returncode == 0, comparison.stderr
-        assert "--only=codex-plan.md" in self._calls()
+        assert "--only=review-plan.md" in self._calls()
         assert "--compare-old" not in self._calls()
 
     def test_public_launcher_preserves_source_review_arguments(self) -> None:
@@ -1076,7 +1076,7 @@ class TestRevDiffHerdr:
         calls = self._calls()
         assert f"--only={source}" in calls
         assert "--description=Review\\ Python" in calls
-        assert "codex-plan.md" not in calls
+        assert "review-plan.md" not in calls
 
     def test_public_launcher_falls_through_unsupported_markdown_combinations(self) -> None:
         result = subprocess.run(
@@ -1091,7 +1091,7 @@ class TestRevDiffHerdr:
         calls = self._calls()
         assert f"--only={self.plan}" in calls
         assert "--staged" in calls
-        assert "codex-plan.md" not in calls
+        assert "review-plan.md" not in calls
 
     @pytest.mark.parametrize("arguments", [(), ("--staged",), ("HEAD~1",)])
     def test_public_launcher_preserves_vcs_review_arguments(
@@ -1111,7 +1111,7 @@ class TestRevDiffHerdr:
         )
         for argument in arguments:
             assert argument in revdiff_call
-        assert "codex-plan.md" not in revdiff_call
+        assert "review-plan.md" not in revdiff_call
 
     def test_non_herdr_session_preserves_upstream_tmux_selection(self) -> None:
         result = subprocess.run(

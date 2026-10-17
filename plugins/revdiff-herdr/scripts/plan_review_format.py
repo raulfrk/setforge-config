@@ -324,7 +324,7 @@ def remap_annotations(
 ) -> str:
     """Translate projection line references back to canonical Markdown."""
     new_source = Path(str(new_mapping.get("source", "plan.md"))).name
-    new_projected = Path(str(new_mapping.get("projected", "codex-plan.md"))).name
+    new_projected = Path(str(new_mapping.get("projected", "review-plan.md"))).name
     old_projected = (
         Path(str(old_mapping.get("projected", "previous-plan.md"))).name
         if old_mapping
@@ -388,7 +388,7 @@ def project_annotations(
     projected_name: str | None = None,
 ) -> str:
     """Translate canonical line references into the current projection."""
-    target_name = projected_name or str(new_mapping.get("projected", "codex-plan.md"))
+    target_name = projected_name or str(new_mapping.get("projected", "review-plan.md"))
     result: list[str] = []
     for line in annotations.splitlines():
         match = ANNOTATION_RE.match(line)
