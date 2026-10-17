@@ -49,8 +49,19 @@ print, quote, or copy raw log text into replies, notes, Beads, or repos.
 ## Session names
 
 Sessions use fixed names. Start or restart one with
-`claude -n <name> --resume <id>` (restart steps: the `herdr` skill). A restart
-without `-n` changes the name `ListAgents` shows.
+`claude -n <name> --resume <id>`, then type `/rename <name>` (restart steps:
+the `herdr` skill). A restart without `-n` changes the name `ListAgents` shows.
+
+- Remote Control: `remoteControlAtStartup: true` (user settings) starts it on
+  fresh and resumed sessions alike. A resumed session reconnects to its earlier
+  app entry, which keeps its first title; `-n` and `--remote-control <name>` at
+  launch do not rename it.
+- To set the app title, type `/rename <name>` once in the live session; it
+  pushes the title to the app. A session started before the setting was
+  deployed needs `/remote-control` typed once.
+- Prefer `/rename` and `/remote-control` over restarting a session; restart
+  only when settings must reload, and test new launch forms in a throwaway tab
+  first.
 
 | Name | Session id | Herdr tab |
 |---|---|---|

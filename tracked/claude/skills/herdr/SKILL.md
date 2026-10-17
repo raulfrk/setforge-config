@@ -51,6 +51,7 @@ Restart a Claude session in pane `<p>`:
 
 1. Save any unsent draft from `pane read`; `pane send-keys <p> ctrl+u`.
 2. `pane run <p> /exit`; wait until the old pid from `process-info` exits.
-3. `pane run <p> "claude -n <name> --resume <id>"`.
+3. `pane run <p> "claude -n <name> --resume <id>"`, then `/rename <name>` (the
+   app title keeps its first name otherwise).
 4. `pane wait-output <p> --match "bypass permissions" --timeout 60000`.
 5. Re-type the saved draft with `pane send-text`.
