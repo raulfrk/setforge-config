@@ -6,9 +6,7 @@ files live under `/home/raul/projects/setforge-config/tracked/claude/`. Use
 this location first when asked to change Claude Code settings, global
 `CLAUDE.md`, skills, agents, the status line, or plugins; verify the current
 manifest and mapping before editing in case the ownership has changed. The
-`codex` profile in the same manifest is a separate agent's configuration; do
-not change it as a side effect. The `claude` profile also deploys
-`tracked/herdr/config.toml`, which the `codex` profile shares, and
+`claude` profile also deploys `tracked/herdr/config.toml`, and
 `claude-policy` is a subset of the same files; deploy only the intended profile.
 
 `tracked/claude/settings.json` is a fragment of intended preferences, not the
@@ -60,9 +58,9 @@ live session merely to refresh its configuration.
 
 The `revdiff-herdr` plugin is published from this repository's
 `.claude-plugin/marketplace.json` and `plugins/revdiff-herdr-claude/`. Its
-launcher scripts are symlinks to the Codex plugin's files in
+launcher scripts are symlinks to the shared scripts in
 `plugins/revdiff-herdr/`; Claude Code copies their contents into its versioned
-cache on install. A change to a shared launcher therefore affects both agents:
+cache on install. A change to a shared launcher therefore needs both plugins' tests:
 run the whole test suite, and bump the Claude plugin version so the cache is
 refreshed. An enabled plugin ID or a SetForge comparison alone does not
 establish installed version/byte equality; compare the cached payload under
