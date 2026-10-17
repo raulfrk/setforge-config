@@ -65,9 +65,12 @@ the `herdr` skill). A restart without `-n` changes the name `ListAgents` shows.
 
 | Name | Session id | Herdr tab |
 |---|---|---|
-| `infra-migration` | `80c94d45-46ee-4bbe-820e-ec28ef6ebb95` | `w5:t3` |
-| `herdr-plugin` | `ce13c085-849f-4e61-9686-9d4aa7d7d4e5` | `w5:t4` |
-| `infra` | `c4e604a4-7a77-4c29-bb6f-6462ed46922e` | `w5:t5` |
+| `infra` | `80c94d45-46ee-4bbe-820e-ec28ef6ebb95` | `t3` |
+| `herdr-plugin` | `ce13c085-849f-4e61-9686-9d4aa7d7d4e5` | `t4` |
+| `controller` | `ccb80029-0377-46b4-adf7-da6e9c16fdc7` | `tA` |
+
+`infra` owns the Contabo->devbox migration, Contabo access and general infra
+work.
 
 Update a row when a `--fork-session` restart gives the session a new id.
 
