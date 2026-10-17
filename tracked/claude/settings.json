@@ -1,6 +1,7 @@
 {
   "model": "opus",
   "effortLevel": "medium",
+  "autoCompactWindow": 500000,
   "outputStyle": "ponytail-adhd",
   "showThinkingSummaries": true,
   "crossSessionInbound": "accept",
