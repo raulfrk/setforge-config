@@ -57,7 +57,8 @@ from me overrides the repo line. An auto-pushed commit's title starts with
 an `Auto-pushed: yes` trailer beside the Co-Authored-By trailer. A change
 touching auth, infra, migrations, credentials, or live hosts needs my go before
 it is pushed, whatever the repo's line says; any other change follows that line
-once its fresh review passes.
+once its fresh review passes. Push only after `sh .claude/check` passes on the
+commits being pushed, when the repo has one.
 
 **Design questions.** When one comes up, load `grilling` and grill me in
 numbered rounds, each question with your recommended answer, then build once
