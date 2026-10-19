@@ -12,5 +12,5 @@ agent_panel_sort = "spaces"
 [[keys.command]]
 key = 'ctrl+j'
 type = 'plugin_action'
-command = 'attention-sessions.open'
+command = 'attention.open'
 description = 'Open Attention & Sessions'
