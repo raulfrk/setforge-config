@@ -186,6 +186,18 @@ tracked_files:
     src: claude/mods/format-on-edit/hooks/register.ts
     dst: ~/.claude/skills/format-on-edit/hooks/register.ts
 
+  claude_mod_no_sleep_wait_manifest:
+    src: claude/mods/no-sleep-wait/.claude-plugin/plugin.json
+    dst: ~/.claude/skills/no-sleep-wait/.claude-plugin/plugin.json
+
+  claude_mod_no_sleep_wait_hooks:
+    src: claude/mods/no-sleep-wait/hooks/hooks.json
+    dst: ~/.claude/skills/no-sleep-wait/hooks/hooks.json
+
+  claude_mod_no_sleep_wait_register:
+    src: claude/mods/no-sleep-wait/hooks/register.ts
+    dst: ~/.claude/skills/no-sleep-wait/hooks/register.ts
+
 packages:
   beads:
     type: github_release
@@ -265,6 +277,9 @@ profiles:
       - claude_mod_format_on_edit_manifest
       - claude_mod_format_on_edit_hooks
       - claude_mod_format_on_edit_register
+      - claude_mod_no_sleep_wait_manifest
+      - claude_mod_no_sleep_wait_hooks
+      - claude_mod_no_sleep_wait_register
       - claude_statusline
       - herdr_config
     packages:

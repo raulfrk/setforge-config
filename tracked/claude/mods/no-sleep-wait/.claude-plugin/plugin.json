@@ -1,0 +1,5 @@
+{
+  "name": "no-sleep-wait",
+  "version": "0.1.0",
+  "description": "Refuses Bash commands that wait with sleep loops or long sleeps, pointing to background runs and Monitor."
+}

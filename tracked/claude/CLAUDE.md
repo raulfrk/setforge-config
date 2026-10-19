@@ -267,9 +267,12 @@ to populate updates. Finish when requested outcomes and relevant checks pass.
 
 Verify requested behavior end to end through the current public entrypoint,
 the way that project is used: the installed command, a terminal app in a Herdr
-pane, Playwright for a browser UI. Before reporting a change done, run
-`sh .claude/check` when the repo has one and show its output as proof. For a
-bug, first write a test that goes red on it, then fix the code. Tests,
+pane, Playwright for a browser UI. For anything with a UI or live surface,
+done needs proof captured from that surface: a Herdr pane read, a Playwright
+screenshot, the actual Telegram or Grafana output. Before reporting a change
+done, run `sh .claude/check` when the repo has one and show its output as
+proof. For a bug, first write a test that goes red on it, then fix the code.
+Tests,
 including setup and cleanup, use isolated targets; never modify production or
 shared live state for verification. Resolve actual write destinations before
 mutating tests. Report any acceptance that cannot safely be verified.
