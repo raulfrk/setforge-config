@@ -54,7 +54,10 @@ live checks.
 no such line, commit locally and ask before pushing. A task-level instruction
 from me overrides the repo line. An auto-pushed commit's title starts with
 `[auto] ` before the usual type (`[auto] feat: ...`), and its message carries
-an `Auto-pushed: yes` trailer beside the Co-Authored-By trailer.
+an `Auto-pushed: yes` trailer beside the Co-Authored-By trailer. A change
+touching auth, infra, migrations, credentials, or live hosts needs my go before
+it is pushed, whatever the repo's line says; any other change follows that line
+once its fresh review passes.
 
 **Design questions.** When one comes up, load `grilling` and grill me in
 numbered rounds, each question with your recommended answer, then build once
@@ -172,6 +175,10 @@ the main session, so the others overlap with it. While lanes run, do independent
 work yourself, and start a required review as soon as its inputs, including
 check results, are complete.
 
+Parallel sessions on one repo each work in their own worktree, made from local
+main with `wt switch -c <short-topic>` and removed with `wt remove` once the
+branch is merged.
+
 ## Usage efficiency
 
 Every request re-reads the whole context, and a lapsed prompt cache makes the
@@ -258,7 +265,11 @@ to populate updates. Finish when requested outcomes and relevant checks pass.
 
 ## Verification and independent review
 
-Verify requested behavior through the current public entrypoint. Tests,
+Verify requested behavior end to end through the current public entrypoint,
+the way that project is used: the installed command, a terminal app in a Herdr
+pane, Playwright for a browser UI. Before reporting a change done, run
+`sh .claude/check` when the repo has one and show its output as proof. For a
+bug, first write a test that goes red on it, then fix the code. Tests,
 including setup and cleanup, use isolated targets; never modify production or
 shared live state for verification. Resolve actual write destinations before
 mutating tests. Report any acceptance that cannot safely be verified.
@@ -268,8 +279,13 @@ acceptance; component tests or historical approval alone do not establish it.
 Inspect the final diff for unused scaffolding,
 speculation, unnecessary indirection, and unrelated changes; retain complexity
 required for correctness, security, reliability, performance, or compatibility.
-Remove an invalid harness assertion only with evidence that legitimate
-acceptance remains covered.
+Make a failing test pass by fixing the code. Change or remove a test only when
+the test itself is wrong, with evidence that legitimate acceptance remains
+covered.
+
+After each change to code or config, get a fresh-context review limited to
+correctness and requirements (a `review-correctness` subagent or
+`/code-review`) before reporting it done; a docs-only change skips it.
 
 Before presenting a completed plan, handing off file changes, or taking a
 consequential action that materially affects architecture, component
@@ -284,7 +300,10 @@ Before planning or implementing material tracked work in a Git checkout, load
 on mismatch. If no project exists, continue without initializing or proposing
 Beads. For work owned by an existing Bead, read it before substantive work and
 use its exact-read, refresh, and checkpoint rules for recovery against actual
-Git/process state. Discovery is not an issue read.
+Git/process state. Discovery is not an issue read. A long job keeps its progress
+and a pass/fail feature list in its Beads issues, with a checkpoint before each
+hand-off so a fresh session can continue; a repo without Beads keeps one
+progress file instead.
 
 Show plans, reviews, and diagrams locally with `moshi-media-preview`, or
 inline; publishing to claude.ai (the Artifact tool or hosted docs) is a hard

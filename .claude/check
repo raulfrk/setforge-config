@@ -1,0 +1,3 @@
+set -e
+uvx --with pytest pytest -q
+for mod in tracked/claude/mods/*/; do claude plugin test "$mod"; done

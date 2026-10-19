@@ -1,0 +1,5 @@
+{
+  "name": "format-on-edit",
+  "version": "0.1.0",
+  "description": "After Claude edits or writes a file, runs the repo's .claude/format script on it."
+}
