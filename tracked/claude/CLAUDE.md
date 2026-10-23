@@ -40,7 +40,7 @@ no such line, commit locally and ask. A task-level instruction from me
 overrides the repo line. An auto-pushed commit's title starts with `[auto] `
 (`[auto] feat: ...`) and its message carries an `Auto-pushed: yes` trailer. A
 change touching auth, infra, migrations, credentials, or live hosts needs my go
-before it is pushed, whatever the repo says. Push only after `sh .claude/check`
+before it is pushed, whatever the repo says. Push only after `sh scripts/check`
 passes, when the repo has one.
 
 Use Plan Mode only when I ask for it; leaving it opens the plan in RevDiff
@@ -99,7 +99,7 @@ Verify requested behavior end to end the way the project is used: the
 installed command, a terminal app in a Herdr pane, Playwright for a browser UI.
 For UI or live work, show proof captured from that surface (a pane read, a
 screenshot, the actual Telegram or Grafana output). Before reporting a change
-done, run `sh .claude/check` when the repo has one and show its output.
+done, run `sh scripts/check` when the repo has one and show its output.
 
 For a bug, first write a test that goes red on it, then fix the code. Make a
 failing test pass by fixing the code; change a test only when the test itself
